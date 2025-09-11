@@ -1,0 +1,638 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { 
+  Users, 
+  TrendingUp, 
+  Calendar, 
+  Target,
+  Search,
+  Filter,
+  Edit3,
+  Save,
+  X,
+  UserCheck,
+  UserX,
+  Award,
+  AlertCircle,
+  BookOpen,
+  BarChart3,
+  PieChart,
+  Activity
+} from "lucide-react";
+import { toast } from "sonner";
+import { getStudents, updateStudentGroup, updateStudentNotes, getClassStatistics } from "./action";
+import { authClient } from "@/lib/auth-client";
+
+export default function ClassGroupingPage() {
+  const [user, setUser] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [filteredStudents, setFilteredStudents] = useState([]);
+  const [statistics, setStatistics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedGrade, setSelectedGrade] = useState("all");
+  const [selectedGroup, setSelectedGroup] = useState("all");
+  const [activeTab, setActiveTab] = useState("all");
+  const [editingStudent, setEditingStudent] = useState(null);
+  const [editingNotes, setEditingNotes] = useState("");
+
+  // Get user session
+  useEffect(() => {
+    const getUser = async () => {
+      try {
+        const { data } = await authClient.getSession();
+        setUser(data?.user || null);
+      } catch (error) {
+        console.error("Error fetching user:", error);
+      }
+    };
+    getUser();
+  }, []);
+
+  // Load students and statistics
+  useEffect(() => {
+    if (user?.id) {
+      loadData();
+    }
+  }, [user?.id]);
+
+  // Filter students based on search, grade, and group
+  useEffect(() => {
+    let filtered = students;
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(student => 
+        student.name.toLowerCase().includes(query) ||
+        student.email.toLowerCase().includes(query) ||
+        student.subject.toLowerCase().includes(query)
+      );
+    }
+
+    // Filter by grade
+    if (selectedGrade !== "all") {
+      filtered = filtered.filter(student => student.grade === selectedGrade);
+    }
+
+    // Filter by group
+    if (selectedGroup !== "all") {
+      filtered = filtered.filter(student => student.group === selectedGroup);
+    }
+
+    setFilteredStudents(filtered);
+  }, [students, searchQuery, selectedGrade, selectedGroup]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [studentsResult, statsResult] = await Promise.all([
+        getStudents(),
+        getClassStatistics()
+      ]);
+
+      if (studentsResult.success) {
+        setStudents(studentsResult.students);
+      } else {
+        toast.error(studentsResult.error || "Failed to load students");
+      }
+
+      if (statsResult.success) {
+        setStatistics(statsResult.statistics);
+      } else {
+        toast.error(statsResult.error || "Failed to load statistics");
+      }
+    } catch (error) {
+      console.error("Error loading data:", error);
+      toast.error("Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGroupChange = async (studentId, newGroup) => {
+    try {
+      const result = await updateStudentGroup(studentId, newGroup);
+      if (result.success) {
+        setStudents(prev => prev.map(student => 
+          student._id === studentId ? { ...student, group: newGroup } : student
+        ));
+        toast.success("Student group updated successfully");
+      } else {
+        toast.error(result.error || "Failed to update group");
+      }
+    } catch (error) {
+      console.error("Error updating group:", error);
+      toast.error("Failed to update group");
+    }
+  };
+
+  const handleNotesEdit = (student) => {
+    setEditingStudent(student._id);
+    setEditingNotes(student.notes || "");
+  };
+
+  const handleNotesSave = async (studentId) => {
+    try {
+      const result = await updateStudentNotes(studentId, editingNotes);
+      if (result.success) {
+        setStudents(prev => prev.map(student => 
+          student._id === studentId ? { ...student, notes: editingNotes } : student
+        ));
+        setEditingStudent(null);
+        setEditingNotes("");
+        toast.success("Notes updated successfully");
+      } else {
+        toast.error(result.error || "Failed to update notes");
+      }
+    } catch (error) {
+      console.error("Error updating notes:", error);
+      toast.error("Failed to update notes");
+    }
+  };
+
+  const handleNotesCancel = () => {
+    setEditingStudent(null);
+    setEditingNotes("");
+  };
+
+  const getPerformanceColor = (score) => {
+    if (score >= 90) return "text-green-600 bg-green-100";
+    if (score >= 80) return "text-blue-600 bg-blue-100";
+    if (score >= 70) return "text-yellow-600 bg-yellow-100";
+    return "text-red-600 bg-red-100";
+  };
+
+  const getPerformanceIcon = (score) => {
+    if (score >= 90) return <Award className="h-4 w-4" />;
+    if (score >= 80) return <TrendingUp className="h-4 w-4" />;
+    if (score >= 70) return <Target className="h-4 w-4" />;
+    return <AlertCircle className="h-4 w-4" />;
+  };
+
+  const getAttendanceColor = (attendance) => {
+    if (attendance >= 95) return "text-green-600";
+    if (attendance >= 90) return "text-blue-600";
+    if (attendance >= 85) return "text-yellow-600";
+    return "text-red-600";
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "Unknown";
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+
+  const getUniqueGrades = () => {
+    return [...new Set(students.map(student => student.grade))];
+  };
+
+  const getUniqueGroups = () => {
+    return [...new Set(students.map(student => student.group))];
+  };
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold">Class Grouping & Management</h1>
+        <p className="text-muted-foreground">
+          Manage student groups, track performance, and organize your class effectively
+        </p>
+      </div>
+
+      {/* Statistics Cards */}
+      {statistics && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-2">
+                <Users className="h-5 w-5 text-blue-600" />
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Total Students</p>
+                  <p className="text-2xl font-bold">{statistics.totalStudents}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-2">
+                <TrendingUp className="h-5 w-5 text-green-600" />
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Avg Performance</p>
+                  <p className="text-2xl font-bold">{statistics.averagePerformance}%</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-2">
+                <Calendar className="h-5 w-5 text-purple-600" />
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Avg Attendance</p>
+                  <p className="text-2xl font-bold">{statistics.averageAttendance}%</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-2">
+                <Target className="h-5 w-5 text-orange-600" />
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Active Groups</p>
+                  <p className="text-2xl font-bold">{Object.keys(statistics.groupDistribution).length}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search students..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        
+        <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Filter by grade" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Grades</SelectItem>
+            {getUniqueGrades().map(grade => (
+              <SelectItem key={grade} value={grade}>{grade}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={selectedGroup} onValueChange={setSelectedGroup}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Filter by group" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Groups</SelectItem>
+            {getUniqueGroups().map(group => (
+              <SelectItem key={group} value={group}>{group}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="all" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            All Students
+            <Badge variant="secondary">{filteredStudents.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="performance" className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Performance
+          </TabsTrigger>
+          <TabsTrigger value="groups" className="flex items-center gap-2">
+            <PieChart className="h-4 w-4" />
+            Groups
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Analytics
+          </TabsTrigger>
+        </TabsList>
+
+        {/* All Students Tab */}
+        <TabsContent value="all" className="mt-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredStudents.map((student) => (
+              <Card key={student._id} className="hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                        {student.name.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{student.name}</CardTitle>
+                        <p className="text-sm text-muted-foreground">{student.email}</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className={getPerformanceColor(student.performance.overall)}>
+                      {getPerformanceIcon(student.performance.overall)}
+                      {student.performance.overall}%
+                    </Badge>
+                  </div>
+                </CardHeader>
+                
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Grade</p>
+                      <p className="font-medium">{student.grade}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Subject</p>
+                      <p className="font-medium">{student.subject}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Attendance</p>
+                      <p className={`font-medium ${getAttendanceColor(student.attendance)}`}>
+                        {student.attendance}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Last Active</p>
+                      <p className="font-medium">{formatDate(student.lastActive)}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium">Group</p>
+                      <Select 
+                        value={student.group} 
+                        onValueChange={(value) => handleGroupChange(student._id, value)}
+                      >
+                        <SelectTrigger className="w-24 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Group A">A</SelectItem>
+                          <SelectItem value="Group B">B</SelectItem>
+                          <SelectItem value="Group C">C</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {student.strengths.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium mb-1">Strengths</p>
+                      <div className="flex flex-wrap gap-1">
+                        {student.strengths.map((strength, index) => (
+                          <Badge key={index} variant="secondary" className="text-xs">
+                            {strength}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {student.weaknesses.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium mb-1">Areas for Improvement</p>
+                      <div className="flex flex-wrap gap-1">
+                        {student.weaknesses.map((weakness, index) => (
+                          <Badge key={index} variant="outline" className="text-xs text-orange-600">
+                            {weakness}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium">Notes</p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleNotesEdit(student)}
+                        className="h-6 w-6 p-0"
+                      >
+                        <Edit3 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    {editingStudent === student._id ? (
+                      <div className="space-y-2">
+                        <Input
+                          value={editingNotes}
+                          onChange={(e) => setEditingNotes(e.target.value)}
+                          placeholder="Add notes..."
+                          className="text-sm"
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleNotesSave(student._id)}
+                            className="h-6 px-2"
+                          >
+                            <Save className="h-3 w-3 mr-1" />
+                            Save
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleNotesCancel}
+                            className="h-6 px-2"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        {student.notes || "No notes added"}
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* Performance Tab */}
+        <TabsContent value="performance" className="mt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Performance Overview */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Performance Overview</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {statistics?.performanceRanges && Object.entries(statistics.performanceRanges).map(([range, count]) => (
+                    <div key={range} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`h-3 w-3 rounded-full ${
+                          range === 'excellent' ? 'bg-green-500' :
+                          range === 'good' ? 'bg-blue-500' :
+                          range === 'average' ? 'bg-yellow-500' : 'bg-red-500'
+                        }`} />
+                        <span className="capitalize">{range.replace(/([A-Z])/g, ' $1')}</span>
+                      </div>
+                      <Badge variant="outline">{count} students</Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Top Performers */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Performers</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {filteredStudents
+                    .sort((a, b) => b.performance.overall - a.performance.overall)
+                    .slice(0, 5)
+                    .map((student, index) => (
+                    <div key={student._id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <p className="font-medium">{student.name}</p>
+                          <p className="text-sm text-muted-foreground">{student.grade}</p>
+                        </div>
+                      </div>
+                      <Badge className={getPerformanceColor(student.performance.overall)}>
+                        {student.performance.overall}%
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Groups Tab */}
+        <TabsContent value="groups" className="mt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {getUniqueGroups().map(group => {
+              const groupStudents = filteredStudents.filter(s => s.group === group);
+              const avgPerformance = Math.round(
+                groupStudents.reduce((sum, s) => sum + s.performance.overall, 0) / groupStudents.length
+              );
+              
+              return (
+                <Card key={group}>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      {group}
+                      <Badge variant="secondary">{groupStudents.length} students</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{avgPerformance}%</p>
+                        <p className="text-sm text-muted-foreground">Average Performance</p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        {groupStudents.map(student => (
+                          <div key={student._id} className="flex items-center justify-between p-2 bg-muted rounded-lg">
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                                {student.name.split(' ').map(n => n[0]).join('')}
+                              </div>
+                              <span className="text-sm font-medium">{student.name}</span>
+                            </div>
+                            <Badge variant="outline" className={getPerformanceColor(student.performance.overall)}>
+                              {student.performance.overall}%
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics" className="mt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Grade Distribution */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Grade Distribution</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {statistics?.gradeDistribution && Object.entries(statistics.gradeDistribution).map(([grade, count]) => (
+                    <div key={grade} className="flex items-center justify-between">
+                      <span className="font-medium">{grade}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 bg-muted rounded-full h-2">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full" 
+                            style={{ width: `${(count / statistics.totalStudents) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-sm text-muted-foreground w-8">{count}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Attendance Overview */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Attendance Overview</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {filteredStudents
+                    .sort((a, b) => b.attendance - a.attendance)
+                    .slice(0, 10)
+                    .map(student => (
+                    <div key={student._id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                          {student.name.split(' ').map(n => n[0]).join('')}
+                        </div>
+                        <span className="text-sm font-medium">{student.name}</span>
+                      </div>
+                      <Badge variant="outline" className={getAttendanceColor(student.attendance)}>
+                        {student.attendance}%
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
