@@ -1,10 +1,12 @@
 import { authClient } from "@/lib/auth-client";
 import { redirect } from "next/navigation";
 
-export default async function Home() {
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
 
+export default async function Home() {
   const session = await authClient.getSession();
-  const user  = session?.user;
+  const user = session?.user;
 
   if(!user) {
     redirect("/sign-in");
