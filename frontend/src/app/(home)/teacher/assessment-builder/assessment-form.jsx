@@ -14,7 +14,7 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Plus, Trash2, Edit, FileText, Eye, Clock, BookOpen, Save, RefreshCcw } from 'lucide-react';
-import { generateAssessment, deleteAssessment, getAssessments, updateAssessment } from './action';
+import { generateAssessment, deleteAssessment, getAssessments, updateAssessment, getUserAssignedGradesAndSubjects } from './action';
 import AssessmentPreview from '@/components/assessment-preview';
 import { grade , subject , language } from '@/config/data';   
 
@@ -36,6 +36,9 @@ const AssessmentForm = () => {
   const [previewAssessment, setPreviewAssessment] = useState(null);
   const [editingAssessment, setEditingAssessment] = useState(null);
   const [activeTab, setActiveTab] = useState("create");
+  const [userGrades, setUserGrades] = useState([]);
+  const [userSubjects, setUserSubjects] = useState([]);
+  const [loadingUserData, setLoadingUserData] = useState(true);
 
   const {
     register,
@@ -63,6 +66,30 @@ const AssessmentForm = () => {
   // Load assessments on component mount
   useEffect(() => {
     loadAssessments();
+  }, []);
+
+  // Fetch user's assigned grades and subjects
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setLoadingUserData(true);
+        const result = await getUserAssignedGradesAndSubjects();
+        
+        if (result.success) {
+          setUserGrades(result.grades);
+          setUserSubjects(result.subjects);
+        } else {
+          toast.error(result.error || "Failed to load user data");
+        }
+      } catch (error) {
+        toast.error("Failed to load user data");
+        console.error(error);
+      } finally {
+        setLoadingUserData(false);
+      }
+    };
+
+    fetchUserData();
   }, []);
 
   const loadAssessments = async () => {
@@ -429,18 +456,30 @@ const AssessmentForm = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                       <div className="space-y-2 ">
                         <Label htmlFor="subject">Subject *</Label>
-                        <Select onValueChange={(value) => setValue('subject', value)} defaultValue="math">
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select subject " />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {subject.map(subject => (
-                              <SelectItem key={subject} value={subject}>
-                                {subject}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {loadingUserData ? (
+                          <div className="flex items-center justify-center p-4">
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            <span className="text-sm text-muted-foreground">Loading subjects...</span>
+                          </div>
+                        ) : userSubjects.length > 0 ? (
+                          <Select onValueChange={(value) => setValue('subject', value)} defaultValue="math">
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select subject " />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {userSubjects.map(subject => (
+                                <SelectItem key={subject} value={subject}>
+                                  {subject}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                            <p className="text-sm text-muted-foreground">No subjects assigned to your account</p>
+                            <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign subjects</p>
+                          </div>
+                        )}
                         {errors.subject && (
                           <p className="text-sm text-red-500">{errors.subject.message}</p>
                         )}
@@ -448,18 +487,30 @@ const AssessmentForm = () => {
 
                       <div className="space-y-2">
                         <Label htmlFor="grade">Grade Level *</Label>
-                        <Select onValueChange={(value) => setValue('grade', value)} defaultValue="1">
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select grade level" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {grade.map(grade => (
-                              <SelectItem key={grade} value={grade}>
-                                {grade}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {loadingUserData ? (
+                          <div className="flex items-center justify-center p-4">
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            <span className="text-sm text-muted-foreground">Loading grades...</span>
+                          </div>
+                        ) : userGrades.length > 0 ? (
+                          <Select onValueChange={(value) => setValue('grade', value)} defaultValue="1">
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select grade level" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {userGrades.map(grade => (
+                                <SelectItem key={grade} value={grade}>
+                                  {grade}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                            <p className="text-sm text-muted-foreground">No grades assigned to your account</p>
+                            <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign grades</p>
+                          </div>
+                        )}
                         {errors.grade && (
                           <p className="text-sm text-red-500">{errors.grade.message}</p>
                         )}

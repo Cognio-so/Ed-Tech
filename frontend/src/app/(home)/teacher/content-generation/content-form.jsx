@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { contentTypes, grade, subject, presentationTemplates } from "@/config/data";
 import { toast } from "sonner";
 import { FileText, Save, Plus, Trash2, Edit, Eye, Loader2, Download, Database, RefreshCcw } from "lucide-react";
-import { generateContent, generateSlidesFromContent, saveContentToDatabase, deleteContentFromDatabase, getUserContent, updateContentInDatabase, savePresentationToDatabase } from "./action";
+import { generateContent, generateSlidesFromContent, saveContentToDatabase, deleteContentFromDatabase, getUserContent, updateContentInDatabase, savePresentationToDatabase, getUserAssignedGradesAndSubjects } from "./action";
 import ContentPreview from "@/components/ui/content-preview";
 import PPTXViewer from "@/components/pptx-viewer";
 
@@ -59,6 +59,9 @@ export default function ContentForm() {
   const [generatedPresentation, setGeneratedPresentation] = useState(null);
   const [showPresentationModal, setShowPresentationModal] = useState(false);
   const [isSavingPresentation, setIsSavingPresentation] = useState(false);
+  const [userGrades, setUserGrades] = useState([]);
+  const [userSubjects, setUserSubjects] = useState([]);
+  const [loadingUserData, setLoadingUserData] = useState(true);
 
   const form = useForm({
     resolver: zodResolver(contentFormSchema),
@@ -77,6 +80,30 @@ export default function ContentForm() {
       contentVersion: "standard",
     },
   });
+
+  // Fetch user's assigned grades and subjects
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setLoadingUserData(true);
+        const result = await getUserAssignedGradesAndSubjects();
+        
+        if (result.success) {
+          setUserGrades(result.grades);
+          setUserSubjects(result.subjects);
+        } else {
+          toast.error(result.error || "Failed to load user data");
+        }
+      } catch (error) {
+        toast.error("Failed to load user data");
+        console.error(error);
+      } finally {
+        setLoadingUserData(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
 
   useEffect(() => {
     loadSavedContent();
@@ -468,21 +495,33 @@ export default function ContentForm() {
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="grades">Grades *</Label>
-                      <Select
-                        value={form.watch("grades")?.[0] || ""}
-                        onValueChange={(value) => form.setValue("grades", [value])}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select grade" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {grade.map((gradeValue) => (
-                            <SelectItem key={gradeValue} value={gradeValue}>
-                              {gradeValue.toUpperCase()}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {loadingUserData ? (
+                        <div className="flex items-center justify-center p-4">
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          <span className="text-sm text-muted-foreground">Loading grades...</span>
+                        </div>
+                      ) : userGrades.length > 0 ? (
+                        <Select
+                          value={form.watch("grades")?.[0] || ""}
+                          onValueChange={(value) => form.setValue("grades", [value])}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select grade" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {userGrades.map((gradeValue) => (
+                              <SelectItem key={gradeValue} value={gradeValue}>
+                                {gradeValue.toUpperCase()}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                          <p className="text-sm text-muted-foreground">No grades assigned to your account</p>
+                          <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign grades</p>
+                        </div>
+                      )}
                       {form.formState.errors.grades && (
                         <p className="text-sm text-red-500">{form.formState.errors.grades.message}</p>
                       )}
@@ -490,21 +529,33 @@ export default function ContentForm() {
 
                     <div className="space-y-2">
                       <Label htmlFor="subjects">Subject *</Label>
-                      <Select
-                        value={form.watch("subjects")?.[0] || ""}
-                        onValueChange={(value) => form.setValue("subjects", [value])}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select subject" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {subject.map((subjectValue) => (
-                            <SelectItem key={subjectValue} value={subjectValue}>
-                              {subjectValue.replace(/([A-Z])/g, ' $1').trim()}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {loadingUserData ? (
+                        <div className="flex items-center justify-center p-4">
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          <span className="text-sm text-muted-foreground">Loading subjects...</span>
+                        </div>
+                      ) : userSubjects.length > 0 ? (
+                        <Select
+                          value={form.watch("subjects")?.[0] || ""}
+                          onValueChange={(value) => form.setValue("subjects", [value])}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select subject" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {userSubjects.map((subjectValue) => (
+                              <SelectItem key={subjectValue} value={subjectValue}>
+                                {subjectValue.replace(/([A-Z])/g, ' $1').trim()}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                          <p className="text-sm text-muted-foreground">No subjects assigned to your account</p>
+                          <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign subjects</p>
+                        </div>
+                      )}
                       {form.formState.errors.subjects && (
                         <p className="text-sm text-red-500">{form.formState.errors.subjects.message}</p>
                       )}

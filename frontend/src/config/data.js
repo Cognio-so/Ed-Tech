@@ -5,13 +5,6 @@ export const contentTypes =[
     "presentation",
 ]
 
-export const grade = ["kg1","kg2","1","2","3","4","5","6","7","8","9","10","11","12"];
-
-export const subject = [
-    "math", "english", "science", "social studies", "arabic",  "health", "physical education", "music", "art", "technology", 
-    "physics", "chemistry", "biology", "history", "geography", "islamic studies", "computer science", "business studies", 
-    "accounting", "economics", 
-];
 
 export const language = ["English", "Arabic"];
 

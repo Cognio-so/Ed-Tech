@@ -49,12 +49,15 @@ export default function WebSearchPage() {
   const loadSavedSearches = async () => {
     setLoadingSaved(true);
     try {
-      const result = await getWebSearches(user.id);
+      const result = await getWebSearches();
       if (result.success) {
-        setSavedSearches(result.data);
+        setSavedSearches(result.data || []);
+      } else {
+        setSavedSearches([]);
       }
     } catch (error) {
       console.error("Failed to load saved searches:", error);
+      setSavedSearches([]);
     } finally {
       setLoadingSaved(false);
     }
@@ -201,11 +204,23 @@ export default function WebSearchPage() {
         )}
       </div>
 
-      {savedSearches.length > 0 && (
+      {savedSearches && savedSearches.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">Saved Web Searches</h3>
-            <Badge variant="secondary">{savedSearches.length}</Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadSavedSearches}
+              disabled={loadingSaved}
+            >
+              {loadingSaved ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Search className="h-4 w-4 mr-2" />
+              )}
+              Refresh
+            </Button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">

@@ -4,6 +4,7 @@ import PythonApiClient from "@/lib/PythonApi";
 import { connectToDatabase } from "@/lib/db";
 import { ObjectId } from "mongodb";
 import { uploadImageToCloudinary } from "@/lib/cloudinary";
+import { getServerSession } from "@/lib/get-session";
 
 export async function generateComic(formData) {
   try {
@@ -88,54 +89,55 @@ export async function uploadComicImagesToCloudinaryAndSave(comicData, userId) {
   }
 }
 
-export async function saveComic(comicData, userId) {
+export async function saveComic(comicData) {
   try {
-    const { db } = await connectToDatabase();
-    const collection = db.collection("comics");
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
 
-    const comicDoc = {
+    const { db } = await connectToDatabase();
+    const comicsCollection = db.collection("comics");
+    
+    const userId = session.user.id;
+
+    const comicDocument = {
+      _id: new ObjectId(),
       userId: new ObjectId(userId),
       instruction: comicData.instructions,
       subject: comicData.subject || "General",
       grade: comicData.gradeLevel,
       language: comicData.language || "English",
       numPanels: comicData.numPanels,
-      comicType: comicData.comicType || "educational",
-      imageUrls: comicData.imageUrls || [],
-      images: comicData.images || [], // Store base64 images as well
+      images: comicData.images || [],
       metadata: {
         createdAt: new Date(),
         updatedAt: new Date(),
         tags: [comicData.subject, comicData.gradeLevel, comicData.language],
         isPublic: false,
         downloadCount: 0,
-        viewCount: 0
-      },
-      status: "completed"
+      }
     };
 
-    const result = await collection.insertOne(comicDoc);
-    
+    await comicsCollection.insertOne(comicDocument);
+
     return {
       success: true,
       message: "Comic saved successfully",
-      id: result.insertedId.toString(),
-      comic: {
-        _id: result.insertedId.toString(),
-        ...comicDoc,
-        createdAt: comicDoc.metadata.createdAt,
-        updatedAt: comicDoc.metadata.updatedAt
-      }
+      comicId: comicDocument._id.toString()
     };
   } catch (error) {
-    console.error("Save comic error:", error);
-    throw new Error(error.message || "Failed to save comic");
+    console.error("Error saving comic:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to save comic"
+    };
   }
 }
 
 export async function getComics() {
   try {
-    const db = await connectToDatabase();
+    const { db } = await connectToDatabase();
     const comicsCollection = db.collection("comics");
     
     const comics = await comicsCollection
@@ -162,65 +164,125 @@ export async function getComics() {
   }
 }
 
-export async function updateComic(id, updateData, userId) {
+export async function updateComic(comicId, updateData) {
   try {
-    const { db } = await connectToDatabase();
-    const collection = db.collection("comics");
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
 
-    const updateDoc = {
+    const { db } = await connectToDatabase();
+    const comicsCollection = db.collection("comics");
+    
+    const userId = session.user.id;
+
+    // Check if comic exists and belongs to user
+    const existingComic = await comicsCollection.findOne({
+      _id: new ObjectId(comicId),
+      userId: new ObjectId(userId)
+    });
+
+    if (!existingComic) {
+      throw new Error("Comic not found or you don't have permission to update it");
+    }
+
+    const updateFields = {
       $set: {
         instruction: updateData.instructions || updateData.instruction,
         subject: updateData.subject,
         grade: updateData.gradeLevel,
         language: updateData.language,
         numPanels: updateData.numPanels,
-        comicType: updateData.comicType,
-        imageUrls: updateData.imageUrls,
         images: updateData.images,
         "metadata.updatedAt": new Date(),
         "metadata.tags": [updateData.subject, updateData.gradeLevel, updateData.language]
       }
     };
 
-    const result = await collection.updateOne(
-      { _id: new ObjectId(id), userId: new ObjectId(userId) },
-      updateDoc
+    await comicsCollection.updateOne(
+      { _id: new ObjectId(comicId) },
+      updateFields
     );
-
-    if (result.matchedCount === 0) {
-      throw new Error("Comic not found or access denied");
-    }
 
     return {
       success: true,
       message: "Comic updated successfully"
     };
   } catch (error) {
-    console.error("Update comic error:", error);
-    throw new Error(error.message || "Failed to update comic");
+    console.error("Error updating comic:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to update comic"
+    };
   }
 }
 
-export async function deleteComic(id, userId) {
+export async function deleteComic(comicId) {
   try {
-    const { db } = await connectToDatabase();
-    const collection = db.collection("comics");
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
 
-    const result = await collection.deleteOne({
-      _id: new ObjectId(id),
+    const { db } = await connectToDatabase();
+    const comicsCollection = db.collection("comics");
+    
+    const userId = session.user.id;
+
+    // Check if comic exists and belongs to user
+    const existingComic = await comicsCollection.findOne({
+      _id: new ObjectId(comicId),
       userId: new ObjectId(userId)
     });
 
-    if (result.deletedCount === 0) {
-      throw new Error("Comic not found or access denied");
+    if (!existingComic) {
+      throw new Error("Comic not found or you don't have permission to delete it");
     }
+
+    await comicsCollection.deleteOne({ _id: new ObjectId(comicId) });
 
     return {
       success: true,
       message: "Comic deleted successfully"
     };
   } catch (error) {
-    console.error("Delete comic error:", error);
-    throw new Error(error.message || "Failed to delete comic");
+    console.error("Error deleting comic:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to delete comic"
+    };
+  }
+}
+
+// Get user's assigned grades and subjects
+export async function getUserAssignedGradesAndSubjects() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const { db } = await connectToDatabase();
+    const usersCollection = db.collection("user");
+    
+    const user = await usersCollection.findOne({ _id: new ObjectId(session.user.id) });
+    
+    if (!user) {
+      throw new Error("User not found");
+    }
+    
+    return {
+      success: true,
+      grades: user.grades || [],
+      subjects: user.subjects || []
+    };
+  } catch (error) {
+    console.error("Error fetching user grades and subjects:", error);
+    return {
+      success: false,
+      grades: [],
+      subjects: [],
+      error: error.message || "Failed to fetch user data"
+    };
   }
 }

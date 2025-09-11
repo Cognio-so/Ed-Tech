@@ -260,3 +260,36 @@ export async function updateImageInDatabase(imageId, updateData) {
     };
   }
 }
+
+// Get user's assigned grades and subjects
+export async function getUserAssignedGradesAndSubjects() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const { db } = await connectToDatabase();
+    const usersCollection = db.collection("user");
+    
+    const user = await usersCollection.findOne({ _id: new ObjectId(session.user.id) });
+    
+    if (!user) {
+      throw new Error("User not found");
+    }
+    
+    return {
+      success: true,
+      grades: user.grades || [],
+      subjects: user.subjects || []
+    };
+  } catch (error) {
+    console.error("Error fetching user grades and subjects:", error);
+    return {
+      success: false,
+      grades: [],
+      subjects: [],
+      error: error.message || "Failed to fetch user data"
+    };
+  }
+}

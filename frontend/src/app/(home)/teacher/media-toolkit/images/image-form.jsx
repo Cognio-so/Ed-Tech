@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { Loader2, Wand2, Image, Palette, Globe, BookOpen, Save, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { subject, grade, language } from '@/config/data';
-import { generateImage, uploadImageToCloudinaryAndSave } from './action';
+import { generateImage, uploadImageToCloudinaryAndSave, getUserAssignedGradesAndSubjects } from './action';
 
 const ImageForm = ({ onImageGenerated }) => {
     const [formData, setFormData] = useState({
@@ -22,13 +22,45 @@ const ImageForm = ({ onImageGenerated }) => {
         grade: '',
         instructions: '',
         visualType: '',
-        language: 'English',
-        difficultyFlag: false
+        difficultyFlag: false,
+        language: 'English'
     });
-
     const [isGenerating, setIsGenerating] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
     const [generatedImage, setGeneratedImage] = useState(null);
+    const [userGrades, setUserGrades] = useState([]);
+    const [userSubjects, setUserSubjects] = useState([]);
+    const [loadingUserData, setLoadingUserData] = useState(true);
+
+    // Fetch user's assigned grades and subjects
+    useEffect(() => {
+        const fetchUserData = async () => {
+            try {
+                setLoadingUserData(true);
+                const result = await getUserAssignedGradesAndSubjects();
+                
+                if (result.success) {
+                    setUserGrades(result.grades);
+                    setUserSubjects(result.subjects);
+                    // Set default values if user has assigned data
+                    if (result.grades.length > 0) {
+                        setFormData(prev => ({ ...prev, grade: result.grades[0] }));
+                    }
+                    if (result.subjects.length > 0) {
+                        setFormData(prev => ({ ...prev, subject: result.subjects[0] }));
+                    }
+                } else {
+                    toast.error(result.error || "Failed to load user data");
+                }
+            } catch (error) {
+                toast.error("Failed to load user data");
+                console.error(error);
+            } finally {
+                setLoadingUserData(false);
+            }
+        };
+
+        fetchUserData();
+    }, []);
 
     const visualTypes = [
         { value: 'image', label: 'Image', description: 'General educational image' },
@@ -224,36 +256,60 @@ const ImageForm = ({ onImageGenerated }) => {
                                 <Label htmlFor="subject" className="text-sm font-medium">
                                     Subject *
                                 </Label>
-                                <Select value={formData.subject} onValueChange={(value) => handleInputChange('subject', value)}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select subject" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {subject.map((sub) => (
-                                            <SelectItem key={sub} value={sub}>
-                                                {sub.charAt(0).toUpperCase() + sub.slice(1)}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                {loadingUserData ? (
+                                    <div className="flex items-center justify-center p-4">
+                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                        <span className="text-sm text-muted-foreground">Loading subjects...</span>
+                                    </div>
+                                ) : userSubjects.length > 0 ? (
+                                    <Select value={formData.subject} onValueChange={(value) => handleInputChange('subject', value)}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select subject" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {userSubjects.map((sub) => (
+                                                <SelectItem key={sub} value={sub}>
+                                                    {sub.charAt(0).toUpperCase() + sub.slice(1)}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                ) : (
+                                    <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                                        <p className="text-sm text-muted-foreground">No subjects assigned to your account</p>
+                                        <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign subjects</p>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="space-y-2">
                                 <Label htmlFor="grade" className="text-sm font-medium">
                                     Grade Level *
                                 </Label>
-                                <Select value={formData.grade} onValueChange={(value) => handleInputChange('grade', value)}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select grade" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {grade.map((g) => (
-                                            <SelectItem key={g} value={g}>
-                                                {g.toUpperCase()}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                {loadingUserData ? (
+                                    <div className="flex items-center justify-center p-4">
+                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                        <span className="text-sm text-muted-foreground">Loading grades...</span>
+                                    </div>
+                                ) : userGrades.length > 0 ? (
+                                    <Select value={formData.grade} onValueChange={(value) => handleInputChange('grade', value)}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select grade" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {userGrades.map((g) => (
+                                                <SelectItem key={g} value={g}>
+                                                    {g.toUpperCase()}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                ) : (
+                                    <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                                        <p className="text-sm text-muted-foreground">No grades assigned to your account</p>
+                                        <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign grades</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
