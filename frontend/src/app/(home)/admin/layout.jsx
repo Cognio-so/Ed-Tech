@@ -1,18 +1,19 @@
 import RoleProtection from "@/components/RoleProtection";
-import Navbar from "@/components/ui/Navbar";
+import { AdminSidebar } from "@/components/sidebar/admin-sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
-export default function AdminLayout({ children }) {
+export default async function AdminLayout({ children }) { 
   const ProtectedLayout = RoleProtection({ 
-    children, 
+    children: (
+      <SidebarProvider> 
+          <AdminSidebar />
+          <main className="flex-1 overflow-auto">
+            {children}
+          </main>
+      </SidebarProvider>
+    ), 
     allowedRoles: ["admin"] 
   });
   
-  return (
-    <ProtectedLayout>
-      <div>
-        <Navbar />
-        {children}
-      </div>
-    </ProtectedLayout>
-  );
+  return <ProtectedLayout />;
 }

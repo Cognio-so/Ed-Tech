@@ -3,6 +3,7 @@
 import PythonApiClient from "@/lib/PythonApi";
 import { connectToDatabase } from "@/lib/db";
 import { ObjectId } from "mongodb";
+import { getServerSession } from "@/lib/get-session";
 
 export async function searchWeb(formData) {
   try {
@@ -41,83 +42,90 @@ export async function searchWeb(formData) {
   }
 }
 
-export async function saveWebSearch(webSearchData, userId) {
+export async function saveWebSearch(webSearchData) {
   try {
-    const { db } = await connectToDatabase();
-    const collection = db.collection("webSearches");
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
 
-    const webSearchDoc = {
+    const { db } = await connectToDatabase();
+    const webSearchesCollection = db.collection("websearches");
+    
+    const userId = session.user.id;
+
+    const searchDocument = {
+      _id: new ObjectId(),
       userId: new ObjectId(userId),
-      title: webSearchData.metadata?.topic || "Web Search",
+      title: webSearchData.title || "Web Search",
       topic: webSearchData.metadata?.topic || "",
       contentType: webSearchData.metadata?.contentType || "articles",
       subject: webSearchData.metadata?.subject || "",
       grade: webSearchData.metadata?.gradeLevel || "",
       language: webSearchData.metadata?.language || "English",
       searchQuery: webSearchData.searchQuery || "",
-      searchResults: webSearchData.content || "",
+      content: webSearchData.content || "",
       metadata: {
+        topic: webSearchData.metadata?.topic || "",
+        subject: webSearchData.metadata?.subject || "",
+        contentType: webSearchData.metadata?.contentType || "articles",
+        gradeLevel: webSearchData.metadata?.gradeLevel || "",
+        language: webSearchData.metadata?.language || "English",
+        comprehension: webSearchData.metadata?.comprehension || "intermediate",
         createdAt: new Date(),
         updatedAt: new Date(),
         tags: [webSearchData.metadata?.subject, webSearchData.metadata?.contentType],
         isPublic: false,
         downloadCount: 0,
-        viewCount: 0
-      },
-      status: "draft"
+      }
     };
 
-    const result = await collection.insertOne(webSearchDoc);
-    
+    await webSearchesCollection.insertOne(searchDocument);
+
     return {
       success: true,
       message: "Web search saved successfully",
-      id: result.insertedId.toString()
+      searchId: searchDocument._id.toString()
     };
   } catch (error) {
-    console.error("Save web search error:", error);
-    throw new Error(error.message || "Failed to save web search");
+    console.error("Error saving web search:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to save web search"
+    };
   }
 }
 
-export async function getWebSearches(userId) {
+export async function getWebSearches() {
   try {
-    const { db } = await connectToDatabase();
-    const collection = db.collection("webSearches");
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
 
-    const webSearches = await collection
-      .find({ userId: new ObjectId(userId) })
-      .sort({ "metadata.createdAt": -1 })
+    const { db } = await connectToDatabase();
+    const webSearchesCollection = db.collection("websearches");
+    
+    const searches = await webSearchesCollection
+      .find({ userId: new ObjectId(session.user.id) })
+      .sort({ createdAt: -1 })
       .toArray();
+
+    // Convert ObjectIds to strings to make them serializable
+    const serializedSearches = searches.map(search => ({
+      ...search,
+      _id: search._id.toString(),
+      userId: search.userId.toString(),
+      createdAt: search.createdAt.toISOString(),
+      updatedAt: search.updatedAt.toISOString()
+    }));
 
     return {
       success: true,
-      data: webSearches.map(search => ({
-        id: search._id.toString(),
-        title: search.title,
-        topic: search.topic,
-        subject: search.subject,
-        contentType: search.contentType,
-        grade: search.grade,
-        language: search.language,
-        searchQuery: search.searchQuery,
-        content: search.searchResults,
-        metadata: {
-          topic: search.topic,
-          subject: search.subject,
-          contentType: search.contentType,
-          gradeLevel: search.grade,
-          language: search.language,
-          comprehension: "intermediate"
-        },
-        createdAt: search.metadata.createdAt,
-        updatedAt: search.metadata.updatedAt,
-        downloadCount: search.metadata.downloadCount,
-        viewCount: search.metadata.viewCount
-      }))
+      data: serializedSearches
     };
   } catch (error) {
-    console.error("Get web searches error:", error);
+    console.error("Error fetching web searches:", error);
     throw new Error(error.message || "Failed to fetch web searches");
   }
 }
@@ -182,5 +190,38 @@ export async function deleteWebSearch(id, userId) {
   } catch (error) {
     console.error("Delete web search error:", error);
     throw new Error(error.message || "Failed to delete web search");
+  }
+}
+
+// Get user's assigned grades and subjects
+export async function getUserAssignedGradesAndSubjects() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const { db } = await connectToDatabase();
+    const usersCollection = db.collection("user");
+    
+    const user = await usersCollection.findOne({ _id: new ObjectId(session.user.id) });
+    
+    if (!user) {
+      throw new Error("User not found");
+    }
+    
+    return {
+      success: true,
+      grades: user.grades || [],
+      subjects: user.subjects || []
+    };
+  } catch (error) {
+    console.error("Error fetching user grades and subjects:", error);
+    return {
+      success: false,
+      grades: [],
+      subjects: [],
+      error: error.message || "Failed to fetch user data"
+    };
   }
 }
