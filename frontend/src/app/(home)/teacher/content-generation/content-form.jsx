@@ -17,8 +17,8 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { contentTypes, grade, subject, presentationTemplates } from "@/config/data";
 import { toast } from "sonner";
-import { FileText, Save, Plus, Trash2, Edit, Eye, Loader2, Download, Database, RefreshCcw } from "lucide-react";
-import { generateContent, generateSlidesFromContent, saveContentToDatabase, deleteContentFromDatabase, getUserContent, updateContentInDatabase, savePresentationToDatabase, getUserAssignedGradesAndSubjects } from "./action";
+import { FileText, Save, Plus, Trash2, Edit, Eye, Loader2, Download, Database, RefreshCcw, BookmarkPlus } from "lucide-react";
+import { generateContent, generateSlidesFromContent, saveContentToDatabase, deleteContentFromDatabase, getUserContent, updateContentInDatabase, savePresentationToDatabase, getUserAssignedGradesAndSubjects, addContentToLesson } from "./action";
 import ContentPreview from "@/components/ui/content-preview";
 import PPTXViewer from "@/components/pptx-viewer";
 
@@ -62,6 +62,17 @@ export default function ContentForm() {
   const [userGrades, setUserGrades] = useState([]);
   const [userSubjects, setUserSubjects] = useState([]);
   const [loadingUserData, setLoadingUserData] = useState(true);
+  
+  // Add lesson-related state
+  const [addToLessonDialog, setAddToLessonDialog] = useState(false);
+  const [selectedContentForLesson, setSelectedContentForLesson] = useState(null);
+  const [isAddingToLesson, setIsAddingToLesson] = useState(false);
+  const [lessonFormData, setLessonFormData] = useState({
+    title: '',
+    lessonDescription: '',
+    learningObjectives: '',
+    isPublic: false
+  });
 
   const form = useForm({
     resolver: zodResolver(contentFormSchema),
@@ -320,6 +331,45 @@ export default function ContentForm() {
       toast.error("Failed to save presentation");
     } finally {
       setIsSavingPresentation(false);
+    }
+  };
+
+  // Add lesson handlers
+  const handleAddToLesson = async (content) => {
+    setSelectedContentForLesson(content);
+    setLessonFormData({
+      title: `${content.title || content.topic} - Lesson`,
+      lessonDescription: `Lesson based on content: ${content.title || content.topic}`,
+      learningObjectives: content.objective || '',
+      isPublic: false
+    });
+    setAddToLessonDialog(true);
+  };
+
+  const handleSubmitAddToLesson = async () => {
+    if (!selectedContentForLesson) return;
+
+    setIsAddingToLesson(true);
+    try {
+      const result = await addContentToLesson(selectedContentForLesson._id, lessonFormData);
+      if (result.success) {
+        toast.success('Content added to lesson successfully!');
+        setAddToLessonDialog(false);
+        setSelectedContentForLesson(null);
+        setLessonFormData({
+          title: '',
+          lessonDescription: '',
+          learningObjectives: '',
+          isPublic: false
+        });
+      } else {
+        toast.error('Failed to add content to lesson');
+      }
+    } catch (error) {
+      console.error('Error adding to lesson:', error);
+      toast.error('Failed to add content to lesson');
+    } finally {
+      setIsAddingToLesson(false);
     }
   };
 
@@ -832,6 +882,16 @@ export default function ContentForm() {
                           <Button
                             size="sm"
                             variant="outline"
+                            onClick={() => handleAddToLesson(content)}
+                            title="Add to Lesson"
+                            className="cursor-pointer text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                          >
+                            <BookmarkPlus className="h-3 w-3 mr-1" />
+                            Add to Lesson
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => editContent(content)}
                             className="cursor-pointer"
                           >
@@ -981,6 +1041,80 @@ export default function ContentForm() {
           </div>
         </div>
       )}
+
+      {/* Add to Lesson Dialog */}
+      <Dialog open={addToLessonDialog} onOpenChange={setAddToLessonDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Content to Lesson</DialogTitle>
+            <DialogDescription>
+              Create a lesson from this content for your students.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="lessonTitle">Lesson Title</Label>
+              <Input
+                id="lessonTitle"
+                value={lessonFormData.title}
+                onChange={(e) => setLessonFormData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Enter lesson title"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="lessonDescription">Lesson Description</Label>
+              <Textarea
+                id="lessonDescription"
+                value={lessonFormData.lessonDescription}
+                onChange={(e) => setLessonFormData(prev => ({ ...prev, lessonDescription: e.target.value }))}
+                placeholder="Describe what students will learn"
+                rows={3}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="learningObjectives">Learning Objectives</Label>
+              <Textarea
+                id="learningObjectives"
+                value={lessonFormData.learningObjectives}
+                onChange={(e) => setLessonFormData(prev => ({ ...prev, learningObjectives: e.target.value }))}
+                placeholder="What will students achieve?"
+                rows={3}
+              />
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="isPublic"
+                checked={lessonFormData.isPublic}
+                onCheckedChange={(checked) => setLessonFormData(prev => ({ ...prev, isPublic: checked }))}
+              />
+              <Label htmlFor="isPublic">Make lesson public</Label>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddToLessonDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmitAddToLesson} disabled={isAddingToLesson}>
+              {isAddingToLesson ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <BookmarkPlus className="h-4 w-4 mr-2" />
+                  Add to Lesson
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

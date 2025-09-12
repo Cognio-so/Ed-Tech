@@ -388,3 +388,190 @@ export async function getUserAssignedGradesAndSubjects() {
     };
   }
 }
+
+// Lesson CRUD operations for Content Generation
+export async function addContentToLesson(contentId, lessonData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const contentsCollection = db.collection('contents');
+    const lessonsCollection = db.collection('lessons');
+
+    // Check if lesson already exists for this content
+    const existingLesson = await lessonsCollection.findOne({
+      teacherId: new ObjectId(session.user.id),
+      contentId: new ObjectId(contentId)
+    });
+
+    if (existingLesson) {
+      return {
+        success: false,
+        error: 'This content has already been added to a lesson',
+        existingLessonId: existingLesson._id.toString(),
+        message: 'A lesson for this content already exists'
+      };
+    }
+
+    // Get the content
+    const content = await contentsCollection.findOne({
+      _id: new ObjectId(contentId),
+      userId: session.user.id
+    });
+
+    if (!content) {
+      throw new Error('Content not found or you do not have permission to access it');
+    }
+
+    // Create lesson document
+    const lessonDocument = {
+      teacherId: new ObjectId(session.user.id),
+      contentId: new ObjectId(contentId), // Reference to content instead of assessment
+      title: lessonData.title || `${content.title || content.topic} - Lesson`,
+      subject: content.subject,
+      grade: content.grade,
+      topic: content.topic,
+      contentData: content.generatedContent, // Store the generated content
+      lessonDescription: lessonData.lessonDescription || `Lesson based on content: ${content.title || content.topic}`,
+      learningObjectives: lessonData.learningObjectives || content.objective || '',
+      duration: 30, // Default duration for content-based lessons
+      difficulty: 'Medium', // Default difficulty
+      language: content.language,
+      contentType: content.contentType, // Store the original content type
+      metadata: {
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        tags: [content.subject, content.grade, content.contentType],
+        isPublic: lessonData.isPublic || false,
+        viewCount: 0,
+        completionCount: 0
+      },
+      status: 'published'
+    };
+
+    const result = await lessonsCollection.insertOne(lessonDocument);
+
+    return {
+      success: true,
+      lessonId: result.insertedId.toString(),
+      message: 'Content added to lesson successfully!'
+    };
+  } catch (error) {
+    console.error('Error adding content to lesson:', error);
+    throw new Error(error.message || 'Failed to add content to lesson');
+  }
+}
+
+export async function getTeacherLessons() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const lessonsCollection = db.collection('lessons');
+
+    const lessons = await lessonsCollection
+      .find({ teacherId: new ObjectId(session.user.id) })
+      .sort({ 'metadata.createdAt': -1 })
+      .toArray();
+
+    const transformedLessons = lessons.map(lesson => ({
+      id: lesson._id.toString(),
+      teacherId: lesson.teacherId.toString(),
+      contentId: lesson.contentId?.toString() || lesson.assessmentId?.toString(),
+      title: lesson.title,
+      subject: lesson.subject,
+      grade: lesson.grade,
+      topic: lesson.topic,
+      contentData: lesson.contentData || lesson.assessmentContent,
+      lessonDescription: lesson.lessonDescription,
+      learningObjectives: lesson.learningObjectives,
+      duration: lesson.duration,
+      difficulty: lesson.difficulty,
+      language: lesson.language,
+      contentType: lesson.contentType || 'lesson',
+      metadata: {
+        ...lesson.metadata,
+        createdAt: lesson.metadata.createdAt.toISOString(),
+        updatedAt: lesson.metadata.updatedAt.toISOString()
+      },
+      status: lesson.status
+    }));
+
+    return transformedLessons;
+  } catch (error) {
+    console.error('Error fetching teacher lessons:', error);
+    throw new Error('Failed to fetch lessons');
+  }
+}
+
+export async function updateLesson(lessonId, updateData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const lessonsCollection = db.collection('lessons');
+
+    const updateDocument = {
+      ...updateData,
+      'metadata.updatedAt': new Date()
+    };
+
+    const result = await lessonsCollection.updateOne(
+      {
+        _id: new ObjectId(lessonId),
+        teacherId: new ObjectId(session.user.id)
+      },
+      { $set: updateDocument }
+    );
+
+    if (result.matchedCount === 0) {
+      throw new Error('Lesson not found or access denied');
+    }
+
+    return {
+      success: true,
+      message: 'Lesson updated successfully!'
+    };
+  } catch (error) {
+    console.error('Error updating lesson:', error);
+    throw new Error(error.message || 'Failed to update lesson');
+  }
+}
+
+export async function deleteLesson(lessonId) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const lessonsCollection = db.collection('lessons');
+
+    const result = await lessonsCollection.deleteOne({
+      _id: new ObjectId(lessonId),
+      teacherId: new ObjectId(session.user.id)
+    });
+
+    if (result.deletedCount === 0) {
+      throw new Error('Lesson not found or access denied');
+    }
+
+    return {
+      success: true,
+      message: 'Lesson deleted successfully!'
+    };
+  } catch (error) {
+    console.error('Error deleting lesson:', error);
+    throw new Error(error.message || 'Failed to delete lesson');
+  }
+}

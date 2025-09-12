@@ -384,4 +384,260 @@ export async function getUserAssignedGradesAndSubjects() {
   }
 }
 
+// Lesson CRUD operations
+export async function addAssessmentToLesson(assessmentId, lessonData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const assessmentsCollection = db.collection('assessments');
+    const lessonsCollection = db.collection('lessons');
+
+    // Check if lesson already exists for this assessment
+    const existingLesson = await lessonsCollection.findOne({
+      teacherId: new ObjectId(session.user.id),
+      assessmentId: new ObjectId(assessmentId)
+    });
+
+    if (existingLesson) {
+      return {
+        success: false,
+        error: 'This assessment has already been added to a lesson',
+        existingLessonId: existingLesson._id.toString(),
+        message: 'A lesson for this assessment already exists'
+      };
+    }
+
+    // Get the assessment
+    const assessment = await assessmentsCollection.findOne({
+      _id: new ObjectId(assessmentId),
+      userId: new ObjectId(session.user.id)
+    });
+
+    if (!assessment) {
+      throw new Error('Assessment not found or you do not have permission to access it');
+    }
+
+    // Create lesson document
+    const lessonDocument = {
+      teacherId: new ObjectId(session.user.id),
+      assessmentId: new ObjectId(assessmentId),
+      title: lessonData.title || `${assessment.title} - Lesson`,
+      subject: assessment.subject,
+      grade: assessment.grade,
+      topic: assessment.topic,
+      assessmentContent: assessment.generatedContent,
+      lessonDescription: lessonData.lessonDescription || `Lesson based on assessment: ${assessment.title}`,
+      learningObjectives: lessonData.learningObjectives || assessment.learningObjectives || '',
+      duration: assessment.duration,
+      difficulty: assessment.difficulty,
+      language: assessment.language,
+      metadata: {
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        tags: [assessment.subject, assessment.grade, assessment.difficulty],
+        isPublic: lessonData.isPublic || false,
+        viewCount: 0,
+        completionCount: 0
+      },
+      status: 'published'
+    };
+
+    const result = await lessonsCollection.insertOne(lessonDocument);
+
+    return {
+      success: true,
+      lessonId: result.insertedId.toString(),
+      message: 'Assessment added to lesson successfully!'
+    };
+  } catch (error) {
+    console.error('Error adding assessment to lesson:', error);
+    throw new Error(error.message || 'Failed to add assessment to lesson');
+  }
+}
+
+export async function getTeacherLessons() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const lessonsCollection = db.collection('lessons');
+
+    const lessons = await lessonsCollection
+      .find({ teacherId: new ObjectId(session.user.id) })
+      .sort({ 'metadata.createdAt': -1 })
+      .toArray();
+
+    const transformedLessons = lessons.map(lesson => ({
+      id: lesson._id.toString(),
+      teacherId: lesson.teacherId.toString(),
+      assessmentId: lesson.assessmentId.toString(),
+      title: lesson.title,
+      subject: lesson.subject,
+      grade: lesson.grade,
+      topic: lesson.topic,
+      assessmentContent: lesson.assessmentContent,
+      lessonDescription: lesson.lessonDescription,
+      learningObjectives: lesson.learningObjectives,
+      duration: lesson.duration,
+      difficulty: lesson.difficulty,
+      language: lesson.language,
+      metadata: {
+        ...lesson.metadata,
+        createdAt: lesson.metadata.createdAt.toISOString(),
+        updatedAt: lesson.metadata.updatedAt.toISOString()
+      },
+      status: lesson.status
+    }));
+
+    return transformedLessons;
+  } catch (error) {
+    console.error('Error fetching teacher lessons:', error);
+    throw new Error('Failed to fetch lessons');
+  }
+}
+
+export async function updateLesson(lessonId, updateData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const lessonsCollection = db.collection('lessons');
+
+    const updateDocument = {
+      ...updateData,
+      'metadata.updatedAt': new Date()
+    };
+
+    const result = await lessonsCollection.updateOne(
+      {
+        _id: new ObjectId(lessonId),
+        teacherId: new ObjectId(session.user.id)
+      },
+      { $set: updateDocument }
+    );
+
+    if (result.matchedCount === 0) {
+      throw new Error('Lesson not found or access denied');
+    }
+
+    revalidatePath('/teacher/assessment-builder');
+
+    return {
+      success: true,
+      message: 'Lesson updated successfully!'
+    };
+  } catch (error) {
+    console.error('Error updating lesson:', error);
+    throw new Error(error.message || 'Failed to update lesson');
+  }
+}
+
+export async function deleteLesson(lessonId) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const lessonsCollection = db.collection('lessons');
+
+    const result = await lessonsCollection.deleteOne({
+      _id: new ObjectId(lessonId),
+      teacherId: new ObjectId(session.user.id)
+    });
+
+    if (result.deletedCount === 0) {
+      throw new Error('Lesson not found or access denied');
+    }
+
+    revalidatePath('/teacher/assessment-builder');
+
+    return {
+      success: true,
+      message: 'Lesson deleted successfully!'
+    };
+  } catch (error) {
+    console.error('Error deleting lesson:', error);
+    throw new Error(error.message || 'Failed to delete lesson');
+  }
+}
+
+// Get lessons for students based on their grade
+export async function getStudentLessons() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const usersCollection = db.collection('user');
+    const lessonsCollection = db.collection('lessons');
+
+    // Get student's grade
+    const user = await usersCollection.findOne({ _id: new ObjectId(session.user.id) });
+    
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (!user.grades || user.grades.length === 0) {
+      return {
+        success: false,
+        error: 'No grade assigned. Please contact administration to add your grade.',
+        lessons: []
+      };
+    }
+
+    // Get lessons for the student's grade
+    const lessons = await lessonsCollection
+      .find({ 
+        grade: { $in: user.grades },
+        status: 'published'
+      })
+      .sort({ 'metadata.createdAt': -1 })
+      .toArray();
+
+    const transformedLessons = lessons.map(lesson => ({
+      id: lesson._id.toString(),
+      teacherId: lesson.teacherId.toString(),
+      title: lesson.title,
+      subject: lesson.subject,
+      grade: lesson.grade,
+      topic: lesson.topic,
+      assessmentContent: lesson.assessmentContent,
+      lessonDescription: lesson.lessonDescription,
+      learningObjectives: lesson.learningObjectives,
+      duration: lesson.duration,
+      difficulty: lesson.difficulty,
+      language: lesson.language,
+      metadata: {
+        ...lesson.metadata,
+        createdAt: lesson.metadata.createdAt.toISOString(),
+        updatedAt: lesson.metadata.updatedAt.toISOString()
+      },
+      status: lesson.status
+    }));
+
+    return {
+      success: true,
+      lessons: transformedLessons
+    };
+  } catch (error) {
+    console.error('Error fetching student lessons:', error);
+    throw new Error(error.message || 'Failed to fetch lessons');
+  }
+}
+
 

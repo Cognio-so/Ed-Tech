@@ -6,6 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { 
   FileText, 
   Presentation, 
@@ -18,12 +22,15 @@ import {
   Eye,
   Download,
   Trash2,
-  Search as SearchIcon
+  Search as SearchIcon,
+  BookmarkPlus,
+  Loader2
 } from "lucide-react";
 import { toast } from "sonner";
-import { getAllLibraryContent, deleteLibraryContent } from "./action";
+import { getAllLibraryContent, deleteLibraryContent, addContentToLesson } from "./action";
 import { authClient } from "@/lib/auth-client";
 import LibraryDialog from "@/components/ui/library-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Content type configurations
 const contentTypes = {
@@ -46,6 +53,18 @@ export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   const [previewDialog, setPreviewDialog] = useState({ open: false, item: null });
+  
+  // Add lesson-related state
+  const [addToLessonDialog, setAddToLessonDialog] = useState(false);
+  const [selectedContentForLesson, setSelectedContentForLesson] = useState(null);
+  const [isAddingToLesson, setIsAddingToLesson] = useState(false);
+  const [lessonFormData, setLessonFormData] = useState({
+    title: '',
+    lessonDescription: '',
+    learningObjectives: '',
+    grade: '',
+    isPublic: false
+  });
 
   // Get user session
   useEffect(() => {
@@ -131,6 +150,66 @@ export default function LibraryPage() {
 
   const handlePreview = (item) => {
     setPreviewDialog({ open: true, item });
+  };
+
+  // Add lesson handlers
+  const handleAddToLesson = async (item) => {
+    setSelectedContentForLesson(item);
+    setLessonFormData({
+      title: `${item.title || item.topic || 'Untitled'} - Lesson`,
+      lessonDescription: `Lesson based on ${item.type}: ${item.title || item.topic || 'Untitled'}`,
+      learningObjectives: item.objective || '',
+      grade: item.grade || '', // Keep existing grade if available
+      isPublic: false
+    });
+    setAddToLessonDialog(true);
+  };
+
+  const handleSubmitAddToLesson = async () => {
+    if (!selectedContentForLesson) return;
+
+    setIsAddingToLesson(true);
+    try {
+      const result = await addContentToLesson(
+        selectedContentForLesson._id, 
+        selectedContentForLesson.type, 
+        lessonFormData
+      );
+      
+      if (result.success) {
+        toast.success('Content added to lesson successfully!');
+        setAddToLessonDialog(false);
+        setSelectedContentForLesson(null);
+        setLessonFormData({
+          title: '',
+          lessonDescription: '',
+          learningObjectives: '',
+          grade: '',
+          isPublic: false
+        });
+      } else {
+        // Handle duplicate case
+        if (result.error && result.error.includes('already been added')) {
+          toast.warning('This content has already been added to a lesson!', {
+            description: 'You cannot create duplicate lessons for the same content.',
+            action: {
+              label: 'View Lesson',
+              onClick: () => {
+                // You could add navigation to view the existing lesson here
+                console.log('Existing lesson ID:', result.existingLessonId);
+              }
+            }
+          });
+        } else {
+          toast.error(result.error || 'Failed to add content to lesson');
+        }
+      }
+    } catch (error) {
+      console.error('Error adding content to lesson:', error);
+      toast.error('Failed to add content to lesson');
+    } finally {
+      setIsAddingToLesson(false);
+    }
   };
 
   const formatDate = (dateString) => {
@@ -271,6 +350,15 @@ export default function LibraryPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => handleAddToLesson(item)}
+                          className="h-6 w-6 p-0 hover:bg-purple-100"
+                          title="Add to Lesson"
+                        >
+                          <BookmarkPlus className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => handleDownload(item)}
                           className="h-6 w-6 p-0 hover:bg-green-100"
                           title="Download"
@@ -304,6 +392,112 @@ export default function LibraryPage() {
         onDelete={handleDelete}
         onDownload={handleDownload}
       />
+
+      {/* Add to Lesson Dialog */}
+      <Dialog open={addToLessonDialog} onOpenChange={setAddToLessonDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Content to Lesson</DialogTitle>
+            <DialogDescription>
+              Create a lesson from this content for your students.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="lessonTitle">Lesson Title</Label>
+              <Input
+                id="lessonTitle"
+                value={lessonFormData.title}
+                onChange={(e) => setLessonFormData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Enter lesson title"
+              />
+            </div>
+            
+            {/* Add grade selection for slides and videos */}
+            {(selectedContentForLesson?.type === 'slides' || selectedContentForLesson?.type === 'video') && (
+              <div className="space-y-2">
+                <Label htmlFor="grade">Grade Level</Label>
+                <Select 
+                  value={lessonFormData.grade} 
+                  onValueChange={(value) => setLessonFormData(prev => ({ ...prev, grade: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select grade level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Grade 1</SelectItem>
+                    <SelectItem value="2">Grade 2</SelectItem>
+                    <SelectItem value="3">Grade 3</SelectItem>
+                    <SelectItem value="4">Grade 4</SelectItem>
+                    <SelectItem value="5">Grade 5</SelectItem>
+                    <SelectItem value="6">Grade 6</SelectItem>
+                    <SelectItem value="7">Grade 7</SelectItem>
+                    <SelectItem value="8">Grade 8</SelectItem>
+                    <SelectItem value="9">Grade 9</SelectItem>
+                    <SelectItem value="10">Grade 10</SelectItem>
+                    <SelectItem value="11">Grade 11</SelectItem>
+                    <SelectItem value="12">Grade 12</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <Label htmlFor="lessonDescription">Lesson Description</Label>
+              <Textarea
+                id="lessonDescription"
+                value={lessonFormData.lessonDescription}
+                onChange={(e) => setLessonFormData(prev => ({ ...prev, lessonDescription: e.target.value }))}
+                placeholder="Describe what students will learn"
+                rows={3}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="learningObjectives">Learning Objectives</Label>
+              <Textarea
+                id="learningObjectives"
+                value={lessonFormData.learningObjectives}
+                onChange={(e) => setLessonFormData(prev => ({ ...prev, learningObjectives: e.target.value }))}
+                placeholder="What will students achieve?"
+                rows={3}
+              />
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="isPublic"
+                checked={lessonFormData.isPublic}
+                onCheckedChange={(checked) => setLessonFormData(prev => ({ ...prev, isPublic: checked }))}
+              />
+              <Label htmlFor="isPublic">Make lesson public</Label>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddToLessonDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSubmitAddToLesson} 
+              disabled={isAddingToLesson || (selectedContentForLesson?.type === 'slides' || selectedContentForLesson?.type === 'video' ? !lessonFormData.grade : false)}
+            >
+              {isAddingToLesson ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <BookmarkPlus className="h-4 w-4 mr-2" />
+                  Add to Lesson
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

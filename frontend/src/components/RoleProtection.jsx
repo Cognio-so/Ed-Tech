@@ -1,11 +1,11 @@
 import { getServerSession } from "@/lib/get-session";
 import { redirect } from "next/navigation";
-import { unauthorized } from "@/app/(home)/dashboard/unauthorized";
+import { unauthorized } from "@/app/(home)/student/dashboard/unauthorized";
 
 export default function RoleProtection({ 
   children, 
   allowedRoles, 
-  redirectTo = "/dashboard" 
+  redirectTo = "/student/dashboard" 
 }) {
   return async function ProtectedLayout() {
     const session = await getServerSession();
@@ -25,9 +25,9 @@ export default function RoleProtection({
         case "teacher":
           redirect("/teacher/dashboard");
         case "student":
-          redirect("/dashboard");
+          redirect("/student/dashboard");
         default:
-          redirect("/dashboard");
+          redirect("/sign-in");
       }
     }
     

@@ -216,3 +216,131 @@ export async function deleteLibraryContent(contentId, contentType) {
     };
   }
 }
+
+// Add content to lesson functionality
+export async function addContentToLesson(contentId, contentType, lessonData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const lessonsCollection = db.collection('lessons');
+
+    // Check if lesson already exists for this content
+    const existingLesson = await lessonsCollection.findOne({
+      teacherId: new ObjectId(session.user.id),
+      contentId: new ObjectId(contentId),
+      contentType: contentType
+    });
+
+    if (existingLesson) {
+      return {
+        success: false,
+        error: 'This content has already been added to a lesson',
+        existingLessonId: existingLesson._id.toString(),
+        message: 'A lesson for this content already exists'
+      };
+    }
+
+    // Get the content from the appropriate collection
+    let content;
+    let collectionName;
+    
+    switch (contentType) {
+      case 'content':
+        collectionName = 'contents';
+        content = await db.collection(collectionName).findOne({
+          _id: new ObjectId(contentId),
+          userId: session.user.id
+        });
+        break;
+      case 'slides':
+        collectionName = 'presentations';
+        content = await db.collection(collectionName).findOne({
+          _id: new ObjectId(contentId),
+          userId: session.user.id
+        });
+        break;
+      case 'comic':
+        collectionName = 'comics';
+        content = await db.collection(collectionName).findOne({
+          _id: new ObjectId(contentId),
+          userId: new ObjectId(session.user.id)
+        });
+        break;
+      case 'image':
+        collectionName = 'images';
+        content = await db.collection(collectionName).findOne({
+          _id: new ObjectId(contentId),
+          userId: session.user.id
+        });
+        break;
+      case 'video':
+        collectionName = 'videos';
+        content = await db.collection(collectionName).findOne({
+          _id: new ObjectId(contentId),
+          userId: session.user.id
+        });
+        break;
+      case 'assessment':
+        collectionName = 'assessments';
+        content = await db.collection(collectionName).findOne({
+          _id: new ObjectId(contentId),
+          userId: new ObjectId(session.user.id)
+        });
+        break;
+      case 'websearch':
+        collectionName = 'webSearches';
+        content = await db.collection(collectionName).findOne({
+          _id: new ObjectId(contentId),
+          userId: new ObjectId(session.user.id)
+        });
+        break;
+      default:
+        throw new Error('Invalid content type');
+    }
+
+    if (!content) {
+      throw new Error('Content not found or you do not have permission to access it');
+    }
+
+    // Create lesson document
+    const lessonDocument = {
+      teacherId: new ObjectId(session.user.id),
+      contentId: new ObjectId(contentId),
+      contentType: contentType,
+      title: lessonData.title || `${content.title || content.topic || 'Untitled'} - Lesson`,
+      subject: content.subject || 'General',
+      grade: lessonData.grade || content.grade || 'All', // Use grade from lessonData first
+      topic: content.topic || content.title || 'General Topic',
+      contentData: content.generatedContent || content.content || content.description || '',
+      lessonDescription: lessonData.lessonDescription || `Lesson based on ${contentType}: ${content.title || content.topic || 'Untitled'}`,
+      learningObjectives: lessonData.learningObjectives || '',
+      duration: content.duration || 30,
+      difficulty: content.difficulty || 'Medium',
+      language: content.language || 'english',
+      metadata: {
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        tags: content.metadata?.tags || [],
+        isPublic: lessonData.isPublic || false,
+        viewCount: 0,
+        completionCount: 0
+      },
+      status: 'published'
+    };
+
+    const result = await lessonsCollection.insertOne(lessonDocument);
+
+    return {
+      success: true,
+      lessonId: result.insertedId.toString(),
+      message: 'Content added to lesson successfully!'
+    };
+  } catch (error) {
+    console.error('Error adding content to lesson:', error);
+    throw new Error(error.message || 'Failed to add content to lesson');
+  }
+}

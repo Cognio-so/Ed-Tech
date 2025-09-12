@@ -13,8 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Plus, Trash2, Edit, FileText, Eye, Clock, BookOpen, Save, RefreshCcw } from 'lucide-react';
-import { generateAssessment, deleteAssessment, getAssessments, updateAssessment, getUserAssignedGradesAndSubjects } from './action';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Loader2, Plus, Trash2, Edit, FileText, Eye, Clock, BookOpen, Save, RefreshCcw, BookmarkPlus } from 'lucide-react';
+import { generateAssessment, deleteAssessment, getAssessments, updateAssessment, getUserAssignedGradesAndSubjects, addAssessmentToLesson } from './action';
 import AssessmentPreview from '@/components/assessment-preview';
 import { grade , subject , language } from '@/config/data';   
 
@@ -39,6 +40,15 @@ const AssessmentForm = () => {
   const [userGrades, setUserGrades] = useState([]);
   const [userSubjects, setUserSubjects] = useState([]);
   const [loadingUserData, setLoadingUserData] = useState(true);
+  const [addToLessonDialog, setAddToLessonDialog] = useState(false);
+  const [selectedAssessmentForLesson, setSelectedAssessmentForLesson] = useState(null);
+  const [isAddingToLesson, setIsAddingToLesson] = useState(false);
+  const [lessonFormData, setLessonFormData] = useState({
+    title: '',
+    lessonDescription: '',
+    learningObjectives: '',
+    isPublic: false
+  });
 
   const {
     register,
@@ -326,6 +336,44 @@ const AssessmentForm = () => {
 
   const closePreview = () => {
     setPreviewAssessment(null);
+  };
+
+  const handleAddToLesson = async (assessment) => {
+    setSelectedAssessmentForLesson(assessment);
+    setLessonFormData({
+      title: `${assessment.title} - Lesson`,
+      lessonDescription: `Lesson based on assessment: ${assessment.title}`,
+      learningObjectives: assessment.learningObjectives || '',
+      isPublic: false
+    });
+    setAddToLessonDialog(true);
+  };
+
+  const handleSubmitAddToLesson = async () => {
+    if (!selectedAssessmentForLesson) return;
+
+    setIsAddingToLesson(true);
+    try {
+      const result = await addAssessmentToLesson(selectedAssessmentForLesson.id, lessonFormData);
+      if (result.success) {
+        setSuccess('Assessment added to lesson successfully!');
+        setAddToLessonDialog(false);
+        setSelectedAssessmentForLesson(null);
+        setLessonFormData({
+          title: '',
+          lessonDescription: '',
+          learningObjectives: '',
+          isPublic: false
+        });
+      } else {
+        setError('Failed to add assessment to lesson');
+      }
+    } catch (error) {
+      console.error('Error adding to lesson:', error);
+      setError('Failed to add assessment to lesson');
+    } finally {
+      setIsAddingToLesson(false);
+    }
   };
 
   return (
@@ -838,6 +886,15 @@ const AssessmentForm = () => {
                           <Button
                             size="sm"
                             variant="outline"
+                            onClick={() => handleAddToLesson(assessment)}
+                            className="cursor-pointer text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                          >
+                            <BookmarkPlus className="h-3 w-3 mr-1" />
+                            Add to Lesson
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => handleEdit(assessment)}
                             className="cursor-pointer"
                           >
@@ -919,6 +976,79 @@ const AssessmentForm = () => {
           </div>
         </div>
       )}
+
+      <Dialog open={addToLessonDialog} onOpenChange={setAddToLessonDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Assessment to Lesson</DialogTitle>
+            <DialogDescription>
+              Create a lesson from this assessment for your students.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="lessonTitle">Lesson Title</Label>
+              <Input
+                id="lessonTitle"
+                value={lessonFormData.title}
+                onChange={(e) => setLessonFormData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Enter lesson title"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="lessonDescription">Lesson Description</Label>
+              <Textarea
+                id="lessonDescription"
+                value={lessonFormData.lessonDescription}
+                onChange={(e) => setLessonFormData(prev => ({ ...prev, lessonDescription: e.target.value }))}
+                placeholder="Describe what students will learn"
+                rows={3}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="learningObjectives">Learning Objectives</Label>
+              <Textarea
+                id="learningObjectives"
+                value={lessonFormData.learningObjectives}
+                onChange={(e) => setLessonFormData(prev => ({ ...prev, learningObjectives: e.target.value }))}
+                placeholder="What will students achieve?"
+                rows={3}
+              />
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="isPublic"
+                checked={lessonFormData.isPublic}
+                onCheckedChange={(checked) => setLessonFormData(prev => ({ ...prev, isPublic: checked }))}
+              />
+              <Label htmlFor="isPublic">Make lesson public</Label>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddToLessonDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmitAddToLesson} disabled={isAddingToLesson}>
+              {isAddingToLesson ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <BookmarkPlus className="h-4 w-4 mr-2" />
+                  Add to Lesson
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

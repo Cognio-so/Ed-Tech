@@ -30,6 +30,7 @@ const ImageForm = ({ onImageGenerated }) => {
     const [userGrades, setUserGrades] = useState([]);
     const [userSubjects, setUserSubjects] = useState([]);
     const [loadingUserData, setLoadingUserData] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Fetch user's assigned grades and subjects
     useEffect(() => {
@@ -100,6 +101,11 @@ const ImageForm = ({ onImageGenerated }) => {
                 instructions: formData.instructions,
                 language: formData.language
             };
+
+            // Debug logging to track the grade value
+            console.log('Form data grade:', formData.grade, 'Type:', typeof formData.grade);
+            console.log('Image data gradeLevel:', imageData.gradeLevel, 'Type:', typeof imageData.gradeLevel);
+            console.log('Full imageData being sent:', imageData);
 
             const result = await generateImage(imageData);
 
