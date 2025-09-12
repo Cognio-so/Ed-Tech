@@ -46,7 +46,7 @@ export default function SignInForm() {
       case "teacher":
         return "/teacher/dashboard"
       default:
-        return "/dashboard"; 
+        return "/student/dashboard"; 
     }
   };
 
@@ -58,7 +58,7 @@ export default function SignInForm() {
         email,
         password,
         remember,
-        callbackURL: "/dashboard", 
+        callbackURL: "/student/dashboard", 
       });
       
       if (error) {
