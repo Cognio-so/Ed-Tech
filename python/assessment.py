@@ -2,91 +2,27 @@ import os
 import asyncio
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_qdrant import QdrantVectorStore, RetrievalMode
+import qdrant_client
 from dotenv import load_dotenv
+from prompts import ASSESSMENT_GENERATION_PROMPT_TEMPLATE
 
 load_dotenv()
-google_api_key = os.getenv("GOOGLE_API_KEY")
+# Switched from GOOGLE_API_KEY to OPENAI_API_KEY
+openai_api_key = os.getenv("OPENAI_API_KEY")
 
-SYSTEM_PROMPT = """
-You are an expert AI assistant specialized in creating educational materials. Your task is to generate a set of test questions based on the user-provided schema.
+ASSESSMENT_PROMPT_TEMPLATE = ASSESSMENT_GENERATION_PROMPT_TEMPLATE
 
-Please adhere to the following specifications:
-- **Role:** Act as an experienced teacher designing a test for your students.
-- **Tone:** The tone should be professional, clear, and appropriate for the specified grade level.
-- **Accuracy:** All questions must be factually accurate and directly relevant to the provided topic.
-
-**Test Generation Schema:**
-- **Test Title:** {test_title}
-- **Grade Level:** {grade_level}
-- **Subject:** {subject}
-- **Topic:** {topic}
-- **Assessment Type:** {assessment_type}
-- **Question Types:** {question_types}
-- **Question Distribution:** {question_distribution}
-- **Language:** {language}
-- **Test Duration:** {test_duration}
-- **Number of Questions:** {number_of_questions}
-- **Difficulty Level:** {difficulty_level}
-- **User-Specific Instructions:** {user_prompt}
-
-**CRITICAL OUTPUT FORMAT REQUIREMENTS:**
-
-1. **Question Generation Rules:**
-   - Generate questions numbered as: 1., 2., 3., etc.
-   - For MCQ questions: Provide exactly 4 options labeled A), B), C), D)
-   - For True/False questions: Provide clear statements without options (options will be auto-generated)
-   - For Short Answer questions: Provide clear, direct questions
-   - Each question must be on its own line
-   - Options must be on separate lines immediately after each question
-
-2. **Answer Section Format:**
-   - After all questions, add exactly this separator line: ---
-   - Then add the heading based on language:
-     * If English: **Solutions**
-     * If Arabic: **الحلول**
-   - List each answer as: 1. [Answer], 2. [Answer], etc.
-   - For MCQ: Use letter only (e.g., "1. C")
-   - For True/False: Use "True" or "False" (e.g., "1. True")
-   - For Short Answer: Provide complete answer (e.g., "1. The Treaty of Paris")
-
-3. **Quality Requirements:**
-   - Each question must be clear and unambiguous
-   - All questions must be relevant to the specified topic and grade level
-   - Answers must be factually correct
-   - Language must be appropriate for the target grade level
-   - Follow the exact question distribution if specified
-
-**EXAMPLE OUTPUT FORMAT:**
-
-1. What was the primary cause of the American Revolution?
-A) High taxes without representation
-B) Religious persecution
-C) Territorial disputes
-D) Trade restrictions
-
-2. The Boston Tea Party occurred in 1773. True or False?
-
-3. Explain the significance of the Declaration of Independence.
-
----
-**Solutions**
-1. A
-2. True  
-3. The Declaration of Independence established the thirteen American colonies as independent states and outlined the philosophical foundation for democratic government, including the principles of individual rights and government by consent of the governed.
-
-**STRICT COMPLIANCE REQUIRED:** You must follow this exact format. Any deviation will cause parsing errors in the frontend system.
-"""
-
-def create_question_generation_chain(google_api_key: str, model_name: str = "gemini-1.5-pro-latest"):
+def create_question_generation_chain(openai_api_key: str, model_name: str = "gpt-4o"):
     """
     Creates the LangChain model using LangChain Expression Language (LCEL).
     This function remains synchronous as it's for setup, not I/O.
     """
-    if not google_api_key:
-        raise ValueError("google_api_key is not provided. Please provide a valid key.")
-    prompt_template = ChatPromptTemplate.from_template(SYSTEM_PROMPT)
-    model = ChatGoogleGenerativeAI(model=model_name, temperature=0.7, google_api_key=google_api_key)
+    if not openai_api_key:
+        raise ValueError("openai_api_key is not provided. Please provide a valid key.")
+    prompt_template = ChatPromptTemplate.from_template(ASSESSMENT_PROMPT_TEMPLATE)
+    model = ChatOpenAI(model=model_name, temperature=0.7, openai_api_key=openai_api_key)
     output_parser = StrOutputParser()
     chain = prompt_template | model | output_parser
     return chain
@@ -178,23 +114,74 @@ def get_user_input_from_terminal():
     
     return schema
 
+async def get_curriculum_context_async(schema: dict, embeddings: OpenAIEmbeddings) -> str:
+    """
+    Performs a vector search on the Qdrant collection to find relevant curriculum context.
+    """
+    curriculum_context = "No internal curriculum context was found for this topic."
+    try:
+        print("Initializing Qdrant client for curriculum search...")
+        client = qdrant_client.QdrantClient(
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY"),
+        )
+        vector_store = QdrantVectorStore(
+            client=client,
+            collection_name="School_curriculum",
+            embedding=embeddings,
+            retrieval_mode=RetrievalMode.DENSE
+        )
+
+        vector_search_query = f"Subject: {schema['subject']}, Grade: {schema['grade_level']}, Topic: {schema['topic']}, Instructions: {schema['user_prompt']}"
+        print(f"Performing vector search with query: '{vector_search_query}'")
+        
+        found_docs = await vector_store.asimilarity_search(query=vector_search_query, k=20)
+        
+        if found_docs:
+            print(f"Found {len(found_docs)} relevant documents in the curriculum.")
+            context_parts = ["Relevant information from the school curriculum was found. Use this to guide your content:\n\n"]
+            for doc in found_docs:
+                context_parts.append(f"---\n{doc.page_content}\n---\n\n")
+            curriculum_context = "".join(context_parts)
+        else:
+            print("Warning: No relevant documents found in the curriculum vector store.")
+    except Exception as e:
+        print(f"Warning: An error occurred during Qdrant vector search: {e}. Proceeding without curriculum context.")
+        curriculum_context = f"Vector search for curriculum failed with an error: {e}. Rely on general knowledge."
+    
+    return curriculum_context
+
 async def main_cli_async():
     """
     Main async function to run the question generation model from the command line.
     """
     load_dotenv()
     try:
-        api_key = os.environ.get("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError("GOOGLE_API_KEY environment variable not set. Please set it in a .env file.")
+        # Check for all required environment variables
+        required_keys = ["OPENAI_API_KEY", "QDRANT_URL", "QDRANT_API_KEY"]
+        if not all(os.getenv(key) for key in required_keys):
+            raise ValueError(f"One or more required environment variables are not set. Please set them in a .env file: {', '.join(required_keys)}")
 
-        question_chain = create_question_generation_chain(api_key) 
+        api_key = os.environ.get("OPENAI_API_KEY")
+        
+        # Get user input for the test
         user_schema = get_user_input_from_terminal()
         
+        # Initialize embeddings for vector search
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
+
+        # Fetch curriculum context from Qdrant
+        curriculum_context = await get_curriculum_context_async(user_schema, embeddings)
+        user_schema['curriculum_context'] = curriculum_context
+
+        # Create the generation chain
+        question_chain = create_question_generation_chain(api_key) 
+        
         print("\n" + "="*50)
-        print("Generating questions based on your specifications. Please wait...")
+        print("Generating questions based on your specifications and curriculum data. Please wait...")
         print("="*50 + "\n")
         
+        # Generate the test content
         generated_content = await generate_test_questions_async(question_chain, user_schema)
         
         print("--- Generated Test Questions ---")

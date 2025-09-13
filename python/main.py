@@ -33,7 +33,7 @@ from AI_tutor import TeacherAsyncRAGTutor, TeacherRAGTutorConfig
 
 
 # Assessment generation imports
-from assessment import create_question_generation_chain, generate_test_questions_async
+from assessment import create_question_generation_chain, generate_test_questions_async, get_curriculum_context_async
 
 # Teaching content generation imports
 from teaching_content_generation import run_generation_pipeline_async as generate_teaching_content
@@ -61,6 +61,9 @@ except Exception as e:
 
 # Import the cloud storage manager
 from storage import CloudflareR2Storage
+from langchain_openai import OpenAIEmbeddings
+from langchain_qdrant import QdrantVectorStore
+import qdrant_client
 
 
 # --- FastAPI App Initialization ---
@@ -97,14 +100,16 @@ try:
     image_generator = ImageGenerator()
     
     # Initialize assessment chain
-    google_api_key = os.getenv("GOOGLE_API_KEY")
-    if google_api_key:
-        assessment_chain = create_question_generation_chain(google_api_key)
-        logger.info("✅ Assessment chain initialized successfully.")
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if openai_api_key:
+        assessment_chain = create_question_generation_chain(openai_api_key)
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=openai_api_key)
+        logger.info("✅ Assessment chain and embeddings initialized successfully.")
     else:
         assessment_chain = None
-        logger.warning("⚠️ Google API key not found. Assessment functionality will be limited.")
-    
+        embeddings = None
+        logger.warning("⚠️ OpenAI API key not found. Assessment functionality will be limited.")
+
     logger.info("✅ All global components initialized successfully.")
 except Exception as e:
     logger.error(f"❌ Error initializing global components: {e}", exc_info=True)
@@ -523,7 +528,7 @@ async def chatbot_endpoint(request: ChatbotRequest):
     try:
         logger.info(f"Chatbot endpoint called with session_id: {request.session_id}")
         logger.info(f"Query: {request.query}")
-        logger.info(f"Student data: {request.student_data}")
+        # logger.info(f"Student data: {request.student_data}")
         
         session_id = request.session_id
         
@@ -579,7 +584,6 @@ async def chatbot_endpoint(request: ChatbotRequest):
             
             Student Query: {request.query}
             
-            Consider their grade level ({student_data.grade}) and adapt your explanations accordingly.
             """
             
             logger.info(f"Enhanced query with student data for {student_data.name} (Grade {student_data.grade})")
@@ -765,6 +769,15 @@ async def assessment_endpoint(schema: AssessmentSchema):
     try:
         # Convert the schema to dict for processing
         schema_dict = schema.model_dump()
+
+        if embeddings:
+            logger.info("Fetching curriculum context for the assessment...")
+            curriculum_context = await get_curriculum_context_async(schema_dict, embeddings)
+            schema_dict['curriculum_context'] = curriculum_context
+            logger.info("Curriculum context fetched and added to the schema.")
+        else:
+            logger.warning("Embeddings not initialized, skipping curriculum context search.")
+            schema_dict['curriculum_context'] = "Curriculum context search was skipped because the required API key is not configured."
         
         # Validate and process mixed question types
         if schema.assessment_type == "Mixed" and schema.question_types and schema.question_distribution:

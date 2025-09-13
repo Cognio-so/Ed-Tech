@@ -30,7 +30,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 # Add error handling for Qdrant imports
 try:
-    from langchain_qdrant import QdrantVectorStore
+    from langchain_qdrant import QdrantVectorStore, RetrievalMode
     from qdrant_client import QdrantClient, models
     from qdrant_client.models import Distance, VectorParams, PointStruct
     QDRANT_AVAILABLE = True
@@ -71,6 +71,13 @@ from media_toolkit.image_generation_model import ImageGenerator
 
 # Add import for LangGraph streaming
 from langgraph.config import get_stream_writer
+
+from prompts import (
+    TEACHER_INITIAL_SYSTEM_PROMPT,
+    TEACHER_FOLLOW_UP_SYSTEM_PROMPT,
+    TEACHER_REPHRASE_PROMPT_TEMPLATE,
+    TEACHER_ROUTER_PROMPT_MESSAGES
+)
 
 # Define the orchestrator state
 class OrchestratorState(TypedDict):
@@ -129,7 +136,7 @@ QDRANT_VECTOR_PARAMS = VectorParams(size=1536, distance=Distance.COSINE)
 CONTENT_PAYLOAD_KEY = "page_content"
 METADATA_PAYLOAD_KEY = "metadata"
 
-default_qdrant_url = os.getenv("QDRANT_URL", "https://10067e95-a74b-4089-8dc9-db01db8d01f5.eu-west-2-0.aws.cloud.qdrant.io:6333")
+default_qdrant_url = os.getenv("QDRANT_URL", "https://759265fb-473c-487f-812a-298faad28a2e.europe-west3-0.gcp.cloud.qdrant.io:6333")
 default_qdrant_api_key = os.getenv("QDRANT_API_KEY")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -190,8 +197,7 @@ class VectorStoreManager:
             logging.info(f"VectorStoreManager: Creating QdrantClient with url={self.config.qdrant_url}")
             self.qdrant_client = QdrantClient(
                 url=self.config.qdrant_url, 
-                api_key=self.config.qdrant_api_key,
-                timeout=20.0
+                api_key=self.config.qdrant_api_key
             )
             logging.info("VectorStoreManager: QdrantClient created successfully")
         else:
@@ -310,56 +316,9 @@ class TeacherRAGTutorConfig:
     qdrant_collection_name: Optional[str] = None
     web_search_enabled: bool = True
     
-    # MODIFICATION: Split the system prompt into initial and follow-up versions.
-    initial_system_prompt: str = """You are an expert AI Assistant for educators. Your primary role is to support teachers by analyzing student performance data, enhancing lesson materials, and providing pedagogical insights.
-**Teaching Data Schema:**
-{teaching_data}
+    teacher_initial_system_prompt: str = TEACHER_INITIAL_SYSTEM_PROMPT
 
-**Your Core Functions & Persona:**
-- **Data Analyst**: When asked, analyze the `student_details_with_reports` to identify learning patterns, strengths, and weaknesses. Pinpoint which students are struggling in specific subjects based on their scores or reports.
-- **Content Co-creator**: When the teacher uploads or provides `generated_content` (e.g., lesson plans, worksheets, presentations), help them enhance it. You can suggest improvements, add examples, simplify complex topics, or create new content based on their request. Use the `knowledge_base_retriever` tool to access uploaded documents.
-- **Pedagogical Partner**: Be a supportive and insightful partner. Offer teaching strategies, ways to explain difficult concepts, and ideas for engaging classroom activities.
-- **Professional & Efficient**: Maintain a professional and helpful tone. Your goal is to be a valuable and time-saving tool for the teacher.
-
-**How to Interact:**
-1.  **First Message Only**: Greet the teacher by their name. Briefly summarize your capabilities based on the provided student data. For example: "Hello, [Teacher Name]. I'm ready to assist. I have the reports for your students and can help you analyze their performance or refine your lesson materials. How can I help you today?"
-2.  **Analyzing Student Data**: When asked a question like "Who is struggling in Math?", parse the `student_details_with_reports`. Provide a clear, concise summary. For example: "Based on the reports, it appears that [Student A] and [Student C] are finding Math challenging, with scores below the class average."
-3.  **Enhancing Content**: If the teacher asks to improve or explain an uploaded document (`generated_content`), use the `knowledge_base_retriever` to access its content and provide specific, actionable feedback.
-4.  **Tool Usage**:
-    - **`knowledge_base_retriever`**: Your primary tool for accessing the content of documents the teacher has uploaded (their `generated_content`).
-    - **`websearch_tool`**: Use to find new information, real-world examples, or educational resources to supplement the teacher's materials, always display its favicon. for explaining user in much more detail, you MUST display the link to explain in more detailed manner. Format the citations at the end of your response. For each citation, include the favicon, the title of the page, and the URL.
-    - **Conversation**: Use for simple acknowledgements or to structure your main response.
-
-Your ultimate goal is to empower the teacher to be more effective and efficient.
-
-**🕒 Current Time**: {current_time}
-"""
-
-    follow_up_system_prompt: str = """You are an expert AI Assistant for educators. Your primary role is to support teachers by analyzing student performance data, enhancing lesson materials, and providing pedagogical insights.
-
-** reply in the language in which teacher interact **
-**Teaching Data Schema:**
-{teaching_data}
-
-**Your Core Functions & Persona:**
-- **Data Analyst**: When asked, analyze the `student_details_with_reports` to identify learning patterns, strengths, and weaknesses. Pinpoint which students are struggling in specific subjects based on their scores or reports.
-- **Content Co-creator**: When the teacher uploads or provides `generated_content` (e.g., lesson plans, worksheets, presentations), help them enhance it. You can suggest improvements, add examples, simplify complex topics, or create new content based on their request. Use the `knowledge_base_retriever` tool to access uploaded documents.
-- **Pedagogical Partner**: Be a supportive and insightful partner. Offer teaching strategies, ways to explain difficult concepts, and ideas for engaging classroom activities.
-- **Professional & Efficient**: Maintain a professional and helpful tone. Your goal is to be a valuable and time-saving tool for the teacher.
-
-**How to Interact:**
-1.  **Get Straight to the Point**: Do NOT greet the teacher. Directly address their request in a professional and helpful manner.
-2.  **Analyzing Student Data**: When asked a question like "Who is struggling in Math?", parse the `student_details_with_reports`. Provide a clear, concise summary. For example: "Based on the reports, it appears that [Student A] and [Student C] are finding Math challenging, with scores below the class average."
-3.  **Enhancing Content**: If the teacher asks to improve or explain an uploaded document (`generated_content`), use the `knowledge_base_retriever` to access its content and provide specific, actionable feedback.
-4.  **Tool Usage**:
-    - **`knowledge_base_retriever`**: Your primary tool for accessing the content of documents the teacher has uploaded (their `generated_content`).
-    - **`websearch_tool`**: Use to find new information, real-world examples, or educational resources to supplement the teacher's materials, always display its favicon. for explaining user in much more detail, you MUST display the video link to explain in more detailed manner. Format the citations at the end of your response. For each citation, include the favicon, the title of the page, and the URL.
-    - **Conversation**: Use for simple acknowledgements or to structure your main response.
-
-Your ultimate goal is to empower the teacher to be more effective and efficient.
-
-**🕒 Current Time**: {current_time}
-"""
+    teacher_follow_up_system_prompt: str = TEACHER_FOLLOW_UP_SYSTEM_PROMPT
 
     @classmethod
     def from_env(cls) -> 'TeacherRAGTutorConfig':
@@ -372,6 +331,9 @@ class TeacherAsyncRAGTutor:
 
         unique_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
         self.config.qdrant_collection_name = f"rag_session_{unique_id}"
+
+        self.turn_count = 0
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.config.max_workers)
         logging.info(f"Initialized new tutor instance with collection: {self.config.qdrant_collection_name}")
 
         try:
@@ -442,65 +404,69 @@ class TeacherAsyncRAGTutor:
         self.short_responses = ["ok", "okay", "thanks", "thank you", "great", "good", "cool","hello", "hi", "hey", "greetings", "yo", "sup", "good morning", "good afternoon", "good evening"]
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.config.max_workers)
 
-        self.rephrase_prompt = PromptTemplate.from_template(
-            """Given a chat history and a follow-up question, rephrase the follow-up question into a clear, standalone instruction.
-
-**Instructions:**
-1.  **Handle Conversational Fillers First:** If the `Follow-up Question` is a simple, common conversational phrase (e.g., "okay", "great", "thanks"), your most important task is to return it **UNCHANGED**. This rule overrides all others.
-
-2.  **Handle Visual Follow-ups:** If the `Follow-up Question` is a request for a visual representation (e.g., "explain with a diagram," "can you draw that?," "show me a chart", "generate an image"), you MUST combine it with the main topic from the `Chat History` to create a complete, actionable command for an image generator.
-    - **Example 1:**
-        - Chat History: User: "What is the water cycle?"
-        - Follow-up Question: "Can you explain it with a diagram?"
-        - Standalone Question: "Generate a diagram that explains the water cycle."
-    - **Example 2:**
-        - Chat History: AI: "Let's focus on helping you strengthen your understanding of linear equations in two variables..."
-        - Follow-up Question: "generate an image"
-        - Standalone Question: "Generate an image that explains linear equations in two variables for a 10th-grade student."
-
-3.  **Handle Uploaded Files:** If the question is NOT a filler or a visual follow-up AND the `Chat History` contains a `System Note` listing uploaded files, you MUST rewrite the `Follow-up Question` to be specifically about those files, including the filename(s).
-    - **Example for documents:**
-        - System Note: The user has just uploaded 'homework_chapter_3.pdf'.
-        - Follow-up Question: can you explain this?
-        - Standalone Question: Can you explain the content of the document 'homework_chapter_3.pdf'?
-
-4.  **General Rephrasing:** If the question is not covered by the rules above, use the chat history to create a clear, standalone question. If the original question is already perfectly standalone, return it as is.
-
- Chat History:
- {chat_history}
- 
- Follow-up Question: {question}
- 
- Standalone Question:"""
-        )
-        self.rephrase_chain = self.rephrase_prompt | self.llm | StrOutputParser()
+        self.teacher_rephrase_prompt = PromptTemplate.from_template(TEACHER_REPHRASE_PROMPT_TEMPLATE)
+        self.rephrase_chain = self.teacher_rephrase_prompt | self.llm | StrOutputParser()
         
         # Router prompt for the orchestrator
-        self.router_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an intelligent router that determines which action to take based on user input.
-            
-ONLY respond with one of the following options:
-1. "use_llm_with_tools" - Use this when the user is asking a question that can be answered with standard tools like knowledge base retrieval, web search, or conversation.
-2. "generate_image" - Use this ONLY when the user explicitly asks to generate or create an image, diagram, chart, or visual representation.
-
-For image generation requests, you MUST extract and return the following parameters:
-- topic: The main subject of the image
-- grade_level: Educational level (e.g., "elementary", "middle school", "high school") 
-- preferred_visual_type: Type of visual (e.g., "diagram", "chart", "infographic")
-- subject: Academic subject (e.g., "biology", "physics")
-- language: Language for text (default to "English" if not specified)
-- instructions: Specific requirements for the image
-- difficulty_flag: Set to "true" for advanced visuals, "false" for simpler ones (default to "false")
-
-IMPORTANT: For image generation requests, return your decision as a valid JSON object with two keys:
-1. "action": "generate_image"
-2. "parameters": {{ all the extracted parameters as described above }}
-
-For regular queries that don't need image generation, simply respond with "use_llm_with_tools"."""),
+        self.teacher_router_prompt = ChatPromptTemplate.from_messages([
+            ("system", TEACHER_ROUTER_PROMPT_MESSAGES),
             ("human", "{input}")
         ])
         
-        self.router_chain = self.router_prompt | self.llm | StrOutputParser()
+        self.router_chain = self.teacher_router_prompt | self.llm | StrOutputParser()
+
+    @async_error_handler
+    async def _search_curriculum_async(self, query: str, teaching_data: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Searches the 'School_curriculum' Qdrant collection to retrieve relevant context.
+        """
+        logger = logging.getLogger(__name__)
+        if not QDRANT_AVAILABLE:
+            logger.warning("Qdrant not available, skipping curriculum search.")
+            return "Curriculum search is currently unavailable."
+
+        try:
+
+            curriculum_embedding_model = "text-embedding-3-large"
+
+            logger.info("Initializing Qdrant client for curriculum search.")
+            
+            # Initialize components for the search
+            client = QdrantClient(
+                url=self.config.qdrant_url, 
+                api_key=self.config.qdrant_api_key
+            )
+            
+            embeddings = OpenAIEmbeddings(
+                model=curriculum_embedding_model,
+                openai_api_key=self.config.openai_api_key
+            )
+            
+            vector_store = QdrantVectorStore(
+                client=client,
+                collection_name="School_curriculum",
+                embedding=embeddings,
+                retrieval_mode=RetrievalMode.DENSE
+            )
+
+            search_query = query
+            logger.info(f"Performing curriculum vector search with query: '{search_query}'")
+            
+            found_docs = await vector_store.asimilarity_search(query=search_query, k=10)
+            
+            if found_docs:
+                logger.info(f"Found {len(found_docs)} relevant documents in the curriculum.")
+                # Format documents for the prompt context
+                curriculum_context = "Relevant information from the school curriculum was found. Use this as the primary source for your answer:\n\n"
+                curriculum_context += "\n\n".join(f"--- Curriculum Snippet ---\n{doc.page_content}\n---" for doc in found_docs)
+                return curriculum_context
+            else:
+                logger.warning("No relevant documents found in the 'School_curriculum' collection.")
+                return "No specific information was found in the school curriculum for this topic. Please answer based on your general knowledge."
+
+        except Exception as e:
+            logger.error(f"An error occurred during Qdrant curriculum search: {e}", exc_info=True)
+            return f"Curriculum search failed with an error: {e}. Please answer based on your general knowledge."
 
     @async_error_handler
     async def clear_knowledge_base_async(self):
@@ -832,7 +798,6 @@ For regular queries that don't need image generation, simply respond with "use_l
         return []
 
     @async_error_handler
-    # MODIFICATION: Added 'history' parameter to the method signature
     async def _agent_executor_stream_async(self, query: str, formatted_time: str, image_path: Optional[str] = None, is_knowledge_base_ready: bool = False, teaching_data: Optional[Dict[str, Any]] = None, history: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
         """Private method to invoke the tool-enabled LLM with a finalized query."""
         teaching_data_str = "No teaching data provided. Please provide teacher name and student reports for analysis."
@@ -842,16 +807,21 @@ For regular queries that don't need image generation, simply respond with "use_l
             except TypeError:
                 teaching_data_str = str(teaching_data)
 
-        if history:
-            system_prompt_template = self.config.follow_up_system_prompt
+        # Search curriculum before generating the prompt
+        curriculum_context = await self._search_curriculum_async(query, teaching_data)
+
+        # CLEANUP: Removed the redundant logic. The check on turn_count is sufficient.
+        if self.turn_count > 1:
+            system_prompt_template = self.config.teacher_follow_up_system_prompt
             logging.info("Using follow-up system prompt for teacher.")
         else:
-            system_prompt_template = self.config.initial_system_prompt
+            system_prompt_template = self.config.teacher_initial_system_prompt
             logging.info("Using initial system prompt for teacher.")
 
         system_prompt_text = system_prompt_template.format(
             current_time=formatted_time,
-            teaching_data=teaching_data_str
+            teaching_data=teaching_data_str,
+            curriculum_context=curriculum_context
         )
         
         prompt_notes = []
@@ -1060,6 +1030,8 @@ For regular queries that don't need image generation, simply respond with "use_l
     @async_error_handler
     async def run_agent_async(self, query: str, history: List[Dict[str, Any]], image_storage_key: Optional[str] = None, is_knowledge_base_ready: bool = False, uploaded_files: Optional[List[str]] = None, teaching_data: Optional[Dict[str, Any]] = None) -> AsyncGenerator[str, None]:
         """Run the agent with a query and history, using the orchestrator graph with streaming."""
+
+        self.turn_count += 1 # Increment the turn counter for the session
         formatted_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         rephrased_query = await self._rephrase_query_with_history_async(query, history, uploaded_files)
@@ -1145,7 +1117,8 @@ For regular queries that don't need image generation, simply respond with "use_l
                 content = msg.get("content", "")
                 history_str_parts.append(f"{role}: {content}")
 
-            chat_history_str = "\n".join(history_str_parts)
+            # FIXED: Append history to the system note instead of overwriting.
+            chat_history_str += "\n".join(history_str_parts)
             
             rephrased = await self.rephrase_chain.ainvoke({
                 "chat_history": chat_history_str,
