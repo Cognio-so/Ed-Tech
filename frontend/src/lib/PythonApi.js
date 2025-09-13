@@ -439,6 +439,7 @@ class PythonApiClient {
   async startTeacherVoiceSession(teacherData) {
     const url = `${this.baseUrl.replace('http', 'ws')}/ws/teacher-voice`;
     console.log('Connecting to teacher voice WebSocket:', url);
+    console.log('Teacher data being sent:', teacherData);
     return new WebSocket(url);
   }
 

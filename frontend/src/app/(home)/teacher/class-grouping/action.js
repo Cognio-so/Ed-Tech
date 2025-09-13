@@ -1,135 +1,110 @@
 "use server";
 
 import { connectToDatabase } from "@/lib/db";
-import { authClient } from "@/lib/auth-client";
+import { getServerSession } from "@/lib/get-session";
+import { ObjectId } from "mongodb";
 
-// Mock student data - replace with actual database queries
-const mockStudents = [
-  {
-    _id: "1",
-    name: "Alice Johnson",
-    email: "alice.johnson@school.edu",
-    grade: "Grade 9",
-    subject: "Mathematics",
-    performance: {
-      overall: 85,
-      assignments: 88,
-      quizzes: 82,
-      participation: 90
-    },
-    attendance: 95,
-    lastActive: "2024-01-15T10:30:00Z",
-    group: "Group A",
-    strengths: ["Problem Solving", "Critical Thinking"],
-    weaknesses: ["Time Management"],
-    notes: "Excellent student, needs help with time management"
-  },
-  {
-    _id: "2",
-    name: "Bob Smith",
-    email: "bob.smith@school.edu",
-    grade: "Grade 9",
-    subject: "Mathematics",
-    performance: {
-      overall: 72,
-      assignments: 75,
-      quizzes: 68,
-      participation: 80
-    },
-    attendance: 88,
-    lastActive: "2024-01-14T14:20:00Z",
-    group: "Group B",
-    strengths: ["Collaboration"],
-    weaknesses: ["Conceptual Understanding", "Test Anxiety"],
-    notes: "Works well in groups, struggles with individual assessments"
-  },
-  {
-    _id: "3",
-    name: "Carol Davis",
-    email: "carol.davis@school.edu",
-    grade: "Grade 10",
-    subject: "Science",
-    performance: {
-      overall: 92,
-      assignments: 95,
-      quizzes: 89,
-      participation: 95
-    },
-    attendance: 98,
-    lastActive: "2024-01-15T09:15:00Z",
-    group: "Group A",
-    strengths: ["Research Skills", "Presentation", "Leadership"],
-    weaknesses: [],
-    notes: "Top performer, can help mentor other students"
-  },
-  {
-    _id: "4",
-    name: "David Wilson",
-    email: "david.wilson@school.edu",
-    grade: "Grade 9",
-    subject: "Mathematics",
-    performance: {
-      overall: 78,
-      assignments: 80,
-      quizzes: 75,
-      participation: 85
-    },
-    attendance: 92,
-    lastActive: "2024-01-13T16:45:00Z",
-    group: "Group C",
-    strengths: ["Creativity", "Communication"],
-    weaknesses: ["Mathematical Concepts"],
-    notes: "Creative thinker, needs more practice with core concepts"
-  },
-  {
-    _id: "5",
-    name: "Emma Brown",
-    email: "emma.brown@school.edu",
-    grade: "Grade 10",
-    subject: "Science",
-    performance: {
-      overall: 88,
-      assignments: 90,
-      quizzes: 85,
-      participation: 92
-    },
-    attendance: 96,
-    lastActive: "2024-01-15T11:30:00Z",
-    group: "Group B",
-    strengths: ["Analytical Thinking", "Lab Work"],
-    weaknesses: ["Written Communication"],
-    notes: "Strong in practical work, needs improvement in written reports"
-  },
-  {
-    _id: "6",
-    name: "Frank Miller",
-    email: "frank.miller@school.edu",
-    grade: "Grade 9",
-    subject: "Mathematics",
-    performance: {
-      overall: 65,
-      assignments: 70,
-      quizzes: 60,
-      participation: 75
-    },
-    attendance: 85,
-    lastActive: "2024-01-12T13:20:00Z",
-    group: "Group C",
-    strengths: ["Effort", "Persistence"],
-    weaknesses: ["Mathematical Foundation", "Confidence"],
-    notes: "Hard worker, needs additional support and confidence building"
+// Helper function to calculate student performance from progress data
+function calculateStudentPerformance(progressData) {
+  if (!progressData || progressData.length === 0) {
+    return {
+      overall: 0,
+      assignments: 0,
+      quizzes: 0,
+      participation: 0
+    };
   }
-];
+
+  const completedWithScores = progressData.filter(p => 
+    p.status === 'completed' && p.completionData?.score !== undefined
+  );
+
+  if (completedWithScores.length === 0) {
+    return {
+      overall: 0,
+      assignments: 0,
+      quizzes: 0,
+      participation: 0
+    };
+  }
+
+  const averageScore = Math.round(
+    completedWithScores.reduce((sum, p) => sum + p.completionData.score, 0) / completedWithScores.length
+  );
+
+  // Calculate different performance metrics based on content type
+  const assignments = progressData.filter(p => p.contentType === 'assessment');
+  const quizzes = progressData.filter(p => p.contentType === 'lesson');
+  const participation = progressData.filter(p => p.contentType === 'content');
+
+  const assignmentScore = assignments.length > 0 ? 
+    Math.round(assignments.reduce((sum, p) => sum + (p.completionData?.score || 0), 0) / assignments.length) : 0;
+  
+  const quizScore = quizzes.length > 0 ? 
+    Math.round(quizzes.reduce((sum, p) => sum + (p.completionData?.score || 0), 0) / quizzes.length) : 0;
+  
+  const participationScore = participation.length > 0 ? 
+    Math.round(participation.reduce((sum, p) => sum + (p.progress?.percentage || 0), 0) / participation.length) : 0;
+
+  return {
+    overall: averageScore,
+    assignments: assignmentScore,
+    quizzes: quizScore,
+    participation: participationScore
+  };
+}
 
 export async function getStudents() {
   try {
-    // In a real application, you would fetch from database
-    // const { db } = await connectToDatabase();
-    // const students = await db.collection('students').find({}).toArray();
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('Unauthorized');
+    }
+
+    const { db } = await connectToDatabase();
     
+    // Get all users with student role
+    const students = await db.collection('user')
+      .find({ role: 'student' })
+      .toArray();
+
+    // Get progress data for all students
+    const studentIds = students.map(s => new ObjectId(s._id));
+    const progressData = await db.collection('studentProgress')
+      .find({ studentId: { $in: studentIds } })
+      .toArray();
+
+    // Group progress data by student
+    const progressByStudent = {};
+    progressData.forEach(progress => {
+      const studentId = progress.studentId.toString();
+      if (!progressByStudent[studentId]) {
+        progressByStudent[studentId] = [];
+      }
+      progressByStudent[studentId].push(progress);
+    });
+
+    // Transform students data with calculated metrics
+    const studentsWithMetrics = students.map(student => {
+      const studentProgress = progressByStudent[student._id.toString()] || [];
+      const performance = calculateStudentPerformance(studentProgress);
+
+      return {
+        _id: student._id.toString(),
+        name: student.name || 'Unknown Student',
+        email: student.email,
+        grades: student.grades || [], // Keep as array
+        subjects: student.subjects || [], // Keep as array
+        performance,
+        lastActive: student.lastLogin || student.createdAt,
+        group: student.group || 'Group A', // Default group assignment
+        notes: student.notes || ''
+      };
+    });
+
     return {
       success: true,
-      students: mockStudents
+      students: studentsWithMetrics
     };
   } catch (error) {
     console.error("Error fetching students:", error);
@@ -142,12 +117,18 @@ export async function getStudents() {
 
 export async function updateStudentGroup(studentId, newGroup) {
   try {
-    // In a real application, you would update the database
-    // const { db } = await connectToDatabase();
-    // await db.collection('students').updateOne(
-    //   { _id: studentId },
-    //   { $set: { group: newGroup } }
-    // );
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('Unauthorized');
+    }
+
+    const { db } = await connectToDatabase();
+    
+    // Update the student's group in the user collection
+    await db.collection('user').updateOne(
+      { _id: new ObjectId(studentId) },
+      { $set: { group: newGroup, updatedAt: new Date() } }
+    );
     
     return {
       success: true,
@@ -164,12 +145,18 @@ export async function updateStudentGroup(studentId, newGroup) {
 
 export async function updateStudentNotes(studentId, notes) {
   try {
-    // In a real application, you would update the database
-    // const { db } = await connectToDatabase();
-    // await db.collection('students').updateOne(
-    //   { _id: studentId },
-    //   { $set: { notes: notes } }
-    // );
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('Unauthorized');
+    }
+
+    const { db } = await connectToDatabase();
+    
+    // Update the student's notes in the user collection
+    await db.collection('user').updateOne(
+      { _id: new ObjectId(studentId) },
+      { $set: { notes: notes, updatedAt: new Date() } }
+    );
     
     return {
       success: true,
@@ -186,26 +173,104 @@ export async function updateStudentNotes(studentId, notes) {
 
 export async function getClassStatistics() {
   try {
-    const students = mockStudents;
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('Unauthorized');
+    }
+
+    const { db } = await connectToDatabase();
     
+    // Get all students with their progress data
+    const students = await db.collection('user')
+      .find({ role: 'student' })
+      .toArray();
+
+    if (students.length === 0) {
+      return {
+        success: true,
+        statistics: {
+          totalStudents: 0,
+          averagePerformance: 0,
+          gradeDistribution: {},
+          groupDistribution: {},
+          performanceRanges: {
+            excellent: 0,
+            good: 0,
+            average: 0,
+            needsImprovement: 0
+          }
+        }
+      };
+    }
+
+    // Get progress data for all students
+    const studentIds = students.map(s => new ObjectId(s._id));
+    const progressData = await db.collection('studentProgress')
+      .find({ studentId: { $in: studentIds } })
+      .toArray();
+
+    // Group progress data by student
+    const progressByStudent = {};
+    progressData.forEach(progress => {
+      const studentId = progress.studentId.toString();
+      if (!progressByStudent[studentId]) {
+        progressByStudent[studentId] = [];
+      }
+      progressByStudent[studentId].push(progress);
+    });
+
+    // Calculate statistics
+    let totalPerformance = 0;
+    let performanceCount = 0;
+
+    const gradeDistribution = {};
+    const groupDistribution = {};
+    const performanceRanges = {
+      excellent: 0,
+      good: 0,
+      average: 0,
+      needsImprovement: 0
+    };
+
+    students.forEach(student => {
+      const studentProgress = progressByStudent[student._id.toString()] || [];
+      const performance = calculateStudentPerformance(studentProgress);
+
+      // Grade distribution - handle grades as array
+      if (student.grades && Array.isArray(student.grades) && student.grades.length > 0) {
+        student.grades.forEach(grade => {
+          gradeDistribution[grade] = (gradeDistribution[grade] || 0) + 1;
+        });
+      }
+
+      // Group distribution
+      const group = student.group || 'Group A';
+      groupDistribution[group] = (groupDistribution[group] || 0) + 1;
+
+      // Performance ranges
+      if (performance.overall >= 90) {
+        performanceRanges.excellent++;
+      } else if (performance.overall >= 80) {
+        performanceRanges.good++;
+      } else if (performance.overall >= 70) {
+        performanceRanges.average++;
+      } else {
+        performanceRanges.needsImprovement++;
+      }
+
+      // Accumulate for averages
+      if (performance.overall > 0) {
+        totalPerformance += performance.overall;
+        performanceCount++;
+      }
+    });
+
     const stats = {
       totalStudents: students.length,
-      averagePerformance: Math.round(students.reduce((sum, s) => sum + s.performance.overall, 0) / students.length),
-      averageAttendance: Math.round(students.reduce((sum, s) => sum + s.attendance, 0) / students.length),
-      gradeDistribution: students.reduce((acc, student) => {
-        acc[student.grade] = (acc[student.grade] || 0) + 1;
-        return acc;
-      }, {}),
-      groupDistribution: students.reduce((acc, student) => {
-        acc[student.group] = (acc[student.group] || 0) + 1;
-        return acc;
-      }, {}),
-      performanceRanges: {
-        excellent: students.filter(s => s.performance.overall >= 90).length,
-        good: students.filter(s => s.performance.overall >= 80 && s.performance.overall < 90).length,
-        average: students.filter(s => s.performance.overall >= 70 && s.performance.overall < 80).length,
-        needsImprovement: students.filter(s => s.performance.overall < 70).length
-      }
+      averagePerformance: performanceCount > 0 ? Math.round(totalPerformance / performanceCount) : 0,
+      gradeDistribution,
+      groupDistribution,
+      performanceRanges
     };
     
     return {

@@ -21,7 +21,17 @@ export async function connectToDatabase() {
   }
 
   try {
-    client = new MongoClient(uri);
+    // Add connection options for better timeout handling
+    const options = {
+      serverSelectionTimeoutMS: 30000, // 30 seconds
+      connectTimeoutMS: 30000, // 30 seconds
+      socketTimeoutMS: 30000, // 30 seconds
+      maxPoolSize: 10, // Maintain up to 10 socket connections
+      retryWrites: true,
+      w: 'majority'
+    };
+
+    client = new MongoClient(uri, options);
     await client.connect();
     db = client.db(dbName);
     

@@ -40,8 +40,6 @@ export default function ClassGroupingPage() {
   const [selectedGrade, setSelectedGrade] = useState("all");
   const [selectedGroup, setSelectedGroup] = useState("all");
   const [activeTab, setActiveTab] = useState("all");
-  const [editingStudent, setEditingStudent] = useState(null);
-  const [editingNotes, setEditingNotes] = useState("");
 
   // Get user session
   useEffect(() => {
@@ -72,14 +70,15 @@ export default function ClassGroupingPage() {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(student => 
         student.name.toLowerCase().includes(query) ||
-        student.email.toLowerCase().includes(query) ||
-        student.subject.toLowerCase().includes(query)
+        student.email.toLowerCase().includes(query)
       );
     }
 
     // Filter by grade
     if (selectedGrade !== "all") {
-      filtered = filtered.filter(student => student.grade === selectedGrade);
+      filtered = filtered.filter(student => 
+        student.grades && student.grades.includes(selectedGrade)
+      );
     }
 
     // Filter by group
@@ -134,35 +133,6 @@ export default function ClassGroupingPage() {
     }
   };
 
-  const handleNotesEdit = (student) => {
-    setEditingStudent(student._id);
-    setEditingNotes(student.notes || "");
-  };
-
-  const handleNotesSave = async (studentId) => {
-    try {
-      const result = await updateStudentNotes(studentId, editingNotes);
-      if (result.success) {
-        setStudents(prev => prev.map(student => 
-          student._id === studentId ? { ...student, notes: editingNotes } : student
-        ));
-        setEditingStudent(null);
-        setEditingNotes("");
-        toast.success("Notes updated successfully");
-      } else {
-        toast.error(result.error || "Failed to update notes");
-      }
-    } catch (error) {
-      console.error("Error updating notes:", error);
-      toast.error("Failed to update notes");
-    }
-  };
-
-  const handleNotesCancel = () => {
-    setEditingStudent(null);
-    setEditingNotes("");
-  };
-
   const getPerformanceColor = (score) => {
     if (score >= 90) return "text-green-600 bg-green-100";
     if (score >= 80) return "text-blue-600 bg-blue-100";
@@ -177,13 +147,6 @@ export default function ClassGroupingPage() {
     return <AlertCircle className="h-4 w-4" />;
   };
 
-  const getAttendanceColor = (attendance) => {
-    if (attendance >= 95) return "text-green-600";
-    if (attendance >= 90) return "text-blue-600";
-    if (attendance >= 85) return "text-yellow-600";
-    return "text-red-600";
-  };
-
   const formatDate = (dateString) => {
     if (!dateString) return "Unknown";
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -195,7 +158,8 @@ export default function ClassGroupingPage() {
   };
 
   const getUniqueGrades = () => {
-    return [...new Set(students.map(student => student.grade))];
+    const allGrades = students.flatMap(student => student.grades || []);
+    return [...new Set(allGrades)];
   };
 
   const getUniqueGroups = () => {
@@ -218,7 +182,7 @@ export default function ClassGroupingPage() {
 
       {/* Statistics Cards */}
       {statistics && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center space-x-2">
@@ -238,18 +202,6 @@ export default function ClassGroupingPage() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Avg Performance</p>
                   <p className="text-2xl font-bold">{statistics.averagePerformance}%</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center space-x-2">
-                <Calendar className="h-5 w-5 text-purple-600" />
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Avg Attendance</p>
-                  <p className="text-2xl font-bold">{statistics.averageAttendance}%</p>
                 </div>
               </div>
             </CardContent>
@@ -354,28 +306,31 @@ export default function ClassGroupingPage() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <p className="text-muted-foreground">Grade</p>
-                      <p className="font-medium">{student.grade}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Subject</p>
-                      <p className="font-medium">{student.subject}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Attendance</p>
-                      <p className={`font-medium ${getAttendanceColor(student.attendance)}`}>
-                        {student.attendance}%
+                      <p className="text-muted-foreground">Grades</p>
+                      <p className="font-medium">
+                        {student.grades && student.grades.length > 0 
+                          ? student.grades.join(', ') 
+                          : "Not Set"
+                        }
                       </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Last Active</p>
                       <p className="font-medium">{formatDate(student.lastActive)}</p>
                     </div>
+                    <div>
+                      <p className="text-muted-foreground">Group</p>
+                      <p className="font-medium">{student.group}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Performance</p>
+                      <p className="font-medium">{student.performance.overall}%</p>
+                    </div>
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium">Group</p>
+                      <p className="text-sm font-medium">Change Group</p>
                       <Select 
                         value={student.group} 
                         onValueChange={(value) => handleGroupChange(student._id, value)}
@@ -390,79 +345,6 @@ export default function ClassGroupingPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-
-                  {student.strengths.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium mb-1">Strengths</p>
-                      <div className="flex flex-wrap gap-1">
-                        {student.strengths.map((strength, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {strength}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {student.weaknesses.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium mb-1">Areas for Improvement</p>
-                      <div className="flex flex-wrap gap-1">
-                        {student.weaknesses.map((weakness, index) => (
-                          <Badge key={index} variant="outline" className="text-xs text-orange-600">
-                            {weakness}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium">Notes</p>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleNotesEdit(student)}
-                        className="h-6 w-6 p-0"
-                      >
-                        <Edit3 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    {editingStudent === student._id ? (
-                      <div className="space-y-2">
-                        <Input
-                          value={editingNotes}
-                          onChange={(e) => setEditingNotes(e.target.value)}
-                          placeholder="Add notes..."
-                          className="text-sm"
-                        />
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleNotesSave(student._id)}
-                            className="h-6 px-2"
-                          >
-                            <Save className="h-3 w-3 mr-1" />
-                            Save
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleNotesCancel}
-                            className="h-6 px-2"
-                          >
-                            <X className="h-3 w-3 mr-1" />
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        {student.notes || "No notes added"}
-                      </p>
-                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -515,7 +397,12 @@ export default function ClassGroupingPage() {
                         </div>
                         <div>
                           <p className="font-medium">{student.name}</p>
-                          <p className="text-sm text-muted-foreground">{student.grade}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {student.grades && student.grades.length > 0 
+                              ? student.grades.join(', ') 
+                              : "No Grades"
+                            }
+                          </p>
                         </div>
                       </div>
                       <Badge className={getPerformanceColor(student.performance.overall)}>
@@ -534,9 +421,9 @@ export default function ClassGroupingPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {getUniqueGroups().map(group => {
               const groupStudents = filteredStudents.filter(s => s.group === group);
-              const avgPerformance = Math.round(
+              const avgPerformance = groupStudents.length > 0 ? Math.round(
                 groupStudents.reduce((sum, s) => sum + s.performance.overall, 0) / groupStudents.length
-              );
+              ) : 0;
               
               return (
                 <Card key={group}>
@@ -586,45 +473,51 @@ export default function ClassGroupingPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {statistics?.gradeDistribution && Object.entries(statistics.gradeDistribution).map(([grade, count]) => (
-                    <div key={grade} className="flex items-center justify-between">
-                      <span className="font-medium">{grade}</span>
+                  {statistics?.gradeDistribution && Object.keys(statistics.gradeDistribution).length > 0 ? (
+                    Object.entries(statistics.gradeDistribution).map(([grade, count]) => (
+                      <div key={grade} className="flex items-center justify-between">
+                        <span className="font-medium">{grade}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 bg-muted rounded-full h-2">
+                            <div 
+                              className="bg-blue-600 h-2 rounded-full" 
+                              style={{ width: `${(count / statistics.totalStudents) * 100}%` }}
+                            />
+                          </div>
+                          <span className="text-sm text-muted-foreground w-8">{count}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-muted-foreground text-center py-4">No grade data available</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Performance Distribution */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Performance Distribution</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {statistics?.performanceRanges && Object.entries(statistics.performanceRanges).map(([range, count]) => (
+                    <div key={range} className="flex items-center justify-between">
+                      <span className="font-medium capitalize">{range.replace(/([A-Z])/g, ' $1')}</span>
                       <div className="flex items-center gap-2">
                         <div className="w-20 bg-muted rounded-full h-2">
                           <div 
-                            className="bg-blue-600 h-2 rounded-full" 
+                            className={`h-2 rounded-full ${
+                              range === 'excellent' ? 'bg-green-500' :
+                              range === 'good' ? 'bg-blue-500' :
+                              range === 'average' ? 'bg-yellow-500' : 'bg-red-500'
+                            }`}
                             style={{ width: `${(count / statistics.totalStudents) * 100}%` }}
                           />
                         </div>
                         <span className="text-sm text-muted-foreground w-8">{count}</span>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Attendance Overview */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Attendance Overview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {filteredStudents
-                    .sort((a, b) => b.attendance - a.attendance)
-                    .slice(0, 10)
-                    .map(student => (
-                    <div key={student._id} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="h-6 w-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
-                          {student.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <span className="text-sm font-medium">{student.name}</span>
-                      </div>
-                      <Badge variant="outline" className={getAttendanceColor(student.attendance)}>
-                        {student.attendance}%
-                      </Badge>
                     </div>
                   ))}
                 </div>
