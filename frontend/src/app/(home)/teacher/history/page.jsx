@@ -19,7 +19,8 @@ import {
   Trash2, 
   Eye,
   Filter,
-  Download
+  Download,
+  Bug
 } from "lucide-react";
 import { 
   DropdownMenu, 
@@ -34,7 +35,8 @@ import {
   deleteVoiceCoachConversation,
   updateVoiceCoachConversationTitle,
   debugConversations,
-  migrateConversations
+  migrateConversations,
+  comprehensiveDebug
 } from "./action";
 
 export default function TeacherHistoryPage() {
@@ -47,12 +49,41 @@ export default function TeacherHistoryPage() {
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(null);
+
+  // Comprehensive debug function
+  const handleComprehensiveDebug = async () => {
+    try {
+      setLoading(true);
+      const result = await comprehensiveDebug();
+      setDebugInfo(result);
+      
+      if (result.success) {
+        toast.success("Debug completed - check console for details");
+        // Show debug info in a toast or alert
+        const debugSummary = `
+Session: ${result.debug.session.hasSession ? '✓' : '✗'}
+User ID: ${result.debug.session.userId || 'None'}
+Collections: ${result.debug.database.collections.join(', ')}
+Total Conversations: ${result.debug.conversations.totalInCollection}
+Your Conversations: ${result.debug.conversations.forThisTeacher}
+        `;
+        alert(debugSummary);
+      } else {
+        toast.error(result.error);
+      }
+    } catch (error) {
+      console.error('Comprehensive debug error:', error);
+      toast.error('Comprehensive debug failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Debug function
   const handleDebug = async () => {
     try {
       const result = await debugConversations();
-      console.log('Debug result:', result);
       if (result.success) {
         toast.success(`Found ${result.data.teacherConversations} conversations for teacher, ${result.data.totalConversations} total in DB`);
       } else {
@@ -89,18 +120,13 @@ export default function TeacherHistoryPage() {
       formData.append("limit", "10");
       formData.append("sessionType", sessionType);
 
-      console.log('Loading conversations with params:', { page, sessionType }); // DEBUG
       const result = await getVoiceCoachConversationHistory(formData);
-      
-      console.log('Conversation history result:', result); // DEBUG
       
       if (result.success) {
         setConversations(result.data.conversations);
         setTotalPages(result.data.pagination.totalPages);
         setCurrentPage(page);
-        console.log('Loaded conversations:', result.data.conversations.length); // DEBUG
       } else {
-        console.error('Failed to load conversations:', result.error); // DEBUG
         toast.error(result.error || "Failed to load conversations");
       }
     } catch (error) {
@@ -209,17 +235,19 @@ export default function TeacherHistoryPage() {
 
   // Format date
   const formatDate = (dateString) => {
+    if (!dateString) return "Unknown date";
     const date = new Date(dateString);
     return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   // Format duration
   const formatDuration = (minutes) => {
+    if (!minutes || minutes < 1) return "0m";
     if (minutes < 60) {
-      return `${minutes}m`;
+      return `${Math.round(minutes)}m`;
     }
     const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
+    const remainingMinutes = Math.round(minutes % 60);
     return `${hours}h ${remainingMinutes}m`;
   };
 
@@ -237,21 +265,8 @@ export default function TeacherHistoryPage() {
             View and manage your Voice Coach conversation history
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleMigration}>
-            Migrate
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleDebug}>
-            Debug
-          </Button>
-          <Button variant="outline" size="sm">
-            <Download className="w-4 h-4 mr-2" />
-            Export
-          </Button>
-        </div>
       </div>
 
-      {/* Filters */}
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center gap-4">
@@ -290,9 +305,18 @@ export default function TeacherHistoryPage() {
             <CardContent className="p-8 text-center">
               <MessageSquare className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">No conversations found</h3>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground mb-4">
                 {searchTerm ? "No conversations match your search." : "Start a conversation with Voice Coach to see your history here."}
               </p>
+              <div className="flex justify-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleComprehensiveDebug}>
+                  <Bug className="w-4 h-4 mr-2" />
+                  Debug Issue
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleMigration}>
+                  Try Migration
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ) : (
@@ -303,7 +327,9 @@ export default function TeacherHistoryPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
                       {getSessionTypeIcon(conversation.sessionType)}
-                      <h3 className="font-semibold truncate">{conversation.title}</h3>
+                      <h3 className="font-semibold truncate">
+                        {conversation.title?.replace(/^Conversation \d+/, 'Conversation') || 'Untitled Conversation'}
+                      </h3>
                       <Badge variant={getSessionTypeBadge(conversation.sessionType)}>
                         {conversation.sessionType}
                       </Badge>
@@ -341,7 +367,7 @@ export default function TeacherHistoryPage() {
                         <DialogHeader>
                           <DialogTitle className="flex items-center gap-2">
                             {getSessionTypeIcon(conversation.sessionType)}
-                            {selectedConversation?.title || conversation.title}
+                            {selectedConversation?.title?.replace(/^Conversation \d+/, 'Conversation') || conversation.title?.replace(/^Conversation \d+/, 'Conversation') || 'Untitled Conversation'}
                           </DialogTitle>
                           <DialogDescription>
                             Conversation from {formatDate(conversation.lastMessageAt)}
@@ -349,33 +375,13 @@ export default function TeacherHistoryPage() {
                         </DialogHeader>
                         {selectedConversation && (
                           <div className="space-y-4">
-                            {/* Conversation Stats */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted rounded-lg">
-                              <div className="text-center">
-                                <div className="text-2xl font-bold">{selectedConversation.conversationStats.totalMessages}</div>
-                                <div className="text-sm text-muted-foreground">Total Messages</div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-2xl font-bold">{selectedConversation.conversationStats.userMessages}</div>
-                                <div className="text-sm text-muted-foreground">Your Messages</div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-2xl font-bold">{selectedConversation.conversationStats.aiMessages}</div>
-                                <div className="text-sm text-muted-foreground">AI Responses</div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-2xl font-bold">{formatDuration(selectedConversation.conversationStats.totalDuration)}</div>
-                                <div className="text-sm text-muted-foreground">Duration</div>
-                              </div>
-                            </div>
-
                             {/* Messages */}
                             <div className="space-y-4">
-                              {selectedConversation.messages.map((message) => (
+                              {selectedConversation.messages?.map((message, index) => (
                                 <div
-                                  key={message.id}
-                                  className={`flex gap-3 ${
-                                    message.role === 'user' ? 'justify-end' : 'justify-start'
+                                  key={message.id || index}
+                                  className={`w-full ${
+                                    message.role === 'user' ? 'flex justify-end' : 'flex justify-start'
                                   }`}
                                 >
                                   <div
@@ -391,7 +397,7 @@ export default function TeacherHistoryPage() {
                                     </p>
                                   </div>
                                 </div>
-                              ))}
+                              )) || <p className="text-muted-foreground">No messages found</p>}
                             </div>
                           </div>
                         )}
@@ -406,7 +412,7 @@ export default function TeacherHistoryPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           onClick={() => {
-                            setEditingTitle(conversation.title);
+                            setEditingTitle(conversation.title?.replace(/^Conversation \d+/, 'Conversation') || 'Untitled Conversation');
                             setIsEditing(true);
                           }}
                         >
