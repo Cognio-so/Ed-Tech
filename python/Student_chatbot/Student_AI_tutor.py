@@ -31,7 +31,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Add error handling for Qdrant imports
 try:
-    from langchain_qdrant import QdrantVectorStore
+    from langchain_qdrant import QdrantVectorStore, RetrievalMode
     from qdrant_client import QdrantClient, models
     from qdrant_client.models import Distance, VectorParams, PointStruct
     QDRANT_AVAILABLE = True
@@ -72,6 +72,13 @@ from media_toolkit.image_generation_model import ImageGenerator
 
 # Add import for LangGraph streaming
 from langgraph.config import get_stream_writer
+
+from prompts import (
+    STUDENT_INITIAL_SYSTEM_PROMPT,
+    STUDENT_FOLLOW_UP_SYSTEM_PROMPT,
+    STUDENT_REPHRASE_PROMPT_TEMPLATE,
+    STUDENT_ROUTER_PROMPT_MESSAGES
+)
 
 # Define the orchestrator state
 class OrchestratorState(TypedDict):
@@ -191,8 +198,7 @@ class VectorStoreManager:
             logging.info(f"VectorStoreManager: Creating QdrantClient with url={self.config.qdrant_url}")
             self.qdrant_client = QdrantClient(
                 url=self.config.qdrant_url, 
-                api_key=self.config.qdrant_api_key,
-                timeout=20.0
+                api_key=self.config.qdrant_api_key
             )
             logging.info("VectorStoreManager: QdrantClient created successfully")
         else:
@@ -311,81 +317,9 @@ class RAGTutorConfig:
     qdrant_collection_name: Optional[str] = None
     web_search_enabled: bool = True
     
-    # MODIFICATION: Split the system prompt into initial and follow-up versions.
-    initial_system_prompt: str = """You are an expert AI Learning Coach. Your mission is to be a friendly and encouraging guide for students, helping them understand their assignments and learn effectively.
+    student_initial_system_prompt: str = STUDENT_INITIAL_SYSTEM_PROMPT
 
-**Student Details:**
-{student_details_schema}
-
-**Your Coaching Persona & Philosophy:**
-- **Be Friendly & Encouraging**: Use a positive and supportive tone. Act as their personal coach. Use bullet points, numbered lists, and bold text to break up information and make it easy to scan.
-- **Understand the Goal**: Your primary goal is to help the student *learn*, not just to give them answers.
-- **Guide, Don't Solve**: Never provide direct answers to assignments. Instead, guide them with step-by-step explanations, ask probing questions to check their understanding, and help them break down complex problems.
-- **Personalize Your Help**: Use the student's details to tailor your conversation. Acknowledge their subjects and the specific tasks they've listed.
-- **Build Connections**: Relate homework topics to real-world applications to make learning more engaging.
-- **Be Precise & Concise**: Keep your explanations clear, direct, and to the point. Avoid lengthy paragraphs and unnecessary jargon.
-
-**How to Interact:**
-1.  **First Message Only**: Greet the student by their name and acknowledge their tasks. For example: "Hi [Student Name]! I see you're working on [Subject] and [another Subject]. I'm here to help you tackle those assignments. Which one would you like to start with?"
-2.  **Homework Analysis**: When homework documents are uploaded, identify key learning objectives. Connect them back to the student's pending tasks.
-3.  **Answering Questions**:
-    - **Concept Explanation**: Break down complex topics into simple, digestible parts. Explain concepts in a way that is easy for a student at their grade level to grasp. The goal is clarity, not complexity.
-    - **Problem-Solving Methodology**: Teach the "how" and "why" behind solutions. Ask them to try a step first.
-    - **Highlight Common Mistakes**: Gently point out typical errors students make in the subject.
-4.  **Interactive Learning**:
-    - Ask clarifying questions about what they find difficult.
-    - Provide hints before full explanations.
-    - Encourage students to attempt solutions on their own first.
-    - Offer additional practice suggestions.
-
-
-**Tool Usage:**
-- **Web Search (`websearch_tool`)**: Use this to find current, real-world information or examples related to their assignments. Always cite your sources with favicons, titles, and URLs.
-- **Knowledge Base (`knowledge_base_retriever`)**: Prioritize this tool when the student asks about documents they have uploaded.
-- **Conversation**: Use for simple greetings or praise after your main coaching response and encourage student to ask questions and learn.
-- **Synthesize Information**: If both knowledge base and web search are enabled, combine information from both to give comprehensive guidance.
-
-Your ultimate goal is to empower the student to learn and grow. Be the best coach you can be!
-
-**🕒 Current Time**: {current_time}
-"""
-
-    follow_up_system_prompt: str = """You are an expert AI Learning Coach. Your mission is to be a friendly and encouraging guide for students, helping them understand their assignments and learn effectively.
-
-**Student Details:**
-{student_details_schema}
-
-**Your Coaching Persona & Philosophy:**
-- **Be Friendly & Encouraging**: Use a positive and supportive tone. Act as their personal coach. Use bullet points, numbered lists, and bold text to break up information and make it easy to scan.
-- **Understand the Goal**: Your primary goal is to help the student *learn*, not just to give them answers.
-- **Guide, Don't Solve**: Never provide direct answers to assignments. Instead, guide them with step-by-step explanations, ask probing questions to check their understanding, and help them break down complex problems.
-- **Personalize Your Help**: Use the student's details to tailor your conversation. Acknowledge their subjects and the specific tasks they've listed.
-- **Build Connections**: Relate homework topics to real-world applications to make learning more engaging.
-- **Be Precise & Concise**: Keep your explanations clear, direct, and to the point. Avoid lengthy paragraphs and unnecessary jargon.
-
-**How to Interact:**
-1.  **Get Straight to the Point**: Do NOT greet the student by name. Get straight to the point of their question or request in a helpful and encouraging manner.
-2.  **Homework Analysis**: When homework documents are uploaded, identify key learning objectives. Connect them back to the student's pending tasks.
-3.  **Answering Questions**:
-    - **Concept Explanation**: Break down complex topics into simple, digestible parts. Explain concepts in a way that is easy for a student at their grade level to grasp. The goal is clarity, not complexity.
-    - **Problem-Solving Methodology**: Teach the "how" and "why" behind solutions. Ask them to try a step first.
-    - **Highlight Common Mistakes**: Gently point out typical errors students make in the subject.
-4.  **Interactive Learning**:
-    - Ask clarifying questions about what they find difficult.
-    - Provide hints before full explanations.
-    - Encourage students to attempt solutions on their own first.
-    - Offer additional practice suggestions.
-
-**Tool Usage:**
-- **Web Search (`websearch_tool`)**: Use this to find current, real-world information or examples related to their assignments. Always cite your sources with favicons, titles, and URLs.
-- **Knowledge Base (`knowledge_base_retriever`)**: Prioritize this tool when the student asks about documents they have uploaded.
-- **Conversation**: Use for simple greetings or praise after your main coaching response and encourage student to ask questions and learn.
-- **Synthesize Information**: If both knowledge base and web search are enabled, combine information from both to give comprehensive guidance.
-
-Your ultimate goal is to empower the student to learn and grow. Be the best coach you can be!
-
-**🕒 Current Time**: {current_time}
-"""
+    student_follow_up_system_prompt: str = STUDENT_FOLLOW_UP_SYSTEM_PROMPT
 
     @classmethod
     def from_env(cls) -> 'RAGTutorConfig':
@@ -398,6 +332,8 @@ class AsyncRAGTutor:
         
         unique_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
         self.config.qdrant_collection_name = f"rag_session_{unique_id}"
+
+        self.turn_count = 0
         logging.info(f"Initialized new tutor instance with collection: {self.config.qdrant_collection_name}")
 
         try:
@@ -468,65 +404,83 @@ class AsyncRAGTutor:
         self.short_responses = ["ok", "okay", "thanks", "thank you", "great", "good", "cool","hello", "hi", "hey", "greetings", "yo", "sup", "good morning", "good afternoon", "good evening"]
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.config.max_workers)
 
-        self.rephrase_prompt = PromptTemplate.from_template(
-            """Given a chat history and a follow-up question, rephrase the follow-up question into a clear, standalone instruction.
+        # In the __init__ method of AsyncRAGTutor
 
-**Instructions:**
-1.  **Handle Conversational Fillers First:** If the `Follow-up Question` is a simple, common conversational phrase (e.g., "okay", "great", "thanks"), your most important task is to return it **UNCHANGED**. This rule overrides all others.
-
-2.  **Handle Visual Follow-ups:** If the `Follow-up Question` is a request for a visual representation (e.g., "explain with a diagram," "can you draw that?," "show me a chart", "generate an image"), you MUST combine it with the main topic from the `Chat History` to create a complete, actionable command for an image generator.
-    - **Example 1:**
-        - Chat History: User: "What is the water cycle?"
-        - Follow-up Question: "Can you explain it with a diagram?"
-        - Standalone Question: "Generate a diagram that explains the water cycle."
-    - **Example 2:**
-        - Chat History: AI: "Let's focus on helping you strengthen your understanding of linear equations in two variables..."
-        - Follow-up Question: "generate an image"
-        - Standalone Question: "Generate an image that explains linear equations in two variables for a 10th-grade student."
-
-3.  **Handle Uploaded Files:** If the question is NOT a filler or a visual follow-up AND the `Chat History` contains a `System Note` listing uploaded files, you MUST rewrite the `Follow-up Question` to be specifically about those files, including the filename(s).
-    - **Example for documents:**
-        - System Note: The user has just uploaded 'homework_chapter_3.pdf'.
-        - Follow-up Question: can you explain this?
-        - Standalone Question: Can you explain the content of the document 'homework_chapter_3.pdf'?
-
-4.  **General Rephrasing:** If the question is not covered by the rules above, use the chat history to create a clear, standalone question. If the original question is already perfectly standalone, return it as is.
-
- Chat History:
- {chat_history}
- 
- Follow-up Question: {question}
- 
- Standalone Question:"""
-        )
-        self.rephrase_chain = self.rephrase_prompt | self.llm | StrOutputParser()
+        self.student_rephrase_prompt = PromptTemplate.from_template(STUDENT_REPHRASE_PROMPT_TEMPLATE)
+        self.rephrase_chain = self.student_rephrase_prompt | self.llm | StrOutputParser()
         
         # Router prompt for the orchestrator
-        self.router_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an intelligent router that determines which action to take based on user input.
-            
-ONLY respond with one of the following options:
-1. "use_llm_with_tools" - Use this when the user is asking a question that can be answered with standard tools like knowledge base retrieval, web search, or conversation.
-2. "generate_image" - Use this ONLY when the user explicitly asks to generate or create an image, diagram, chart, or visual representation.
-
-For image generation requests, you MUST extract and return the following parameters:
-- topic: The main subject of the image
-- grade_level: Educational level (e.g., "elementary", "middle school", "high school") 
-- preferred_visual_type: Type of visual (e.g., "diagram", "chart", "infographic")
-- subject: Academic subject (e.g., "biology", "physics")
-- language: Language for text (default to "English" if not specified)
-- instructions: Specific requirements for the image
-- difficulty_flag: Set to "true" for advanced visuals, "false" for simpler ones (default to "false")
-
-IMPORTANT: For image generation requests, return your decision as a valid JSON object with two keys:
-1. "action": "generate_image"
-2. "parameters": {{ all the extracted parameters as described above }}
-
-For regular queries that don't need image generation, simply respond with "use_llm_with_tools"."""),
+        self.student_router_prompt = ChatPromptTemplate.from_messages([
+            ("system", STUDENT_ROUTER_PROMPT_MESSAGES),
             ("human", "{input}")
         ])
         
-        self.router_chain = self.router_prompt | self.llm | StrOutputParser()
+        self.router_chain = self.student_router_prompt | self.llm | StrOutputParser()
+
+    @async_error_handler
+    async def _search_curriculum_async(self, query: str, student_details: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Searches the 'School_curriculum' Qdrant collection to retrieve relevant context
+        based on the student's query, grade, and subject.
+        """
+        logger = logging.getLogger(__name__)
+        if not QDRANT_AVAILABLE:
+            logger.warning("Qdrant not available, skipping curriculum search.")
+            return "Curriculum search is currently unavailable."
+
+        try:
+            curriculum_embedding_model = "text-embedding-3-large"
+            logger.info("Initializing Qdrant client for curriculum search.")
+            
+            # Initialize components for the search
+            client = QdrantClient(
+                url=self.config.qdrant_url, 
+                api_key=self.config.qdrant_api_key
+            )
+            
+            embeddings = OpenAIEmbeddings(
+                model=curriculum_embedding_model,
+                openai_api_key=self.config.openai_api_key
+            )
+            
+            vector_store = QdrantVectorStore(
+                client=client,
+                collection_name="School_curriculum",
+                embedding=embeddings,
+                retrieval_mode=RetrievalMode.DENSE
+            )
+
+            # Construct the search query using student details
+            grade = "not specified"
+            if student_details:
+                grade = student_details.get("grade", "not specified")
+
+            # Intelligently guess the subject from the query
+            # subject_guesser_prompt = PromptTemplate.from_template(
+            #     "Based on the following student query, what is the most likely academic subject? "
+            #     "Respond with only the subject name (e.g., 'Mathematics', 'History', 'Biology').\n\n"
+            #     "Query: {query}\n\nSubject:"
+            # )
+            # subject_guesser_chain = subject_guesser_prompt | self.llm | StrOutputParser()
+            # guessed_subject = await subject_guesser_chain.ainvoke({"query": query})
+            
+            search_query = f"Grade Level: {grade}. Topic: {query}"
+            logger.info(f"Performing curriculum vector search with query: '{search_query}'")
+            
+            found_docs = await vector_store.asimilarity_search(query=search_query, k=20)
+            
+            if found_docs:
+                logger.info(f"Found {len(found_docs)} relevant documents in the curriculum.")
+                curriculum_context = "Relevant information from the school curriculum was found. Use this as the primary source for your answer:\n\n"
+                curriculum_context += "\n\n".join(f"--- Curriculum Snippet ---\n{doc.page_content}\n---" for doc in found_docs)
+                return curriculum_context
+            else:
+                logger.warning("No relevant documents found in the 'School_curriculum' collection.")
+                return "No specific information was found in the school curriculum for this topic. Please answer based on your general knowledge, but first state that the information is not in the provided curriculum."
+
+        except Exception as e:
+            logger.error(f"An error occurred during Qdrant curriculum search: {e}", exc_info=True)
+            return f"Curriculum search failed with an error: {e}. Please answer based on your general knowledge, but first state that the information is not in the provided curriculum."
 
     @async_error_handler
     async def clear_knowledge_base_async(self):
@@ -858,28 +812,30 @@ For regular queries that don't need image generation, simply respond with "use_l
         return []
 
     @async_error_handler
-    # MODIFICATION: Added 'history' parameter to the method signature
     async def _agent_executor_stream_async(self, query: str, formatted_time: str, image_path: Optional[str] = None, is_knowledge_base_ready: bool = False, student_details: Optional[Dict[str, Any]] = None, history: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
         """Private method to invoke the tool-enabled LLM with a finalized query."""
         student_details_str = "No student details provided. Please ask the student for their name, class, and subjects."
         if student_details:
             try:
-                # Pretty-print the JSON for better readability in the prompt
                 student_details_str = json.dumps(student_details, indent=2)
             except TypeError:
                 student_details_str = str(student_details)
 
-        # MODIFICATION: Logic to select the correct prompt based on conversation history
-        if history: # If history is not empty, it's a follow-up message
-            system_prompt_template = self.config.follow_up_system_prompt
-            logging.info("Using follow-up system prompt.")
-        else: # If history is empty, it's the first message
-            system_prompt_template = self.config.initial_system_prompt
-            logging.info("Using initial system prompt.")
+        # Search curriculum before generating the prompt
+        curriculum_context = await self._search_curriculum_async(query, student_details)
+
+        # Logic to select the correct prompt based on conversation history
+        if self.turn_count > 1:
+            system_prompt_template = self.config.student_follow_up_system_prompt
+            logging.info("Using follow-up system prompt for student.")
+        else:
+            system_prompt_template = self.config.student_initial_system_prompt
+            logging.info("Using initial system prompt for student.")
 
         system_prompt_text = system_prompt_template.format(
             current_time=formatted_time,
-            student_details_schema=student_details_str
+            student_details_schema=student_details_str,
+            curriculum_context=curriculum_context
         )
         
         prompt_notes = []
@@ -907,21 +863,14 @@ For regular queries that don't need image generation, simply respond with "use_l
         messages = [SystemMessage(content=system_prompt_text), HumanMessage(content=message_content)]
         ai_response_with_tool = await self.llm_with_tools.ainvoke(messages)
         
-
-        # **FIXED LOGIC STARTS HERE**
         if not ai_response_with_tool.tool_calls:
-            # Scenario 1: The LLM decided to answer directly.
-            # To ensure a consistent streaming experience, we will re-invoke the LLM
-            # in streaming mode to deliver the final answer.
             logging.info("LLM provided a direct answer without tool usage. Invoking a new stream for the response.")
             final_chain = self.llm | StrOutputParser()
-            # `messages` already contains the System and Human messages that led to this decision.
             async for chunk in final_chain.astream(messages):
                 yield chunk
             return
 
         messages.append(ai_response_with_tool)
-        # Scenario 2: The LLM decided to call one or more tools.
         for tool_call in ai_response_with_tool.tool_calls:
             tool_name = tool_call["name"]
             logging.info(f"LLM decided to call tool: {tool_name} with args {tool_call['args']}")
@@ -932,7 +881,6 @@ For regular queries that don't need image generation, simply respond with "use_l
                 tool_output = f"Error: Tool '{tool_name}' not found."
             messages.append(ToolMessage(content=str(tool_output), tool_call_id=tool_call["id"]))
 
-        # Now, invoke the model again with the tool results to get the final answer.
         final_chain = self.llm | StrOutputParser()
         async for chunk in final_chain.astream(messages):
             yield chunk
@@ -1088,6 +1036,8 @@ For regular queries that don't need image generation, simply respond with "use_l
     @async_error_handler
     async def run_agent_async(self, query: str, history: List[Dict[str, Any]], image_storage_key: Optional[str] = None, is_knowledge_base_ready: bool = False, uploaded_files: Optional[List[str]] = None, student_details: Optional[Dict[str, Any]] = None) -> AsyncGenerator[str, None]:
         """Run the agent with a query and history, using the orchestrator graph with streaming."""
+
+        self.turn_count += 1
         formatted_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         rephrased_query = await self._rephrase_query_with_history_async(query, history, uploaded_files)
@@ -1156,28 +1106,33 @@ For regular queries that don't need image generation, simply respond with "use_l
                 except Exception as e:
                     logging.error(f"Error cleaning up temporary image file: {e}")
 
+    # In class AsyncRAGTutor
     @async_error_handler
-    async def _rephrase_query_with_history_async(self, query: str, history: List[Dict[str, Any]], uploaded_files: Optional[List[str]] = None) -> str:
+    async def _rephrase_query_with_history_async(self, query: str, history: List[Dict[str, Any]], uploaded_files: Optional[List[str]] = None, student_details: Optional[Dict[str, Any]] = None) -> str:
         """Rephrase the query using chat history to make it standalone."""
         try:
             chat_history_str = ""
             if uploaded_files:
                 files_str = "', '".join(uploaded_files)
-                chat_history_str += f"System Note: The user has just uploaded the following file(s): '{files_str}'. The follow-up question likely refers to these files.\n\n"
-            
-            # Only use the last user message from history
+                chat_history_str = f"System Note: The user has just uploaded the following file(s): '{files_str}'. The follow-up question likely refers to these files.\n\n"
+
+            student_details_str = ""
+            if student_details:
+                student_details_str = f"Student Details: {json.dumps(student_details)}\n\n"
+
             history_str_parts = []
-            # Capture the last few messages for better context
-            for msg in history[-4:]: # Takes the last 4 messages, for example
+            for msg in history[-4:]:
                 role = "AI" if msg.get("role") in ["assistant", "ai"] else "User"
                 content = msg.get("content", "")
                 history_str_parts.append(f"{role}: {content}")
 
             chat_history_str = "\n".join(history_str_parts)
-            
+
+            # The context passed to the chain will now include student details
             rephrased = await self.rephrase_chain.ainvoke({
                 "chat_history": chat_history_str,
-                "question": query
+                "question": query,
+                "student_details": student_details_str
             })
             logging.info(f"Query rephrased from '{query}' to '{rephrased}'")
             return rephrased

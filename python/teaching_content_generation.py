@@ -1,77 +1,39 @@
 import os
 import logging
 import asyncio
-import re # --- NEW: Imported for slide counting
+import re
 from dotenv import load_dotenv
 
 # LangChain components
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_qdrant import QdrantVectorStore, RetrievalMode
+import qdrant_client
 
 # Import from your websearch module (using the new Perplexity search)
 from websearch_code import PerplexityWebSearchTool
 
-# --- NEW: Import the SlideSpeakGenerator to create PPT files ---
+# Import the SlideSpeakGenerator to create PPT files
 from media_toolkit.slides_generation import SlideSpeakGenerator
+
+from prompts import CORE_CONTENT_GENERATION_PROMPT_TEMPLATE
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-#langsmith
-LANGSMITH_TRACING="true"
-LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
-LANGSMITH_API_KEY=os.getenv("LANGSMITH_API_KEY")
-LANGSMITH_PROJECT="Vamshi-test"
-
+# Langsmith configuration (optional)
+LANGSMITH_TRACING = "true"
+LANGSMITH_ENDPOINT = "https://api.smith.langchain.com"
+LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
+LANGSMITH_PROJECT = "Vamshi-test"
 
 # Load environment variables from .env file
 load_dotenv()
 
 # --- Prompt Engineering ---
-PROMPT_TEMPLATE = """
-You are an expert AI instructional designer and a world-class {subject} teacher. Your primary task is to generate exceptionally detailed, comprehensive, and ready-to-use teaching content based on the user's precise specifications. Your output must be so thorough that a substitute teacher could use it effectively with no prior preparation. The content you generate must be the complete, final product, not a summary or a set of instructions for a teacher to follow.
-
-**Language Requirement:** You MUST generate the entire output, including all text, titles, instructions, and examples, exclusively in the specified language: **{language}**. All content must be natively written in {language}, not translated.
-
-**Content Goal:** Generate a "{content_type}".
-
-**Content Configuration:**
-- **Language:** {language}
-- **Subject:** {subject}
-- **Lesson Topic:** {lesson_topic}
-- **Grade Level:** {grade}
-- **Learning Objective:** {learning_objective}
-- **Emotional Considerations:** {emotional_consideration}
-- **Instructional Depth:** {instructional_depth}
-- **Content Version:** {content_version}
-
-**Core Directives:**
-- **Absolute Completeness & Verbatim Content:** The generated output MUST be a complete, stand-alone resource. This means you will write out the **full, unabridged text** for all parts of the content. For example, do not just write "Teacher explains photosynthesis"; instead, you must write the **exact, word-for-word script** of that explanation. A teacher should need no other materials and should have to do no additional writing.
-- **Deep Elaboration & Full Detail:** You must provide rich, fully-written descriptions and detailed, verbatim instructions. All examples, concepts, and activities must be fully elaborated with maximum clarity and completeness. Brevity is not acceptable. You are to generate the entire content, not just an outline or a procedural guide.
-- **Integrate All Parameters:** Every configuration setting provided above must be clearly and thoughtfully integrated into the final output. The {grade} level should dictate the language and complexity of the complete content. The {emotional_consideration} must shape the tone and the fully-written examples. The {instructional_depth} and {content_version} must define the level of detail in the final text.
-
-**Additional AI Options:**
-{additional_ai_options_instructions}
-
-**Web Search Context:**
-{web_context}
-
----
-
-**Output Structure and Citation Mandate:**
-You MUST structure your output according to the requested "{content_type}". Adherence to this structure is mandatory, and every section must contain **complete, fully written content**. You MUST use the information from the 'Web Search Context' to ensure your content is factually accurate and up-to-date. At the end of your generation, you MUST include a section that lists all the source URLs provided in the context.
-
-- If the content type is a **"lesson plan"**, it must include all of the following sections, in this order: Title, Estimated Duration, Learning Objectives, Materials, a **highly detailed, verbatim Step-by-Step Procedure with complete content for every step** (this means writing out the full teacher script, all explanations, all questions to ask students, and the complete text of examples or stories), a fully developed Assessment/Check for Understanding, Differentiation strategies with ready-to-use alternative explanations or tasks, and a **"References"** section listing all source URLs from the web search.
-- If the content type is a **"presentation"**, it must be structured as a series of detailed slides. Each slide needs a clear title (e.g., `Slide 1: Title of Slide`), the **complete and full text content** for the slide body (not just bullet points), and extensive, **verbatim speaker notes** that a presenter could read word-for-word. It **must end with a "Bibliography" slide** listing all source URLs from the web search.
-- If the content type is a **"worksheet"** or **"quiz"**, it must be a complete and ready-to-distribute document. This includes clear, detailed instructions for the student, a variety of fully-formed question types, any and all **reading passages, data sets, or background information** needed to answer the questions included directly in the document, a comprehensive answer key with full explanations for each answer, and a **"Sources" section** at the end listing all source URLs from the web search.
-
----
-
-**Your Task:**
-Please generate the requested "{content_type}" now. You MUST strictly adhere to all configurations and structural requirements detailed above. Based on the generated content, you MUST determine and specify an appropriate duration (e.g., 45 minutes, 1 hour). The generated content must be **exceptionally detailed, containing the complete and unabridged text and materials, making it directly usable by a teacher with absolutely no further writing or content creation required.**
-"""
+CONTENT_GENERATION_PROMPT_TEMPLATE = CORE_CONTENT_GENERATION_PROMPT_TEMPLATE
 
 def _get_choice_from_user(options: list[str], prompt_text: str, default: str | None = None) -> str:
     """
@@ -125,6 +87,21 @@ def get_user_input() -> dict:
         print(f"   {i}. {ct.title()}")
     content_type = _get_choice_from_user(content_types, f"Enter name or number (1-{len(content_types)})")
 
+    # --- Lesson Plan Specific Configuration ---
+    number_of_sessions = "1"
+    session_duration = "N/A"
+    if content_type == "lesson plan":
+        print("\n   --- Lesson Plan Configuration ---")
+        while True:
+            sessions_input = input("   - Enter the number of sessions for this lesson: ").strip()
+            if sessions_input.isdigit() and int(sessions_input) > 0:
+                number_of_sessions = sessions_input
+                break
+            else:
+                print("   Invalid input. Please enter a positive whole number (e.g., 1, 2, 3).")
+        session_duration = input("   - Enter the duration of each session (e.g., 45 minutes, 1 hour): ")
+
+
     # --- Content Configuration ---
     print("\n3. Configure Content:")
     subject = input("   - Subject (e.g., Physics, History): ")
@@ -176,22 +153,19 @@ def get_user_input() -> dict:
                 else:
                     print(f"   --> Invalid or ambiguous choice: '{choice}'. It will be ignored.")
 
-    # --- Web Search is now always enabled ---
-    web_search_enabled = True
-
     return {
         "content_type": content_type,
         "language": language,
         "subject": subject,
         "lesson_topic": lesson_topic,
         "grade": grade,
-        "duration": "To be determined by AI",
         "learning_objective": learning_objective,
         "emotional_consideration": emotional_consideration,
         "instructional_depth": instructional_depth,
         "content_version": content_version,
-        "web_search_enabled": web_search_enabled,
-        "additional_ai_options": selected_ai_options
+        "additional_ai_options": selected_ai_options,
+        "number_of_sessions": number_of_sessions,
+        "session_duration": session_duration
     }
 
 async def run_generation_pipeline_async(config: dict):
@@ -201,6 +175,10 @@ async def run_generation_pipeline_async(config: dict):
     """
     logger.info("Initializing Model and Tools for content generation")
 
+    # FIX: Ensure session keys exist with default values to prevent KeyErrors in the prompt template.
+    config.setdefault('number_of_sessions', '1')
+    config.setdefault('session_duration', 'N/A')
+
     # --- LLM Initialization Block ---
     try:
         logger.info("Initializing local OpenAI LLM: gpt-4o")
@@ -209,9 +187,10 @@ async def run_generation_pipeline_async(config: dict):
             temperature=0.5,
             openai_api_key=os.getenv("OPENAI_API_KEY")
         )
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=os.getenv("OPENAI_API_KEY"))
     except Exception as e:
-        logger.error(f"Fatal: Could not initialize the OpenAI LLM. Error: {e}")
-        raise Exception(f"Failed to initialize OpenAI LLM: {e}")
+        logger.error(f"Fatal: Could not initialize the OpenAI LLM or Embeddings. Error: {e}")
+        raise Exception(f"Failed to initialize OpenAI components: {e}")
 
     # --- Process Additional AI Options ---
     additional_options = config.get("additional_ai_options") or []
@@ -223,12 +202,10 @@ async def run_generation_pipeline_async(config: dict):
         options_instructions.append(
             "- **Adaptive Difficulty:** The generated content, especially assessments or activities, should offer varying levels of challenge. For example, include both foundational and advanced questions. If creating a worksheet, you might have a 'Getting Started' section and a 'Challenge Problems' section. This allows the teacher to tailor the experience to individual student needs."
         )
-
     if "include assessment" in additional_options:
         options_instructions.append(
             "- **Include Assessment:** You must create and include a distinct assessment component (e.g., a quiz, a set of discussion questions, a rubric for a project) that directly measures the specified learning objective. The assessment should be integrated into the content."
         )
-
     if "multimedia suggestion" in additional_options:
         options_instructions.append(
             "- **Multimedia Suggestions:** You must include a section with suggestions for relevant multimedia resources. This should include at least one recommended YouTube video (with a full URL) and a description of a relevant image or diagram (with a URL if possible). These suggestions should directly support the lesson topic."
@@ -236,16 +213,65 @@ async def run_generation_pipeline_async(config: dict):
     
     config['additional_ai_options_instructions'] = "\n".join(options_instructions)
 
+    # --- Process Citation Instructions (Conditional) ---
+    citation_instructions = ""
+    if "multimedia suggestion" in additional_options:
+        logger.info("Multimedia suggestion is selected. Adding citation mandate to the prompt.")
+        citation_instructions = (
+            "- **Citation Mandate:** Because 'Multimedia Suggestion' was selected, you MUST include a final section that lists all source URLs provided in the 'Web Search Context'.\n"
+            "  - For a 'lesson plan', this section must be titled 'References'.\n"
+            "  - For a 'presentation', this must be the final slide, titled 'Bibliography'.\n"
+            "  - For a 'worksheet' or 'quiz', this section must be titled 'Sources'."
+        )
+    else:
+        logger.info("Multimedia suggestion not selected. No citation mandate will be included.")
 
+    config['citation_instructions'] = citation_instructions
+
+    # --- Qdrant Vector Search Block ---
+    curriculum_context = "No internal curriculum context was found for this topic."
+    try:
+        logger.info("Initializing Qdrant client for curriculum search.")
+        client = qdrant_client.QdrantClient(
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY"),
+        )
+        vector_store = QdrantVectorStore(
+            client=client,
+            collection_name="School_curriculum",
+            embedding=embeddings,
+            retrieval_mode=RetrievalMode.DENSE
+        )
+
+        vector_search_query = f"{config['subject']} Subject for grade: {config['grade']} of lesson topic: {config['lesson_topic']} , Learning Objective: {config['learning_objective']}"
+        logger.info(f"Performing vector search with query: '{vector_search_query}'")
+        
+        found_docs = await vector_store.asimilarity_search(query=vector_search_query, k=20)
+        
+        if found_docs:
+            logger.info(f"Found {len(found_docs)} relevant documents in the curriculum.")
+            curriculum_context = "Relevant information from the school curriculum was found. Use this to guide your content:\n\n"
+            for doc in found_docs:
+                curriculum_context += f"---\n{doc.page_content}\n---\n\n"
+        else:
+            logger.warning("No relevant documents found in the curriculum vector store.")
+    except Exception as e:
+        logger.error(f"An error occurred during Qdrant vector search: {e}")
+        curriculum_context = f"Vector search for curriculum failed with an error: {e}. Rely on general knowledge and web search."
+
+    config['curriculum_context'] = curriculum_context
+
+    # --- Web Search Block (Conditional) ---
     web_context = "No web search was performed for this generation."
+    
+    # FIX: Ensure 'additional_ai_options' is treated as an iterable, even if its value is None.
+    additional_ai_options_list = config.get("additional_ai_options") or []
 
-    if config.get("web_search_enabled", True):
-        logger.info("Web search is enabled. Fetching latest content...")
+    if "multimedia suggestion" in additional_ai_options_list:
+        logger.info("Web search is enabled for multimedia suggestions. Fetching latest content...")
         try:
-            # Updated to use Perplexity
             search_tool = PerplexityWebSearchTool(max_results=5, model="sonar")
             
-            # Construct search query based on selected language
             language = config.get('language', 'English')
             search_query = ""
 
@@ -258,26 +284,16 @@ async def run_generation_pipeline_async(config: dict):
                 }
                 content_type_ar = content_type_ar_map.get(config['content_type'], config['content_type'])
                 search_query = (
-                    f"مصادر وأفكار تعليمية لـ {config['grade']} في مادة {config['subject']} "
+                    f"مصادر تعليمية تتضمن فيديوهات يوتيوب وصور لـ {config['grade']} في مادة {config['subject']} "
                     f"لـ {content_type_ar} حول '{config['lesson_topic']}'"
                 )
-                # --- FIX STARTS HERE ---
-                # Safely check for 'multimedia suggestion' in additional_ai_options, handling the None case.
-                if 'multimedia suggestion' in (config.get('additional_ai_options') or []):
-                    search_query += " تتضمن فيديوهات يوتيوب وصور"
-                # --- FIX ENDS HERE ---
                 if config.get('learning_objective', '') != 'Not specified':
                     search_query += f" مع هدف التعلم: '{config['learning_objective']}'"
-            else: # Default to English
+            else:  # Default to English
                 search_query = (
-                    f"Teaching resources and ideas for a {config['grade']} {config['subject']} "
+                    f"Teaching resources with youtube videos and images for a {config['grade']} {config['subject']} "
                     f"{config['content_type']} on '{config['lesson_topic']}'"
                 )
-                # --- FIX STARTS HERE ---
-                # Safely check for 'multimedia suggestion' in additional_ai_options, handling the None case.
-                if 'multimedia suggestion' in (config.get('additional_ai_options') or []):
-                    search_query += " including youtube videos and images"
-                # --- FIX ENDS HERE ---
                 if config.get('learning_objective', '') != 'Not specified':
                     search_query += f" with the learning objective: '{config['learning_objective']}'"
 
@@ -285,20 +301,20 @@ async def run_generation_pipeline_async(config: dict):
             results = await search_tool.search(query=search_query)
 
             if results:
-                web_context = "Web search has been performed. Use the following latest information and source URLs to enrich your content:\n\n"
+                web_context = "Web search has been performed to find multimedia resources. Use the following latest information and source URLs to enrich your content:\n\n"
                 for result in results:
                     web_context += result["content"] + "\n\n"
                 logger.info("Web search completed and context created with results.")
             else:
-                web_context = "Web search was enabled but returned no relevant results. Proceed with general knowledge."
+                web_context = "Web search for multimedia was enabled but returned no relevant results. Proceed with general knowledge."
                 logger.warning(f"Web search for query '{search_query}' returned no results.")
         except Exception as e:
             logger.error(f"An error occurred during the web search process: {e}")
-            web_context = f"Web search was enabled but failed with an error: {e}."
+            web_context = f"Web search for multimedia was enabled but failed with an error: {e}."
 
     config['web_context'] = web_context
 
-    prompt = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+    prompt = ChatPromptTemplate.from_template(CONTENT_GENERATION_PROMPT_TEMPLATE)
     output_parser = StrOutputParser()
     
     # This is the LangChain Expression Language (LCEL) chain
@@ -314,7 +330,6 @@ async def run_generation_pipeline_async(config: dict):
         logger.error(f"Error during content generation: {e}", exc_info=True)
         raise
 
-# --- NEW: Function to trigger SlideSpeak PPT generation ---
 def trigger_slide_generation(generated_content: str, config: dict):
     """
     Takes generated presentation text and user config to generate a PPT
@@ -322,7 +337,6 @@ def trigger_slide_generation(generated_content: str, config: dict):
     """
     print("\n--- Configuring SlideSpeak Presentation ---")
 
-    # 1. Map parameters from existing config
     plain_text = generated_content
     custom_instructions = (
         f"Generate a presentation for a {config['grade']} {config['subject']} class "
@@ -331,15 +345,12 @@ def trigger_slide_generation(generated_content: str, config: dict):
     )
     language = config['language'].upper()
 
-    # --- CORRECTED CODE ---
     # Automatically count the number of slides from the generated text.
-    # This regex now correctly finds "Slide X:" patterns even with markdown prefixes.
     num_slides = len(re.findall(r"(?:Slide|الشريحة)\s\d+:", plain_text, re.IGNORECASE))
     
     if num_slides == 0:
-        # Fallback for different formatting, like "Slide Title:"
+        # Fallback for different formatting
         num_slides = len(re.findall(r"slide title:", plain_text, re.IGNORECASE))
-    # --- END OF CORRECTION ---
 
     if num_slides > 0:
         print(f"   - Automatically detected {num_slides} slides from the generated content.")
@@ -347,8 +358,9 @@ def trigger_slide_generation(generated_content: str, config: dict):
         print("   ! Warning: Could not automatically determine the number of slides.")
         while True:
             try:
-                num_slides = int(input("   - Please enter the desired number of slides: "))
-                if num_slides > 0:
+                num_slides_input = input("   - Please enter the desired number of slides: ")
+                if num_slides_input.isdigit() and int(num_slides_input) > 0:
+                    num_slides = int(num_slides_input)
                     break
                 else:
                     print("   Please enter a positive number.")
@@ -360,12 +372,10 @@ def trigger_slide_generation(generated_content: str, config: dict):
     verbosity = depth_map.get(config['instructional_depth'], "standard")
     print(f"   - Verbosity set to '{verbosity}' based on Instructional Depth '{config['instructional_depth']}'.")
 
-    # 2. Get the last few inputs from the user
     fetch_images_input = input("   - Fetch stock images for the presentation? (yes/no) [default: yes]: ").lower().strip()
     fetch_images = fetch_images_input not in ["no", "n"]
     template = input("   - Enter a SlideSpeak template name (or leave blank for default): ") or "default"
 
-    # 3. Initialize and call the generator
     try:
         generator = SlideSpeakGenerator()
         print("\nGenerating your SlideSpeak presentation... This may take a moment.")
@@ -396,34 +406,28 @@ def trigger_slide_generation(generated_content: str, config: dict):
             print(f"   Details: {final_result.get('task_result') or final_result.get('error', 'No details provided.')}")
             print("="*50 + "\n")
 
-
     except Exception as e:
         print(f"\nAn error occurred during the presentation generation process: {e}")
 
 
 if __name__ == "__main__":
-    # Updated to check for all three keys
-    if not os.getenv("OPENAI_API_KEY") or not os.getenv("PPLX_API_KEY"):
-        print("FATAL ERROR: Make sure you have created a .env file with your OPENAI_API_KEY and PPLX_API_KEY.")
+    required_keys = ["OPENAI_API_KEY", "PPLX_API_KEY", "QDRANT_URL", "QDRANT_API_KEY"]
+    if not all(os.getenv(key) for key in required_keys):
+        print(f"FATAL ERROR: Make sure you have created a .env file with all required keys: {', '.join(required_keys)}")
     else:
         user_config = get_user_input()
-        # The main generation process remains the same
         response = asyncio.run(run_generation_pipeline_async(user_config))
         print("\n--- Generated Content ---")
         print(response)
 
-        # --- NEW: Integration logic starts here ---
-        # If the user chose to create a presentation, ask if they want to generate a PPT
         if user_config.get("content_type") == "presentation":
             while True:
                 generate_ppt_choice = input("\nWould you like to generate a PowerPoint (PPT) file from this content? (yes/no): ").lower().strip()
                 if generate_ppt_choice in ["yes", "y"]:
-                    # Check for the SlideSpeak API key before proceeding
                     if not os.getenv("SLIDESPEAK_API_KEY"):
                         print("\nFATAL ERROR: To generate a PPT, please add your SLIDESPEAK_API_KEY to the .env file.")
                         break
                     
-                    # Trigger the new function
                     trigger_slide_generation(response, user_config)
                     break
                 elif generate_ppt_choice in ["no", "n"]:
