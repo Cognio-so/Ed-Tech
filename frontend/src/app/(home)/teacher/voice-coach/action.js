@@ -259,7 +259,7 @@ export async function sendVoiceCoachMessage(formData) {
   try {
     const message = formData.get("message");
     const sessionId = formData.get("sessionId");
-    const teacherData = JSON.parse(formData.get("studentData") || "{}"); // This is actually teacher data
+    const teacherData = JSON.parse(formData.get("studentData") || "{}");
 
     if (!message || !sessionId) {
       return {
@@ -270,26 +270,53 @@ export async function sendVoiceCoachMessage(formData) {
 
     console.log('Sending message to Voice Coach:', { message, sessionId });
 
-    // FIXED: Use the correct teacher voice chat method with proper parameters
     const response = await PythonApi.startTeacherVoiceChat(teacherData, sessionId, message);
 
     if (response.ok) {
-      // Handle streaming response
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullResponse = '';
+      let buffer = ''; // Buffer for incomplete JSON
       
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        buffer += chunk;
+        
+        // Split by lines and process each complete line
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
         
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6));
+              const jsonStr = line.slice(6);
+              
+              // Check if this is an image response (same as AI Tutor)
+              if (jsonStr.includes('__IMAGE_RESPONSE__')) {
+                // Handle image response differently
+                const imageContent = jsonStr.replace('__IMAGE_RESPONSE__', '');
+                
+                // Try to parse the JSON properly
+                try {
+                  const data = JSON.parse(imageContent);
+                  if (data.content) {
+                    fullResponse = data.content;
+                  } else {
+                    fullResponse = imageContent;
+                  }
+                } catch (parseError) {
+                  // If JSON parsing fails, use the raw content
+                  fullResponse = imageContent;
+                }
+                continue;
+              }
+              
+              // Handle regular text chunks
+              const data = JSON.parse(jsonStr);
+              
               if (data.type === 'text_chunk') {
                 fullResponse += data.content;
               } else if (data.type === 'done') {
@@ -297,8 +324,10 @@ export async function sendVoiceCoachMessage(formData) {
               } else if (data.type === 'error') {
                 throw new Error(data.message);
               }
-            } catch (e) {
-              // Skip invalid JSON lines
+            } catch (parseError) {
+              console.error('Error parsing SSE data:', parseError);
+              console.error('Problematic line:', line);
+              // Continue processing other lines
             }
           }
         }
@@ -347,28 +376,21 @@ export async function uploadDocumentsToVoiceCoach(formData) {
       };
     }
 
-    // Prepare the request payload
-    const requestData = {
-      files: files,
-      session_id: sessionId,
-      student_data: studentData
-    };
-
     console.log('Uploading documents to Voice Coach:', { fileCount: files.length, sessionId });
 
-    // Call the Python API
-    const response = await PythonApi.uploadDocuments(requestData);
+    // FIXED: Call the correct method with correct parameters
+    const response = await PythonApi.uploadDocumentsForChatbot(sessionId, files);
 
     if (response.success) {
       return {
         success: true,
         message: response.message || "Documents uploaded successfully",
-        uploadedFiles: response.uploaded_files || []
+        uploadedFiles: response.files_processed || []
       };
     } else {
       return {
         success: false,
-        error: response.error || "Failed to upload documents"
+        error: response.message || "Failed to upload documents"
       };
     }
   } catch (error) {

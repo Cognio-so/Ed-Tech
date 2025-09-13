@@ -41,6 +41,9 @@ const contentFormSchema = z.object({
   contentVersion: z.enum(["simplified", "standard", "enriched"], {
     required_error: "Please select content version",
   }),
+  // Add session fields for lesson plans
+  numberOfSessions: z.string().optional(),
+  sessionDuration: z.string().optional(),
 });
 
 export default function ContentForm() {
@@ -89,6 +92,8 @@ export default function ContentForm() {
       multimediaSuggestions: false,
       instructionDepth: "standard",
       contentVersion: "standard",
+      numberOfSessions: "1",
+      sessionDuration: "45 minutes",
     },
   });
 
@@ -376,10 +381,10 @@ export default function ContentForm() {
   return (
     <div className="container mx-auto p-4 max-w-7xl">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+        <h1 className="text-3xl font-bold text-primary dark:text-white mb-2">
           {editingContent ? "Edit Content" : "Content Generation"}
         </h1>
-        <p className="text-gray-600">
+        <p className="text-gray-600 dark:text-white">
           {editingContent
             ? `Editing: ${editingContent.topic || 'Content'}`
             : "Create and manage educational content for your students"
@@ -669,6 +674,44 @@ export default function ContentForm() {
                       <p className="text-sm text-red-500">{form.formState.errors.emotionalConsideration.message}</p>
                     )}
                   </div>
+
+                  {/* Lesson Plan Session Configuration - Only show when lesson plan is selected */}
+                  {form.watch("contentType") === "lesson plan" && (
+                    <div className="space-y-4">
+                      <Separator />
+                      <div className="space-y-4">
+                        <Label className="text-base font-semibold">Lesson Plan Configuration</Label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <Label htmlFor="numberOfSessions">Number of Sessions *</Label>
+                            <Input
+                              id="numberOfSessions"
+                              type="number"
+                              min="1"
+                              max="10"
+                              placeholder="Enter number of sessions"
+                              {...form.register("numberOfSessions")}
+                            />
+                            {form.formState.errors.numberOfSessions && (
+                              <p className="text-sm text-red-500">{form.formState.errors.numberOfSessions.message}</p>
+                            )}
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="sessionDuration">Session Duration *</Label>
+                            <Input
+                              id="sessionDuration"
+                              placeholder="e.g., 45 minutes, 1 hour"
+                              {...form.register("sessionDuration")}
+                            />
+                            {form.formState.errors.sessionDuration && (
+                              <p className="text-sm text-red-500">{form.formState.errors.sessionDuration.message}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <Separator />
 

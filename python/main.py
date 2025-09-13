@@ -849,6 +849,15 @@ class TeachingContentSchema(BaseModel):
         "English",
         description="The language for the content (e.g., English, Arabic)."
     )
+    # Add session fields for lesson plans
+    number_of_sessions: Optional[str] = Field(
+        "1",
+        description="Number of sessions for lesson plans."
+    )
+    session_duration: Optional[str] = Field(
+        "45 minutes",
+        description="Duration of each session for lesson plans."
+    )
 
 @app.post("/teaching_content_endpoint", response_model=Dict[str, Any])
 async def teaching_content_endpoint(schema: TeachingContentSchema):
