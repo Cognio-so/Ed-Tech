@@ -42,17 +42,119 @@ function safeToISOString(dateValue) {
 }
 
 /**
+ * Comprehensive debug function to check database and session
+ * @returns {Promise<Object>} - Debug info
+ */
+export async function comprehensiveDebug() {
+  try {
+    
+    // Check session
+    const session = await getServerSession();
+
+    
+    if (!session?.user?.id) {
+      return {
+        success: false,
+        error: "No session or user ID found",
+        debug: {
+          hasSession: !!session,
+          hasUser: !!session?.user,
+          hasUserId: !!session?.user?.id,
+          sessionData: session
+        }
+      };
+    }
+
+    // Check database connection
+    const { db } = await connectToDatabase();
+
+    // List all collections
+    const collections = await db.listCollections().toArray();
+
+    // Check if teacherConversations collection exists
+    const teacherConversationsExists = collections.some(c => c.name === 'teacherConversations');
+
+    // Get all conversations in teacherConversations (if exists)
+    let allConversations = [];
+    if (teacherConversationsExists) {
+      allConversations = await db.collection('teacherConversations').find({}).toArray();
+    }
+
+    // Check conversations for this specific teacher using sessionId pattern
+    const userId = session.user.id;
+    
+    // Look for conversations where sessionId contains the user ID
+    const teacherConversations = await db.collection('teacherConversations')
+      .find({ sessionId: { $regex: userId, $options: 'i' } })
+      .toArray();
+    
+
+    // Also check if there are conversations with teacherId field
+    const conversationsWithTeacherId = await db.collection('teacherConversations')
+      .find({ teacherId: { $in: [new ObjectId(userId), userId] } })
+      .toArray();
+    
+
+    // Check all unique sessionId patterns
+    const uniqueSessionIds = await db.collection('teacherConversations')
+      .distinct('sessionId');
+    
+
+    return {
+      success: true,
+      debug: {
+        session: {
+          hasSession: !!session,
+          hasUser: !!session?.user,
+          hasUserId: !!session?.user?.id,
+          userId: session?.user?.id,
+          userEmail: session?.user?.email,
+          userRole: session?.user?.role
+        },
+        database: {
+          connected: true,
+          collections: collections.map(c => c.name),
+          teacherConversationsExists: teacherConversationsExists
+        },
+        conversations: {
+          totalInCollection: allConversations.length,
+          forThisTeacher: teacherConversations.length,
+          withTeacherIdField: conversationsWithTeacherId.length,
+          uniqueSessionIds: uniqueSessionIds,
+          sampleConversation: allConversations.length > 0 ? {
+            _id: allConversations[0]._id?.toString(),
+            sessionId: allConversations[0].sessionId,
+            sessionType: allConversations[0].sessionType,
+            messageCount: allConversations[0].messages?.length || 0,
+            hasTeacherId: !!allConversations[0].teacherId
+          } : null
+        }
+      }
+    };
+  } catch (error) {
+    console.error("Error in comprehensiveDebug:", error);
+    return {
+      success: false,
+      error: error.message || "Debug failed",
+      stack: error.stack
+    };
+  }
+}
+
+/**
  * Get Voice Coach conversation history
  * @param {Object} formData - Form data containing pagination info
  * @returns {Promise<Object>} - Conversation history
  */
 export async function getVoiceCoachConversationHistory(formData) {
   try {
+    
     const session = await getServerSession();
+    
     if (!session?.user?.id) {
       return {
         success: false,
-        error: "Unauthorized"
+        error: "Unauthorized - No session found"
       };
     }
 
@@ -60,40 +162,85 @@ export async function getVoiceCoachConversationHistory(formData) {
     const limit = parseInt(formData.get("limit")) || 10;
     const sessionType = formData.get("sessionType") || "all";
 
+
     const { db } = await connectToDatabase();
     
-    // Build query
-    const query = { teacherId: new ObjectId(session.user.id) };
+    // Build query - try multiple approaches to find conversations
+    const userId = session.user.id;
+    
+    
+    // First, try to find conversations by sessionId pattern (voice_coach_USERID_*)
+    let query = { 
+      sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' }
+    };
+    
     if (sessionType !== "all") {
       query.sessionType = sessionType;
     }
 
+
     // Get conversations with pagination
-    const conversations = await db.collection('teacherConversations')
+    let conversations = await db.collection('teacherConversations')
       .find(query)
-      .sort({ 'metadata.lastMessageAt': -1 })
+      .sort({ updatedAt: -1, createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .toArray();
 
+
+    // If no conversations found with sessionId pattern, try teacherId field
+    if (conversations.length === 0) {
+      query = { teacherId: { $in: [new ObjectId(userId), userId] } };
+      if (sessionType !== "all") {
+        query.sessionType = sessionType;
+      }
+      
+      conversations = await db.collection('teacherConversations')
+        .find(query)
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .toArray();
+      
+    }
+
     // Get total count for pagination
     const totalCount = await db.collection('teacherConversations')
-      .countDocuments(query);
+      .countDocuments({ 
+        $or: [
+          { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
+          { teacherId: { $in: [new ObjectId(userId), userId] } }
+        ]
+      });
+
 
     // Serialize the data
-    const serializedConversations = conversations.map(conv => ({
-      _id: conv._id.toString(),
-      teacherId: conv.teacherId.toString(),
-      sessionId: conv.sessionId,
-      title: conv.title,
-      sessionType: conv.sessionType,
-      messageCount: conv.messages.length,
-      lastMessage: conv.messages[conv.messages.length - 1]?.content || "",
-      lastMessageAt: conv.metadata.lastMessageAt.toISOString(),
-      createdAt: conv.metadata.createdAt.toISOString(),
-      conversationStats: conv.conversationStats,
-      tags: conv.metadata.tags
-    }));
+    const serializedConversations = conversations.map(conv => {
+      const lastMessage = conv.messages && conv.messages.length > 0 
+        ? conv.messages[conv.messages.length - 1] 
+        : null;
+      
+      return {
+        _id: conv._id.toString(),
+        teacherId: conv.teacherId?.toString() || userId, // Use userId as fallback
+        sessionId: conv.sessionId,
+        title: conv.title || `Conversation ${conv.sessionId.split('_').pop()}`,
+        sessionType: conv.sessionType || "text",
+        messageCount: conv.messages?.length || 0,
+        lastMessage: lastMessage?.content || "No messages",
+        lastMessageAt: safeToISOString(conv.updatedAt || conv.createdAt),
+        createdAt: safeToISOString(conv.createdAt),
+        conversationStats: conv.conversationStats || {
+          totalMessages: conv.messages?.length || 0,
+          userMessages: conv.messages?.filter(m => m.role === 'user').length || 0,
+          aiMessages: conv.messages?.filter(m => m.role === 'assistant').length || 0,
+          totalDuration: 0
+        },
+        tags: conv.metadata?.tags || []
+      };
+    });
+
+    
 
     return {
       success: true,
@@ -142,10 +289,16 @@ export async function getVoiceCoachConversation(formData) {
 
     const { db } = await connectToDatabase();
     
+    const userId = session.user.id;
+    
+    // Try to find conversation by ID and verify ownership through sessionId pattern or teacherId
     const conversation = await db.collection('teacherConversations')
       .findOne({ 
         _id: new ObjectId(conversationId),
-        teacherId: new ObjectId(session.user.id)
+        $or: [
+          { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
+          { teacherId: { $in: [new ObjectId(userId), userId] } }
+        ]
       });
 
     if (!conversation) {
@@ -158,32 +311,37 @@ export async function getVoiceCoachConversation(formData) {
     // Serialize the conversation data
     const serializedConversation = {
       _id: conversation._id.toString(),
-      teacherId: conversation.teacherId.toString(),
+      teacherId: conversation.teacherId?.toString() || userId,
       sessionId: conversation.sessionId,
-      title: conversation.title,
-      sessionType: conversation.sessionType,
-      messages: conversation.messages.map(msg => ({
-        id: msg.id,
+      title: conversation.title || `Conversation ${conversation.sessionId.split('_').pop()}`,
+      sessionType: conversation.sessionType || "text",
+      messages: (conversation.messages || []).map(msg => ({
+        id: msg.id || msg._id?.toString(),
         role: msg.role,
         content: msg.content,
-        timestamp: msg.timestamp.toISOString(),
-        isImageResponse: msg.isImageResponse,
-        metadata: msg.metadata
+        timestamp: safeToISOString(msg.timestamp),
+        isImageResponse: msg.isImageResponse || false,
+        metadata: msg.metadata || {}
       })),
-      uploadedFiles: conversation.uploadedFiles.map(file => ({
+      uploadedFiles: (conversation.uploadedFiles || []).map(file => ({
         filename: file.filename,
         originalName: file.originalName,
         fileType: file.fileType,
-        uploadTime: file.uploadTime.toISOString()
+        uploadTime: safeToISOString(file.uploadTime)
       })),
-      teacherData: conversation.teacherData,
-      studentContext: conversation.studentContext,
-      conversationStats: conversation.conversationStats,
+      teacherData: conversation.teacherData || {},
+      studentContext: conversation.studentContext || {},
+      conversationStats: conversation.conversationStats || {
+        totalMessages: conversation.messages?.length || 0,
+        userMessages: conversation.messages?.filter(m => m.role === 'user').length || 0,
+        aiMessages: conversation.messages?.filter(m => m.role === 'assistant').length || 0,
+        totalDuration: 0
+      },
       metadata: {
         ...conversation.metadata,
-        createdAt: conversation.metadata.createdAt.toISOString(),
-        updatedAt: conversation.metadata.updatedAt.toISOString(),
-        lastMessageAt: conversation.metadata.lastMessageAt.toISOString()
+        createdAt: safeToISOString(conversation.createdAt),
+        updatedAt: safeToISOString(conversation.updatedAt),
+        lastMessageAt: safeToISOString(conversation.updatedAt || conversation.createdAt)
       }
     };
 
@@ -226,10 +384,15 @@ export async function deleteVoiceCoachConversation(formData) {
 
     const { db } = await connectToDatabase();
     
+    const userId = session.user.id;
+    
     const result = await db.collection('teacherConversations')
       .deleteOne({ 
         _id: new ObjectId(conversationId),
-        teacherId: new ObjectId(session.user.id)
+        $or: [
+          { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
+          { teacherId: { $in: [new ObjectId(userId), userId] } }
+        ]
       });
 
     if (result.deletedCount === 0) {
@@ -282,16 +445,21 @@ export async function updateVoiceCoachConversationTitle(formData) {
 
     const { db } = await connectToDatabase();
     
+    const userId = session.user.id;
+    
     const result = await db.collection('teacherConversations')
       .updateOne(
         { 
           _id: new ObjectId(conversationId),
-          teacherId: new ObjectId(session.user.id)
+          $or: [
+            { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
+            { teacherId: { $in: [new ObjectId(userId), userId] } }
+          ]
         },
         { 
           $set: { 
             title: newTitle,
-            'metadata.updatedAt': new Date()
+            updatedAt: new Date()
           }
         }
       );
@@ -335,9 +503,16 @@ export async function debugConversations() {
 
     const { db } = await connectToDatabase();
     
-    // Get all conversations for this teacher
+    const userId = session.user.id;
+    
+    // Get all conversations for this teacher using sessionId pattern
     const allConversations = await db.collection('teacherConversations')
-      .find({ teacherId: new ObjectId(session.user.id) })
+      .find({ 
+        $or: [
+          { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
+          { teacherId: { $in: [new ObjectId(userId), userId] } }
+        ]
+      })
       .toArray();
 
     // Get all conversations in the database (for debugging)
@@ -345,9 +520,6 @@ export async function debugConversations() {
       .find({})
       .toArray();
 
-    console.log('Debug - All conversations for teacher:', allConversations.length);
-    console.log('Debug - All conversations in DB:', allConversationsInDb.length);
-    console.log('Debug - Teacher ID:', session.user.id);
 
     return {
       success: true,
@@ -357,9 +529,9 @@ export async function debugConversations() {
         teacherId: session.user.id,
         conversations: allConversations.map(conv => ({
           _id: conv._id.toString(),
-          teacherId: conv.teacherId?.toString(),
+          teacherId: conv.teacherId?.toString() || userId,
           sessionId: conv.sessionId,
-          title: conv.title,
+          title: conv.title || `Conversation ${conv.sessionId.split('_').pop()}`,
           sessionType: conv.sessionType,
           messageCount: conv.messages?.length || 0
         }))
@@ -370,6 +542,117 @@ export async function debugConversations() {
     return {
       success: false,
       error: error.message || "Failed to debug conversations"
+    };
+  }
+}
+
+/**
+ * Migration function to update conversation data structure
+ * @returns {Promise<Object>} - Migration result
+ */
+export async function migrateConversations() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      return {
+        success: false,
+        error: "Unauthorized"
+      };
+    }
+
+    const { db } = await connectToDatabase();
+    
+    const userId = session.user.id;
+    
+    // Get all conversations for this teacher using sessionId pattern
+    const conversations = await db.collection('teacherConversations')
+      .find({ 
+        $or: [
+          { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
+          { teacherId: { $in: [new ObjectId(userId), userId] } }
+        ]
+      })
+      .toArray();
+
+    let migratedCount = 0;
+    
+    for (const conv of conversations) {
+      const updateData = {};
+      let needsUpdate = false;
+
+      // Add teacherId if missing
+      if (!conv.teacherId) {
+        updateData.teacherId = new ObjectId(userId);
+        needsUpdate = true;
+      }
+
+      // Ensure title exists
+      if (!conv.title) {
+        updateData.title = `Conversation ${conv.sessionId.split('_').pop()}`;
+        needsUpdate = true;
+      }
+
+      // Ensure sessionType exists
+      if (!conv.sessionType) {
+        updateData.sessionType = "text";
+        needsUpdate = true;
+      }
+
+      // Ensure conversationStats exists
+      if (!conv.conversationStats) {
+        const messageCount = conv.messages?.length || 0;
+        const userMessages = conv.messages?.filter(m => m.role === 'user').length || 0;
+        const aiMessages = conv.messages?.filter(m => m.role === 'assistant').length || 0;
+        
+        updateData.conversationStats = {
+          totalMessages: messageCount,
+          userMessages: userMessages,
+          aiMessages: aiMessages,
+          totalDuration: 0,
+          topicsDiscussed: [],
+          difficultyLevel: "medium",
+          teachingOutcomes: []
+        };
+        needsUpdate = true;
+      }
+
+      // Ensure metadata exists
+      if (!conv.metadata) {
+        updateData.metadata = {
+          createdAt: conv.createdAt || new Date(),
+          updatedAt: conv.updatedAt || new Date(),
+          lastMessageAt: conv.updatedAt || conv.createdAt || new Date(),
+          isActive: true,
+          tags: []
+        };
+        needsUpdate = true;
+      }
+
+      // Ensure updatedAt exists
+      if (!conv.updatedAt) {
+        updateData.updatedAt = conv.createdAt || new Date();
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        await db.collection('teacherConversations')
+          .updateOne(
+            { _id: conv._id },
+            { $set: updateData }
+          );
+        migratedCount++;
+      }
+    }
+
+    return {
+      success: true,
+      message: `Successfully migrated ${migratedCount} conversations`
+    };
+  } catch (error) {
+    console.error("Error in migrateConversations:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to migrate conversations"
     };
   }
 }
