@@ -155,7 +155,7 @@ export default function SignInForm() {
               </div>
               <Link 
                 href="/forgot-password" 
-                className="text-sm text-primary hover:text-primary/90 hover:underline"
+                className="text-sm text-primary hover:text-primary/90 hover:underline dark:text-white"
               >
                 Forgot password?
               </Link>
@@ -163,12 +163,12 @@ export default function SignInForm() {
 
             <Button
               type="submit"
-              className="w-full h-11 bg-primary hover:bg-primary/90 text-white font-medium"
+              className="w-full h-11 bg-primary hover:bg-primary/90 text-black font-medium dark:text-black"
               disabled={isLoading}
             >
               {isLoading ? (
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin dark:text-black text-black" />
                   Signing In...
                 </div>
               ) : (
@@ -191,7 +191,7 @@ export default function SignInForm() {
               Don't have an account?{" "}
               <Link 
                 href="/sign-up" 
-                className="font-medium text-primary hover:text-primary/90 hover:underline"
+                className="font-medium text-primary hover:text-primary/90 hover:underline dark:text-white"
               >
                 Sign up here
               </Link>

@@ -19,7 +19,10 @@ export async function generateContent(formData) {
       includeAssessment: formData.includeAssessment,
       multimediaSuggestions: formData.multimediaSuggestions,
       language: formData.language === "arabic" ? "Arabic" : "English",
-      webSearchEnabled: true
+      webSearchEnabled: true,
+      // Add session fields for lesson plans
+      numberOfSessions: formData.numberOfSessions || "1",
+      sessionDuration: formData.sessionDuration || "45 minutes"
     };
 
     const response = await PythonApiClient.generateContent(contentData);

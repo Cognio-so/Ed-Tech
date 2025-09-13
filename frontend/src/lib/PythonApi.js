@@ -109,6 +109,9 @@ class PythonApiClient {
       web_search_enabled: contentData.webSearchEnabled !== false,
       additional_ai_options: additional_ai_options.length ? additional_ai_options : undefined,
       language: contentData.language || 'English', // Always include language parameter with English default
+      // Add session fields for lesson plans
+      number_of_sessions: contentData.numberOfSessions || '1',
+      session_duration: contentData.sessionDuration || '45 minutes',
     };
 
     console.log('Sending content request:', pythonSchema);
