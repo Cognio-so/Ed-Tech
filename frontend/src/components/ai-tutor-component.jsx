@@ -90,6 +90,15 @@ const AiTutor = () => {
     const nextStartTimeRef = useRef(0);
     const audioBufferRef = useRef([]);
     const isPlayingRef = useRef(false);
+    const audioSourcesRef = useRef([]);
+    const isStreamingRef = useRef(false);
+    const streamStartTimeRef = useRef(0);
+    const audioQualityMetrics = useRef({
+        chunksProcessed: 0,
+        averageLatency: 0,
+        dropouts: 0,
+        bufferUnderruns: 0
+    });
 
     // Real student data state
     const [user, setUser] = useState(null);
@@ -329,6 +338,7 @@ const AiTutor = () => {
         }
     };
 
+    // Send message handler - FIXED to properly handle uploaded files
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isLoading) return;
 
@@ -378,8 +388,8 @@ const AiTutor = () => {
                 session_id: sessionId,
                 query: currentQuery,
                 history: [...messages, userMessage].slice(1).map(msg => ({
-                role: msg.type === 'user' ? 'user' : 'assistant',
-                content: msg.content
+                    role: msg.type === 'user' ? 'user' : 'assistant',
+                    content: msg.content
                 })),
                 web_search_enabled: true,
                 student_data: enhancedStudentData,
@@ -396,139 +406,103 @@ const AiTutor = () => {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error('Backend error response:', errorText);
                 throw new Error(`Backend error: ${response.status} - ${errorText}`);
             }
 
-            // Create AI response object but don't add to messages yet
+            // Create AI message for streaming
             streamingMessage = {
                 id: Date.now() + 1,
                 type: 'ai',
                 content: '',
                 timestamp: new Date(),
                 avatar: <Sparkle className="w-4 h-4 text-yellow-500" />,
+                isStreaming: true,
                 isImageResponse: false
             };
+
+            setMessages(prev => [...prev, streamingMessage]);
 
             // Handle streaming response
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let fullResponse = '';
-            let buffer = ''; // Buffer for incomplete JSON lines
-            let isFirstChunk = true;
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                buffer += decoder.decode(value, { stream: true });
-                
-                // Split by lines and process each complete line
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // Keep incomplete line in buffer
-                
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         try {
-                            const jsonStr = line.slice(6);
+                            const data = JSON.parse(line.slice(6));
                             
-                            // Check if this is an image response
-                            if (jsonStr.includes('__IMAGE_RESPONSE__')) {
-                                // Handle image response differently
-                                streamingMessage.isImageResponse = true;
+                            if (data.type === 'text_chunk' && data.content) {
+                                // Check for image response markers - EXACTLY like voice coach
+                                let isImageResponse = false;
+                                let messageContent = data.content;
                                 
-                                // Extract the image content after the marker
-                                const imageContent = jsonStr.replace('__IMAGE_RESPONSE__', '');
-                                
-                                // Try to parse the JSON properly
-                                try {
-                                    const data = JSON.parse(imageContent);
-                                    if (data.content) {
-                                        streamingMessage.content = data.content;
-                                    } else {
-                                        streamingMessage.content = imageContent;
-                                    }
-                                } catch (parseError) {
-                                    // If JSON parsing fails, use the raw content
-                                    streamingMessage.content = imageContent;
+                                if (data.content && data.content.includes('__IMAGE_RESPONSE__')) {
+                                    isImageResponse = true;
+                                    messageContent = data.content.replace('__IMAGE_RESPONSE__', '');
+                                } else if (data.content && data.content.includes('![image](')) {
+                                    isImageResponse = true;
+                                } else if (data.content && data.content.includes('data:image/')) {
+                                    isImageResponse = true;
                                 }
-                                
-                                // Add the response immediately
-                                if (isFirstChunk) {
-                                    setMessages(prev => [...prev, streamingMessage]);
-                                    isFirstChunk = false;
-                                } else {
-                                    setMessages(prev => prev.map(msg => 
-                                        msg.id === streamingMessage.id 
-                                            ? { ...streamingMessage }
-                                            : msg
-                                    ));
-                                }
-                                continue;
-                            }
-                            
-                            // Handle regular text chunks
-                            const data = JSON.parse(jsonStr);
-                            
-                            if (data.type === 'text_chunk') {
-                                if (isFirstChunk) {
-                                    setMessages(prev => [...prev, streamingMessage]);
-                                    isFirstChunk = false;
-                                }
-                                
-                                streamingMessage.content += data.content || "";
+
                                 setMessages(prev => prev.map(msg => 
                                     msg.id === streamingMessage.id 
-                                        ? { ...streamingMessage }
+                                        ? { 
+                                            ...msg, 
+                                            content: msg.content + messageContent,
+                                            isImageResponse: isImageResponse || msg.isImageResponse
+                                        }
                                         : msg
                                 ));
                             } else if (data.type === 'done') {
-                                // Mark streaming as complete
                                 setMessages(prev => prev.map(msg => 
                                     msg.id === streamingMessage.id 
                                         ? { ...msg, isStreaming: false }
                                         : msg
                                 ));
-                                
-                                // Save conversation to history after AI response is complete
-                                setTimeout(() => {
-                                    const allMessages = [...messages, userMessage, streamingMessage];
-                                    saveConversationToHistory(allMessages, isVoiceActive ? 'mixed' : 'text');
-                                }, 500);
-                                
-                                break;
                             } else if (data.type === 'error') {
-                                throw new Error(data.message || "Unknown error from AI Tutor");
+                                throw new Error(data.message || 'Unknown error');
                             }
                         } catch (parseError) {
-                            console.error('Error parsing SSE data:', parseError);
-                            console.error('Problematic line:', line);
-                            continue;
+                            console.warn('Failed to parse SSE data:', parseError);
                         }
                     }
                 }
             }
 
         } catch (error) {
-            console.error('Error in chatbot stream:', error);
-            // Remove the streaming message and add error message
-            if (streamingMessage && streamingMessage.id) {
-                setMessages(prev => prev.filter(msg => msg.id !== streamingMessage.id));
-            }
-            const errorMessage = {
-                id: Date.now() + 1,
-                type: 'ai',
-                content: "I'm sorry, I encountered an error while processing your request. Please try again.",
-                timestamp: new Date(),
-                avatar: <Sparkle className="w-4 h-4 text-red-500" />
-            };
-            setMessages(prev => [...prev, errorMessage]);
+            console.error('Error sending message:', error);
+            toast.error('Failed to send message. Please try again.');
             
-            // Save conversation even if there was an error
-            setTimeout(() => {
-                const allMessages = [...messages, userMessage, errorMessage];
-                saveConversationToHistory(allMessages, isVoiceActive ? 'mixed' : 'text');
-            }, 500);
+            // Update streaming message with error
+            if (streamingMessage) {
+                setMessages(prev => prev.map(msg => 
+                    msg.id === streamingMessage.id 
+                        ? { 
+                            ...msg, 
+                            content: `❌ Error: ${error.message}`,
+                            isStreaming: false 
+                        }
+                        : msg
+                ));
+            } else {
+                // Add error message if no streaming message was created
+                const errorMessage = {
+                    id: Date.now(),
+                    type: 'ai',
+                    content: `❌ Error: ${error.message}`,
+                    timestamp: new Date(),
+                    avatar: <Sparkle className="w-4 h-4 text-red-500" />
+                };
+                setMessages(prev => [...prev, errorMessage]);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -577,6 +551,11 @@ const AiTutor = () => {
                     setMessages(prev => [...prev, uploadMessage]);
                     
                     toast.success(`Uploaded ${files.length} document(s) successfully!`);
+                    
+                    // Show warnings if any files were rejected
+                    if (uploadResult.errors && uploadResult.errors.length > 0) {
+                        toast.warning(`Some files were rejected: ${uploadResult.errors.join(', ')}`);
+                    }
                 } else {
                     throw new Error(uploadResult.error);
                 }
@@ -588,9 +567,9 @@ const AiTutor = () => {
                 const errorMessage = {
                     id: Date.now(),
                     type: 'ai',
-                    content: "❌ Failed to upload your documents. Please try again or contact support if the problem persists.",
+                    content: `❌ Failed to upload documents: ${error.message}`,
                     timestamp: new Date(),
-                    avatar: <Sparkle className="w-4 h-4 text-yellow-500" />
+                    avatar: <Sparkle className="w-4 h-4 text-red-500" />
                 };
                 setMessages(prev => [...prev, errorMessage]);
             } finally {
@@ -611,7 +590,7 @@ const AiTutor = () => {
             type: 'ai',
             content: "🗑️ Cleared all uploaded documents. You can upload new ones anytime!",
             timestamp: new Date(),
-            avatar: <Sparkle className="w-4 h-4 text-yellow-500" />
+            avatar: <Sparkle className="w-4 h-4 text-blue-500" />
         };
         setMessages(prev => [...prev, clearMessage]);
     };
@@ -623,86 +602,125 @@ const AiTutor = () => {
             return;
         }
         
+        // Check if voice is already active and stop it instead
         if (isVoiceActive) {
-            console.log('Voice session already active');
+            console.log('Stopping voice session...');
+            await stopVoiceSessionHandler();
             return;
         }
         
+        // Reset error flag and audio scheduling for new session
         hasErrorRef.current = false;
         nextStartTimeRef.current = 0;
         
         try {
-            // Prepare student context using action
-            const studentContextFormData = new FormData();
-            studentContextFormData.append('studentData', JSON.stringify({
-                id: user._id,
-                email: user.email,
-                name: user.name || user.email,
-                grade: user.grade || '8',
-                progress: studentData.progress,
-                learningStats: studentData.learningStats,
-                userProgress: studentData.userProgress,
-                achievements: studentData.achievements || [],
-                subjects: user.subjects || ['General Studies', 'Mathematics', 'Science'],
-                lessons: studentData.lessons || [],
-                resources: studentData.resources || [],
-                learningStyle: 'visual',
-                difficultyPreference: 'medium',
-                topicInterests: []
-            }));
-
-            const voiceSessionResult = await startVoiceSession(studentContextFormData);
-            
-            if (!voiceSessionResult.success) {
-                throw new Error(voiceSessionResult.error);
-            }
-
             // Initialize audio context
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             setAudioContext(audioCtx);
             
+            // Resume audio context if suspended (for Chrome autoplay policy)
             if (audioCtx.state === 'suspended') {
                 await audioCtx.resume();
                 console.log('Audio context resumed');
             }
             
-            // Connect to voice WebSocket using the prepared context
-            const ws = await PythonApi.startVoiceSession(voiceSessionResult.studentContext);
-            
-            ws.onopen = async () => {
-                console.log('Voice WebSocket connected');
-                setVoiceWebSocket(ws);
-                setIsVoiceActive(true);
+            // Prepare comprehensive student context for personalized tutoring
+            const studentContext = {
+                id: user._id || 'fallback_user_id',
+                email: user.email || 'student@example.com',
+                name: user.name || 'Student',
+                grade: user.grade || '8',
+                
+                // Learning Progress
+                progress: studentData.progress || {},
+                learningStats: studentData.learningStats || {},
+                userProgress: studentData.userProgress || {},
+                
+                // Achievements and milestones
+                achievements: studentData.achievements || [],
+                
+                // Academic Resources
+                subjects: user.subjects || ["General Studies", "Mathematics", "Science"],
+                lessons: studentData.lessons || [],
+                resources: studentData.resources || [],
+                assessments: (studentData.resources || []).filter(r => r.resourceType === 'assessment'),
+                
+                // Current Learning Status
+                recentLessons: (studentData.lessons || []).slice(0, 5),
+                incompleteAssessments: (studentData.resources || []).filter(r => 
+                    r.resourceType === 'assessment' && r.status !== 'completed'
+                ),
+                
+                // Study patterns and preferences
+                studyPreferences: {
+                    learningStyle: user.learningStyle || 'visual',
+                    difficultyPreference: user.difficultyPreference || 'medium',
+                    topicInterests: user.topicInterests || []
+                },
+                
+                // Current session context
+                pending_tasks: [
+                    {"topic": "Help with homework and assignments", "status": "Active"},
+                    {"topic": "Concept understanding and clarification", "status": "Available"},
+                    {"topic": "Practice problems and exercises", "status": "Available"}
+                ],
+                
+                // Performance insights
+                performanceInsights: {
+                    strongSubjects: (studentData.learningStats?.strongSubjects) || [],
+                    needsImprovement: (studentData.learningStats?.weakSubjects) || [],
+                    averageScore: studentData.learningStats?.averageScore || 'N/A',
+                    studyTime: studentData.learningStats?.totalStudyTime || 'N/A',
+                    lastActivity: studentData.learningStats?.lastActivity || new Date().toISOString()
+                }
+            };
 
+            // Create WebSocket connection to Python backend
+            const wsUrl = `ws://localhost:8000/ws/voice`;
+            const ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('Voice WebSocket connected');
+                setIsVoiceActive(true);
+                setVoiceWebSocket(ws);
+                
+                // Send session start with student data
                 ws.send(JSON.stringify({
                     type: 'start_session',
-                    student_data: voiceSessionResult.studentContext
+                    student_data: studentContext
                 }));
                 
-                console.log('Sending enhanced student context:', voiceSessionResult.studentContext);
+                // Start microphone capture
+                startMicrophoneCapture(ws);
                 
-                await startMicrophoneCapture(ws);
-                toast.success('Real-time voice session started');
+                toast.success('Voice session started!');
             };
             
             ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                handleVoiceMessage(data);
+                try {
+                    const data = JSON.parse(event.data);
+                    handleVoiceMessage(data);
+                } catch (error) {
+                    console.error('Error parsing voice WebSocket message:', error);
+                }
             };
             
             ws.onerror = (error) => {
                 console.error('Voice WebSocket error:', error);
                 
+                // Only show error if we haven't already
                 if (!hasErrorRef.current) {
                     hasErrorRef.current = true;
                     toast.error('Voice connection failed. Please try again.');
                 }
                 
+                // Clean up without trying to send to closed WebSocket
                 setVoiceWebSocket(null);
                 setIsVoiceActive(false);
                 setIsListening(false);
                 stopMicrophoneCapture();
                 
+                // Clean up audio context
                 if (audioCtx && audioCtx.state !== 'closed') {
                     audioCtx.close().catch(e => console.error('Error closing AudioContext:', e));
                 }
@@ -712,6 +730,7 @@ const AiTutor = () => {
             ws.onclose = (event) => {
                 console.log('Voice WebSocket closed', event.code, event.reason);
                 
+                // Only show error if it was unexpected (not a normal close)
                 if (event.code !== 1000 && !hasErrorRef.current) {
                     hasErrorRef.current = true;
                     if (event.code === 1006) {
@@ -724,6 +743,7 @@ const AiTutor = () => {
                 setIsListening(false);
                 stopMicrophoneCapture();
                 
+                // Clean up audio context
                 if (audioCtx && audioCtx.state !== 'closed') {
                     audioCtx.close().catch(e => console.error('Error closing AudioContext:', e));
                 }
@@ -733,17 +753,23 @@ const AiTutor = () => {
         } catch (error) {
             console.error('Failed to start voice session:', error);
             
+            // Only show error if we haven't already shown one
             if (!hasErrorRef.current) {
                 hasErrorRef.current = true;
                 toast.error('Failed to start voice session. Please check your microphone permissions.');
             }
             
+            // Clean up
             setIsVoiceActive(false);
             setIsListening(false);
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close().catch(e => console.error('Error closing AudioContext:', e));
+            }
+            setAudioContext(null);
         }
     };
 
-    // Start microphone capture and streaming
+    // Use the same microphone capture system as voice coach
     const startMicrophoneCapture = async (ws) => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -758,31 +784,38 @@ const AiTutor = () => {
             
             mediaStreamRef.current = stream;
             
+            // Use AudioContext for PCM processing
             const audioCtx = audioContext || new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
             const source = audioCtx.createMediaStreamSource(stream);
             
+            // Create an analyser node as a modern alternative
             const analyser = audioCtx.createAnalyser();
             analyser.fftSize = 2048;
             
+            // Create a buffer to capture audio
             const bufferLength = analyser.fftSize;
             const dataArray = new Float32Array(bufferLength);
             
             source.connect(analyser);
             
+            // Process audio in chunks using setInterval instead of deprecated ScriptProcessor
             const processAudio = setInterval(() => {
                 if (ws.readyState !== WebSocket.OPEN) {
                     clearInterval(processAudio);
                     return;
                 }
                 
+                // Get time domain data
                 analyser.getFloatTimeDomainData(dataArray);
                 
+                // Convert Float32Array to Int16Array (PCM16)
                 const pcm16 = new Int16Array(dataArray.length);
                 for (let i = 0; i < dataArray.length; i++) {
                     const s = Math.max(-1, Math.min(1, dataArray[i]));
                     pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
                 }
                 
+                // Convert to base64
                 const uint8Array = new Uint8Array(pcm16.buffer);
                 let binary = '';
                 for (let i = 0; i < uint8Array.length; i++) {
@@ -790,12 +823,14 @@ const AiTutor = () => {
                 }
                 const base64Audio = btoa(binary);
                 
+                // Send to backend
                 ws.send(JSON.stringify({
                     type: 'audio_chunk',
                     audio: base64Audio
                 }));
-            }, 100);
+            }, 100); // Send every 100ms
             
+            // Store for cleanup
             mediaStreamRef.current.analyser = analyser;
             mediaStreamRef.current.source = source;
             mediaStreamRef.current.processInterval = processAudio;
@@ -805,6 +840,7 @@ const AiTutor = () => {
         } catch (error) {
             console.error('Failed to start microphone:', error);
             
+            // Only show error if we haven't already
             if (!hasErrorRef.current) {
                 hasErrorRef.current = true;
                 
@@ -817,11 +853,12 @@ const AiTutor = () => {
                 }
             }
             
-            stopVoiceSession();
+            // Stop the voice session since we can't capture audio
+            stopVoiceSessionHandler();
         }
     };
     
-    // Stop microphone capture
+    // Use the same stop microphone capture system as voice coach
     const stopMicrophoneCapture = () => {
         if (mediaRecorder) {
             mediaRecorder.stop();
@@ -829,11 +866,13 @@ const AiTutor = () => {
         }
         
         if (mediaStreamRef.current) {
+            // Clear interval if it exists
             if (mediaStreamRef.current.processInterval) {
                 clearInterval(mediaStreamRef.current.processInterval);
                 mediaStreamRef.current.processInterval = null;
             }
             
+            // Disconnect audio nodes if they exist
             if (mediaStreamRef.current.analyser) {
                 mediaStreamRef.current.analyser.disconnect();
                 mediaStreamRef.current.analyser = null;
@@ -844,6 +883,7 @@ const AiTutor = () => {
                 mediaStreamRef.current.source = null;
             }
             
+            // Stop all tracks
             mediaStreamRef.current.getTracks().forEach(track => track.stop());
             mediaStreamRef.current = null;
         }
@@ -851,49 +891,295 @@ const AiTutor = () => {
         setIsListening(false);
     };
 
-    const stopVoiceSession = () => {
-        if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
-            try {
-                voiceWebSocket.send(JSON.stringify({ type: 'stop_session' }));
-                voiceWebSocket.close();
-            } catch (error) {
-                console.error('Error closing WebSocket:', error);
-            }
+    // Use the same advanced audio streaming system as voice coach
+    const playAudioFromBase64 = async (base64Audio) => {
+        // Ensure we have an audio context - reuse existing one
+        let currentAudioContext = audioContext;
+        if (!currentAudioContext || currentAudioContext.state === 'closed') {
+            console.log('Creating audio context for playback');
+            currentAudioContext = new (window.AudioContext || window.webkitAudioContext)({ 
+                sampleRate: 24000,
+                latencyHint: 'interactive' // Optimize for low latency
+            });
+            setAudioContext(currentAudioContext);
+            
+            // Reset timing when creating new context
+            nextStartTimeRef.current = currentAudioContext.currentTime;
         }
-        setVoiceWebSocket(null);
-        setIsVoiceActive(false);
-        setIsListening(false);
         
-        stopMicrophoneCapture();
+        // Resume if suspended
+        if (currentAudioContext.state === 'suspended') {
+            await currentAudioContext.resume();
+        }
         
-        if (audioContext && audioContext.state !== 'closed') {
-            audioContext.suspend().then(() => {
-                console.log('Audio context suspended');
-            }).catch(error => {
-                console.error('Error suspending AudioContext:', error);
+        // Validate audio context state
+        if (currentAudioContext.state === 'closed') {
+            console.error('AudioContext is closed, cannot play audio');
+            return;
+        }
+        
+        try {
+            // Validate base64 input
+            if (!base64Audio || typeof base64Audio !== 'string') {
+                console.warn('Invalid base64 audio data received');
+                return;
+            }
+            
+            // Convert base64 to ArrayBuffer with error handling
+            let binaryString, bytes;
+            try {
+                binaryString = atob(base64Audio);
+                bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+            } catch (decodeError) {
+                console.error('Failed to decode base64 audio:', decodeError);
+                return;
+            }
+            
+            // Validate minimum audio chunk size (prevent micro-chunks)
+            if (bytes.length < 960) { // 20ms at 24kHz, 16-bit = 960 bytes
+                console.log('Audio chunk too small, skipping:', bytes.length);
+                return;
+            }
+            
+            // Create Int16Array from bytes (little-endian format)
+            const pcm16 = new Int16Array(bytes.buffer);
+            
+            // Apply audio enhancement and normalization
+            const float32 = new Float32Array(pcm16.length);
+            let maxAmplitude = 0;
+            
+            // Convert PCM16 to Float32 and find max amplitude
+            for (let i = 0; i < pcm16.length; i++) {
+                float32[i] = pcm16[i] / 32768.0;
+                maxAmplitude = Math.max(maxAmplitude, Math.abs(float32[i]));
+            }
+            
+            // Apply soft limiting and normalization if needed
+            if (maxAmplitude > 0.95) {
+                const compressionRatio = 0.9 / maxAmplitude;
+                for (let i = 0; i < float32.length; i++) {
+                    float32[i] *= compressionRatio;
+                }
+                console.log('Applied audio compression, ratio:', compressionRatio);
+            }
+            
+            // Create audio buffer with validation
+            if (float32.length === 0) {
+                console.warn('Empty audio data, skipping');
+                return;
+            }
+            
+            const audioBuffer = currentAudioContext.createBuffer(1, float32.length, 24000);
+            audioBuffer.getChannelData(0).set(float32);
+            
+            // Quality metrics tracking
+            audioQualityMetrics.current.chunksProcessed++;
+            const receiveTime = currentAudioContext.currentTime;
+            
+            // Add to audio buffer queue with enhanced metadata
+            audioBufferRef.current.push({
+                buffer: audioBuffer,
+                timestamp: receiveTime,
+                duration: audioBuffer.duration,
+                chunkId: audioQualityMetrics.current.chunksProcessed,
+                size: bytes.length
+            });
+            
+            // Better buffer management - trim when buffer gets too large
+            if (audioBufferRef.current.length > 50) {
+                const removedChunks = audioBufferRef.current.length - 25;
+                audioBufferRef.current = audioBufferRef.current.slice(-25);
+                audioQualityMetrics.current.dropouts += removedChunks;
+                console.log(`Audio buffer trimmed: removed ${removedChunks} chunks, buffer size: ${audioBufferRef.current.length}`);
+            }
+            
+            // Start processing queue if not already streaming
+            if (!isStreamingRef.current) {
+                processAudioStream(currentAudioContext);
+            }
+            
+        } catch (error) {
+            console.error('Failed to prepare audio:', error);
+            audioQualityMetrics.current.dropouts++;
+        }
+    };
+
+    // Use the same enhanced audio stream processing as voice coach
+    const processAudioStream = (currentAudioContext) => {
+        if (audioBufferRef.current.length === 0) {
+            isStreamingRef.current = false;
+            // Log quality metrics when stream ends
+            if (audioQualityMetrics.current.chunksProcessed > 0) {
+                console.log('Audio stream ended. Quality metrics:', audioQualityMetrics.current);
+            }
+            return;
+        }
+        
+        isStreamingRef.current = true;
+        
+        // Get the next audio chunk
+        const audioChunk = audioBufferRef.current.shift();
+        
+        // Validate audio context is still usable
+        if (currentAudioContext.state === 'closed') {
+            console.error('AudioContext closed during playback');
+            isStreamingRef.current = false;
+            return;
+        }
+        
+        // Create audio source with error handling
+        let source;
+        try {
+            source = currentAudioContext.createBufferSource();
+            source.buffer = audioChunk.buffer;
+            
+            // Create gain node for volume control and fade effects
+            const gainNode = currentAudioContext.createGain();
+            source.connect(gainNode);
+            gainNode.connect(currentAudioContext.destination);
+            
+            // Apply subtle fade-in to prevent clicks
+            const now = currentAudioContext.currentTime;
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(1, now + 0.003); // 3ms fade-in
+            
+        } catch (error) {
+            console.error('Failed to create audio source:', error);
+            audioQualityMetrics.current.dropouts++;
+            // Continue with next chunk
+            setTimeout(() => processAudioStream(currentAudioContext), 10);
+            return;
+        }
+        
+        // Better timing calculation
+        const now = currentAudioContext.currentTime;
+        
+        // Reset timing if drift is too large or if this is the first chunk
+        if (nextStartTimeRef.current === 0 || nextStartTimeRef.current > now + 0.5) {
+            nextStartTimeRef.current = now + 0.01;
+        }
+        
+        // Ensure smooth playback with minimal gaps
+        const scheduledStartTime = Math.max(now + 0.005, nextStartTimeRef.current);
+        
+        // Start playing with error handling
+        try {
+            source.start(scheduledStartTime);
+            
+            // Update timing for next chunk - no gaps needed for continuous audio
+            nextStartTimeRef.current = scheduledStartTime + audioChunk.duration;
+            
+        } catch (startError) {
+            console.error('Failed to start audio source:', startError);
+            audioQualityMetrics.current.dropouts++;
+            // Continue with next chunk
+            setTimeout(() => processAudioStream(currentAudioContext), 10);
+            return;
+        }
+        
+        // Enhanced source management
+        audioSourcesRef.current.push({
+            source: source,
+            startTime: scheduledStartTime,
+            endTime: scheduledStartTime + audioChunk.duration,
+            chunkId: audioChunk.chunkId
+        });
+        
+        // Cleanup old sources more aggressively
+        const currentTime = currentAudioContext.currentTime;
+        audioSourcesRef.current = audioSourcesRef.current.filter((sourceInfo, index) => {
+            if (sourceInfo.endTime < currentTime - 0.5) {
+                // Source has finished playing and is old enough to clean up
+                try {
+                    sourceInfo.source.disconnect();
+                } catch (e) {
+                    // Already disconnected
+                }
+                return false;
+            }
+            return true;
+        });
+        
+        // Keep maximum of 10 active sources (reduced from 15)
+        if (audioSourcesRef.current.length > 10) {
+            const excess = audioSourcesRef.current.splice(0, audioSourcesRef.current.length - 10);
+            excess.forEach(sourceInfo => {
+                try {
+                    sourceInfo.source.stop();
+                    sourceInfo.source.disconnect();
+                } catch (e) {
+                    // Already stopped/disconnected
+                }
+            });
+        }
+        
+        // Schedule next chunk processing immediately for continuous playback
+        source.onended = () => {
+            // Process next chunk immediately for seamless audio
+            processAudioStream(currentAudioContext);
+        };
+        
+        // Enhanced error handling
+        source.onerror = (error) => {
+            console.error('Audio source error:', error);
+            audioQualityMetrics.current.dropouts++;
+            // Continue with next chunk
+            setTimeout(() => processAudioStream(currentAudioContext), 10);
+        };
+        
+        // Detailed logging for debugging (only log every 20th chunk to reduce spam)
+        if (audioChunk.chunkId % 20 === 0) {
+            console.log('Audio stream status:', {
+                chunkId: audioChunk.chunkId,
+                duration: audioChunk.duration,
+                startTime: scheduledStartTime,
+                nextStartTime: nextStartTimeRef.current,
+                queueLength: audioBufferRef.current.length,
+                contextTime: currentAudioContext.currentTime,
+                timingGap: scheduledStartTime - currentAudioContext.currentTime,
+                activeSources: audioSourcesRef.current.length,
+                qualityMetrics: audioQualityMetrics.current
             });
         }
     };
 
+    // Use the same voice message handler as voice coach
     const handleVoiceMessage = async (data) => {
         switch (data.type) {
             case 'session_started':
                 toast.success('Ready for real-time conversation');
                 setIsListening(true);
+                // Reset all audio streaming state for new session
                 nextStartTimeRef.current = 0;
                 audioBufferRef.current = [];
                 isPlayingRef.current = false;
-                console.log('Audio streaming state reset for new session');
+                isStreamingRef.current = false;
+                audioSourcesRef.current = [];
+                streamStartTimeRef.current = 0;
+                // Reset quality metrics for new session
+                audioQualityMetrics.current = {
+                    chunksProcessed: 0,
+                    averageLatency: 0,
+                    dropouts: 0,
+                    bufferUnderruns: 0
+                };
+                console.log('Audio streaming state and quality metrics reset for new session');
                 break;
             case 'session.created':
                 console.log('OpenAI session created');
                 break;
             case 'response.audio.delta':
+                // Play audio response from OpenAI with enhanced processing
                 const audioData = data.audio || data.delta;
                 if (audioData) {
+                    // Use non-blocking audio processing to prevent WebSocket delays
                     setTimeout(() => playAudioFromBase64(audioData), 0);
                 } else {
                     console.warn('No audio data in response.audio.delta event');
+                    audioQualityMetrics.current.dropouts++;
                 }
                 break;
             case 'input_audio_buffer.speech_started':
@@ -907,16 +1193,76 @@ const AiTutor = () => {
                     setTranscription(data.transcript);
                 }
                 break;
+            case 'conversation.item.create':
+                // Handle tool calls if needed
+                if (data.item?.tool_calls) {
+                    for (const toolCall of data.item.tool_calls) {
+                        if (toolCall.function?.name === 'web_search') {
+                            try {
+                                const args = JSON.parse(toolCall.function.arguments);
+                                const searchResults = await performWebSearch(args.query);
+                                
+                                // Check WebSocket state before sending
+                                if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                                    voiceWebSocket.send(JSON.stringify({
+                                        type: 'conversation.item.create',
+                                        item: {
+                                            type: 'function_call_output',
+                                            call_id: toolCall.id,
+                                            output: searchResults
+                                        }
+                                    }));
+                                }
+                            } catch (error) {
+                                console.error('Web search failed:', error);
+                            }
+                        }
+                    }
+                }
+                break;
             case 'response.done':
             case 'response.completed':
                 console.log('OpenAI response completed');
                 break;
+            case 'function_call_request':
+                // Handle function call request from backend
+                if (data.function?.name === 'web_search') {
+                    try {
+                        const args = JSON.parse(data.function.arguments || '{}');
+                        const searchResults = await performWebSearch(args.query);
+                        
+                        // Check WebSocket state before sending
+                        if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                            voiceWebSocket.send(JSON.stringify({
+                                type: 'function_call_output',
+                                call_id: data.function.call_id || data.function.id,
+                                output: searchResults
+                            }));
+                        }
+                    } catch (error) {
+                        console.error('Function call failed:', error);
+                    }
+                }
+                break;
             case 'error':
                 console.error('Voice session error:', data);
                 
+                // Log the specific error details
+                if (data.error) {
+                    console.error('OpenAI Error Details:', {
+                        type: data.error.type,
+                        code: data.error.code,
+                        message: data.error.message,
+                        param: data.error.param,
+                        event_id: data.event_id
+                    });
+                }
+                
+                // Only show error if we haven't already
                 if (!hasErrorRef.current) {
                     hasErrorRef.current = true;
                     
+                    // Extract error message from OpenAI error structure
                     let errorMessage = 'Voice session encountered an error';
                     if (data.error?.message) {
                         errorMessage = data.error.message;
@@ -927,188 +1273,73 @@ const AiTutor = () => {
                     toast.error(errorMessage);
                 }
                 
+                // Don't stop session for recoverable errors
                 if (data.error?.type === 'invalid_request_error' || data.error?.code === 'invalid_value') {
                     console.warn('Recoverable error, continuing session...');
                 } else {
-                    stopVoiceSession();
+                    stopVoiceSessionHandler();
                 }
                 break;
         }
     };
 
-    const playAudioFromBase64 = async (base64Audio) => {
-        let currentAudioContext = audioContext;
-        if (!currentAudioContext || currentAudioContext.state === 'closed') {
-            console.log('Creating audio context for playback');
-            currentAudioContext = new (window.AudioContext || window.webkitAudioContext)({ 
-                sampleRate: 24000,
-                latencyHint: 'interactive'
+    // Use the same stop voice session system as voice coach
+    const stopVoiceSessionHandler = async () => {
+        try {
+            console.log('Stopping voice session...');
+            
+            // Check WebSocket state before sending
+            if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                try {
+                    voiceWebSocket.send(JSON.stringify({ type: 'stop_session' }));
+                    voiceWebSocket.close();
+                } catch (error) {
+                    console.error('Error closing WebSocket:', error);
+                }
+            }
+            
+            setVoiceWebSocket(null);
+            setIsVoiceActive(false);
+            setIsListening(false);
+            
+            // Clean up audio streaming
+            isStreamingRef.current = false;
+            audioBufferRef.current = [];
+            nextStartTimeRef.current = 0;
+            
+            // Stop all audio sources
+            audioSourcesRef.current.forEach(source => {
+                try {
+                    source.source.stop();
+                    source.source.disconnect();
+                } catch (e) {
+                    // Source may already be stopped
+                }
             });
-            setAudioContext(currentAudioContext);
-            nextStartTimeRef.current = currentAudioContext.currentTime;
-        }
-        
-        if (currentAudioContext.state === 'suspended') {
-            await currentAudioContext.resume();
-        }
-        
-        if (currentAudioContext.state === 'closed') {
-            console.error('AudioContext is closed, cannot play audio');
-            return;
-        }
-        
-        try {
-            if (!base64Audio || typeof base64Audio !== 'string') {
-                console.warn('Invalid base64 audio data received');
-                return;
+            audioSourcesRef.current = [];
+            
+            // Clean up microphone
+            stopMicrophoneCapture();
+            
+            // Don't close audio context - just suspend it for reuse
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.suspend().then(() => {
+                    console.log('Audio context suspended');
+                }).catch(error => {
+                    console.error('Error suspending AudioContext:', error);
+                });
             }
             
-            let binaryString, bytes;
-            try {
-                binaryString = atob(base64Audio);
-                bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
-            } catch (decodeError) {
-                console.error('Failed to decode base64 audio:', decodeError);
-                return;
-            }
+            setTranscription('');
             
-            if (bytes.length < 960) {
-                console.log('Audio chunk too small, skipping:', bytes.length);
-                return;
-            }
-            
-            const pcm16 = new Int16Array(bytes.buffer);
-            const float32 = new Float32Array(pcm16.length);
-            let maxAmplitude = 0;
-            
-            for (let i = 0; i < pcm16.length; i++) {
-                float32[i] = pcm16[i] / 32768.0;
-                maxAmplitude = Math.max(maxAmplitude, Math.abs(float32[i]));
-            }
-            
-            if (maxAmplitude > 0.95) {
-                const compressionRatio = 0.9 / maxAmplitude;
-                for (let i = 0; i < float32.length; i++) {
-                    float32[i] *= compressionRatio;
-                }
-                console.log('Applied audio compression, ratio:', compressionRatio);
-            }
-            
-            if (float32.length === 0) {
-                console.warn('Empty audio data, skipping');
-                return;
-            }
-            
-            const audioBuffer = currentAudioContext.createBuffer(1, float32.length, 24000);
-            audioBuffer.getChannelData(0).set(float32);
-            
-            audioBufferRef.current.push({
-                buffer: audioBuffer,
-                timestamp: currentAudioContext.currentTime,
-                duration: audioBuffer.duration,
-                chunkId: Date.now(),
-                size: bytes.length
-            });
-            
-            if (audioBufferRef.current.length > 50) {
-                const removedChunks = audioBufferRef.current.length - 25;
-                audioBufferRef.current = audioBufferRef.current.slice(-25);
-                console.log(`Audio buffer trimmed: removed ${removedChunks} chunks, buffer size: ${audioBufferRef.current.length}`);
-            }
-            
-            if (!isPlayingRef.current) {
-                processAudioStream(currentAudioContext);
-            }
-            
+            toast.success('Voice session stopped');
         } catch (error) {
-            console.error('Failed to prepare audio:', error);
+            console.error('Error stopping voice session:', error);
+            toast.error('Error stopping voice session');
         }
     };
 
-    const processAudioStream = (currentAudioContext) => {
-        if (audioBufferRef.current.length === 0) {
-            isPlayingRef.current = false;
-            return;
-        }
-        
-        isPlayingRef.current = true;
-        
-        const audioChunk = audioBufferRef.current.shift();
-        
-        if (currentAudioContext.state === 'closed') {
-            console.error('AudioContext closed during playback');
-            isPlayingRef.current = false;
-            return;
-        }
-        
-        let source;
-        try {
-            source = currentAudioContext.createBufferSource();
-            source.buffer = audioChunk.buffer;
-            
-            const gainNode = currentAudioContext.createGain();
-            source.connect(gainNode);
-            gainNode.connect(currentAudioContext.destination);
-            
-            const now = currentAudioContext.currentTime;
-            gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(1, now + 0.003);
-            
-        } catch (error) {
-            console.error('Failed to create audio source:', error);
-            setTimeout(() => processAudioStream(currentAudioContext), 10);
-            return;
-        }
-        
-        const now = currentAudioContext.currentTime;
-        
-        if (nextStartTimeRef.current === 0 || nextStartTimeRef.current > now + 0.5) {
-            nextStartTimeRef.current = now + 0.01;
-        }
-        
-        const scheduledStartTime = Math.max(now + 0.005, nextStartTimeRef.current);
-        
-        try {
-            source.start(scheduledStartTime);
-            nextStartTimeRef.current = scheduledStartTime + audioChunk.duration;
-            
-        } catch (startError) {
-            console.error('Failed to start audio source:', startError);
-            setTimeout(() => processAudioStream(currentAudioContext), 10);
-            return;
-        }
-        
-        source.onended = () => {
-            processAudioStream(currentAudioContext);
-        };
-        
-        source.onerror = (error) => {
-            console.error('Audio source error:', error);
-            setTimeout(() => processAudioStream(currentAudioContext), 10);
-        };
-    };
-
-    const toggleVoiceRecording = async () => {
-        if (!isVoiceActive) {
-            if (!audioContext) {
-                const newAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-                setAudioContext(newAudioContext);
-                
-                if (newAudioContext.state === 'suspended') {
-                    await newAudioContext.resume();
-                    console.log('Audio context resumed after user interaction');
-                }
-            }
-            
-            startVoiceSessionHandler();
-        } else {
-            stopVoiceSession();
-        }
-    };
-
+    // Web search function for voice session
     const performWebSearch = async (query) => {
         try {
             const response = await PythonApi.runWebSearch({
@@ -1178,6 +1409,7 @@ const AiTutor = () => {
 
     // Enhanced image rendering component
     const ImageMessage = ({ content }) => {
+        // Extract image URL from markdown
         const imageMatch = content.match(/!\[.*?\]\((data:image\/[^)]+)\)/);
         
         if (imageMatch) {
@@ -1201,6 +1433,7 @@ const AiTutor = () => {
             );
         }
         
+        // Fallback to markdown rendering
         return (
             <div className="prose prose-sm max-w-none dark:prose-invert">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
@@ -1428,7 +1661,7 @@ const AiTutor = () => {
                 </span>
             </div>
             <Button
-                onClick={stopVoiceSession}
+                onClick={stopVoiceSessionHandler}
                 size="sm"
                 variant="outline"
                 className="text-xs"

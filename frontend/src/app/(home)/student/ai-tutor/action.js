@@ -439,11 +439,50 @@ export async function uploadDocuments(formData) {
       };
     }
 
-    // Convert File objects to proper format for Python API
-    const fileObjects = files.filter(file => file instanceof File);
+    // Validate file types and sizes
+    const maxFileSize = 10 * 1024 * 1024; // 10MB
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'image/png',
+      'image/jpeg',
+      'image/jpg',
+      'image/gif',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/csv'
+    ];
+
+    const validFiles = [];
+    const errors = [];
+
+    for (const file of files) {
+      if (file.size > maxFileSize) {
+        errors.push(`${file.name}: File too large (max 10MB)`);
+        continue;
+      }
+      
+      if (!allowedTypes.includes(file.type)) {
+        errors.push(`${file.name}: Unsupported file type`);
+        continue;
+      }
+      
+      validFiles.push(file);
+    }
+
+    if (validFiles.length === 0) {
+      return {
+        success: false,
+        error: `No valid files. Errors: ${errors.join(', ')}`
+      };
+    }
 
     // Upload to Python backend
-    const uploadResponse = await PythonApi.uploadDocumentsForChatbot(sessionId, fileObjects);
+    const uploadResponse = await PythonApi.uploadDocumentsForChatbot(sessionId, validFiles);
 
     if (!uploadResponse.success) {
       throw new Error(uploadResponse.message || "Upload failed");
@@ -451,8 +490,9 @@ export async function uploadDocuments(formData) {
 
     return {
       success: true,
-      message: `Successfully uploaded ${fileObjects.length} document(s)`,
-      filesProcessed: uploadResponse.files_processed || fileObjects.length
+      message: `Successfully uploaded ${validFiles.length} document(s)`,
+      filesProcessed: uploadResponse.files_processed || validFiles.length,
+      errors: errors.length > 0 ? errors : undefined
     };
 
   } catch (error) {
