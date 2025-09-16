@@ -113,7 +113,7 @@ def get_user_input() -> dict:
     print("\n4. Advanced Settings:")
     emotional_consideration = input("   - Emotional Considerations (comma-separated, e.g., anxiety, low confidence, Enter to skip): ") or "None"
 
-    depths = ["Basic", "Standard", "Advanced"]
+    depths = ["Basic", "Standard", "Enriched"]
     print("   - Instructional Depth:")
     for i, d in enumerate(depths, 1):
         print(f"     {i}. {d.title()}")
@@ -368,7 +368,7 @@ def trigger_slide_generation(generated_content: str, config: dict):
                 print("   Invalid input. Please enter a number.")
 
     # Map instructional depth to SlideSpeak's verbosity settings
-    depth_map = {"Basic": "concise", "Standard": "standard", "Advanced": "text-heavy"}
+    depth_map = {"Basic": "concise", "Standard": "standard", "Enriched": "text-heavy"}
     verbosity = depth_map.get(config['instructional_depth'], "standard")
     print(f"   - Verbosity set to '{verbosity}' based on Instructional Depth '{config['instructional_depth']}'.")
 

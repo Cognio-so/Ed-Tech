@@ -132,7 +132,7 @@ async def get_curriculum_context_async(schema: dict, embeddings: OpenAIEmbedding
             retrieval_mode=RetrievalMode.DENSE
         )
 
-        vector_search_query = f"Subject: {schema['subject']}, Grade: {schema['grade_level']}, Topic: {schema['topic']}, Instructions: {schema['user_prompt']}"
+        vector_search_query = f"Subject: {schema['subject']}, Grade: {schema['grade_level']}, Topic: {schema['topic']}, {schema['user_prompt']}"
         print(f"Performing vector search with query: '{vector_search_query}'")
         
         found_docs = await vector_store.asimilarity_search(query=vector_search_query, k=20)

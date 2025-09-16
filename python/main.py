@@ -528,7 +528,7 @@ async def chatbot_endpoint(request: ChatbotRequest):
     try:
         logger.info(f"Chatbot endpoint called with session_id: {request.session_id}")
         logger.info(f"Query: {request.query}")
-        # logger.info(f"Student data: {request.student_data}")
+        logger.info(f"Student data: {request.student_data}")
         
         session_id = request.session_id
         
@@ -770,6 +770,17 @@ async def assessment_endpoint(schema: AssessmentSchema):
         # Convert the schema to dict for processing
         schema_dict = schema.model_dump()
 
+        # MODIFICATION: Add instructions for Arabic generation if selected.
+        if schema_dict.get('language', 'English').lower().strip() == 'arabic':
+            arabic_instruction = "الرجاء إنشاء هذا التقييم بالكامل باللغة العربية."
+            current_prompt = schema_dict.get('user_prompt', '') or "None."
+            schema_dict['user_prompt'] = f"{arabic_instruction}\n\n{current_prompt}"
+            
+            # Translate key terms to guide the LLM more effectively
+            schema_dict['test_title'] = f"عنوان الاختبار: {schema_dict['test_title']}"
+            schema_dict['topic'] = f"الموضوع: {schema_dict['topic']}"
+            schema_dict['subject'] = f"المادة: {schema_dict['subject']}"
+
         if embeddings:
             logger.info("Fetching curriculum context for the assessment...")
             curriculum_context = await get_curriculum_context_async(schema_dict, embeddings)
@@ -830,7 +841,7 @@ class TeachingContentSchema(BaseModel):
     instructional_depth: str = Field(
         "standard",
         description="The level of detail and complexity.",
-        pattern="(?i)^(low|standard|high|basic|advanced)$"
+        pattern="(?i)^(low|standard|high|basic|enriched)$"
     )
     # Accept both old (low/high) and new (simplified/enriched), case-insensitive
     content_version: str = Field(
@@ -867,9 +878,17 @@ async def teaching_content_endpoint(schema: TeachingContentSchema):
     optionally enhanced with real-time web search results.
     """
     try:
-        # Use model_dump() for Pydantic v2+ to avoid deprecation warnings
         config = schema.model_dump()
         logger.info(f"Generating teaching content: {config['content_type']} on {config['lesson_topic']}")
+        
+        # MODIFICATION: Add instructions for Arabic generation if selected.
+        if config.get('language', 'English').lower().strip() == 'arabic':
+            current_objective = config.get('learning_objective', 'Not specified')
+            config['learning_objective'] = f"\n{current_objective}"
+            
+            # Provide other key details in Arabic
+            config['lesson_topic'] = f"موضوع الدرس: {config['lesson_topic']}"
+            config['subject'] = f"المادة: {config['subject']}"
         
         generated_content = await generate_teaching_content(config)
         
@@ -987,7 +1006,7 @@ class WebSearchSchema(BaseModel):
     grade_level: str = Field(..., description="Grade level (e.g., 10)")
     subject: str = Field(..., description="Subject (e.g., History)")
     content_type: str = Field(..., description="Preferred content type (e.g., articles, videos)")
-    language: str = Field("English", description="Language")
+    language: str = Field(..., description="Language")
     comprehension: str = Field("intermediate", description="Comprehension level")
     max_results: int = Field(5, description="Maximum number of results")
 
@@ -998,13 +1017,27 @@ async def web_search_endpoint(schema: WebSearchSchema):
 
     try:
         data = schema.model_dump()
-        query = (
-            f"Show me up to {data['max_results']} {data['content_type']} about '{data['topic']}' "
-            f"for a grade {data['grade_level']} {data['subject']} class. "
-            f"The content should be in {data['language']} with a {data['comprehension']} comprehension level. "
-            "Include links in the response with detailed lengthy response content. "
-            "Include the source of the content in the response."
-        )
+        
+        # MODIFICATION: Dynamically build the query based on the selected language.
+        query = ""
+        if data['language'].lower().strip() == 'arabic':
+            query = (
+                f"اعرض لي ما يصل إلى {data['max_results']} {data['content_type']} حول '{data['topic']}' "
+                f"لصف {data['grade_level']} في مادة {data['subject']}. "
+                f"يجب أن يكون المحتوى باللغة العربية مع مستوى فهم {data['comprehension']}. "
+                f"قم بتضمين روابط في الاستجابة مع محتوى مفصل ومطول. "
+                f"قم بتضمين مصدر المحتوى في الاستجابة."
+            )
+        else:
+            # Default to English
+            query = (
+                f"Show me up to {data['max_results']} {data['content_type']} about '{data['topic']}' "
+                f"for a grade {data['grade_level']} {data['subject']} class. "
+                f"The content should be in {data['language']} with a {data['comprehension']} comprehension level. "
+                "Include links in the response with detailed lengthy response content. "
+                "Include the source of the content in the response."
+            )
+
         full_response = ""
         for chunk in pplx_chat.stream(query):
             full_response += chunk.content or ""
