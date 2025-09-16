@@ -55,12 +55,17 @@ export default function ComicPage() {
   const loadSavedComics = async () => {
     setLoadingSaved(true);
     try {
-      const result = await getComics(user.id);
+      // The user.id is no longer needed here as the server action gets it from the session
+      const result = await getComics(); 
       if (result.success) {
-        setSavedComics(result.data);
+        // Correctly access the 'comics' property from the result
+        setSavedComics(result.comics);
+      } else {
+        toast.error(result.message || "Failed to load saved comics");
       }
     } catch (error) {
       console.error("Failed to load saved comics:", error);
+      toast.error("An unexpected error occurred while loading comics.");
     } finally {
       setLoadingSaved(false);
     }
@@ -75,27 +80,30 @@ export default function ComicPage() {
     setCurrentPanelIndex(0);
     setLiveViewerOpen(true);
 
+    const controller = new AbortController();
+    setAbortController(controller);
+
     try {
-      // Call the server action to validate the request
       const result = await generateComic(formData);
       if (result.success) {
         setIsGenerating(true);
-        // Start the streaming directly from the client
-        await handleComicStream(formData);
+        await handleComicStream(formData, controller.signal);
       }
     } catch (err) {
-      setError(err.message || "Failed to generate comic");
-      toast.error("Failed to generate comic");
-      setIsGenerating(false);
+      if (err.name !== 'AbortError') {
+        setError(err.message || "Failed to generate comic");
+        toast.error("Failed to generate comic");
+        setIsGenerating(false);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleComicStream = async (formData) => {
+  const handleComicStream = async (formData, signal) => { // FIX: Revert to using the API client
     try {
-      // Start the comics stream directly from the client
-      const response = await PythonApiClient.startComicsStream(formData);
+      // Start the comics stream directly from the client, passing the signal
+      const response = await PythonApiClient.startComicsStream(formData, signal);
       
       if (!response.ok || !response.body) {
         const txt = await response.text().catch(() => '');
@@ -112,7 +120,6 @@ export default function ComicPage() {
         if (done) break;
         
         const chunk = decoder.decode(value, { stream: true });
-        console.log('Received chunk:', chunk);
         buffer += chunk;
 
         const parts = buffer.split('\n\n');
@@ -123,26 +130,11 @@ export default function ComicPage() {
           if (!line.startsWith('data:')) continue;
           
           const json = line.slice(5).trim();
-          console.log('Parsing JSON:', json);
           
           try {
             const evt = JSON.parse(json);
-            console.log('Parsed event:', evt);
             
-            // Handle story prompts
-            if (evt.type === 'story_prompts') {
-              console.log('Story prompts received:', evt.content);
-            }
-            
-            // Handle panel prompts
-            if (evt.type === 'panel_prompt') {
-              console.log(`Panel ${evt.index} prompt:`, evt.prompt);
-            }
-            
-            // Handle panel images - convert base64 to data URL
             if (evt.type === 'panel_image' && evt.url) {
-              console.log(`Panel ${evt.index} image received, length:`, evt.url.length);
-              // Convert base64 to data URL
               const dataUrl = `data:image/png;base64,${evt.url}`;
               
               setComicImages(prev => {
@@ -156,19 +148,15 @@ export default function ComicPage() {
                 }
               });
 
-              // Auto-advance to the next panel after a short delay
               setTimeout(() => {
                 setCurrentPanelIndex(evt.index);
               }, 1000);
             }
             
-            // Handle completion
             if (evt.type === 'done') {
               console.log('Comic generation completed');
-              setIsGenerating(false);
             }
             
-            // Handle errors
             if (evt.type === 'error') {
               throw new Error(evt.message || 'Comic generation failed');
             }
@@ -178,8 +166,14 @@ export default function ComicPage() {
         }
       }
     } catch (error) {
-      console.error('Stream error:', error);
-      setError(error.message);
+      if (error.name === 'AbortError') {
+        console.log('Comic generation was stopped by the user.');
+      } else {
+        console.error('Stream error:', error);
+        setError(error.message);
+        toast.error("An error occurred during generation.");
+      }
+    } finally {
       setIsGenerating(false);
     }
   };
@@ -188,8 +182,7 @@ export default function ComicPage() {
     if (abortController) {
       abortController.abort();
     }
-    setIsGenerating(false);
-    toast.success("Comic generation stopped");
+    toast.info("Comic generation stopped");
   };
 
   const handlePreview = (item) => {
@@ -391,28 +384,30 @@ export default function ComicPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="aspect-video rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/10 flex items-center justify-center overflow-hidden">
-                <div className="w-full h-full p-4">
-                  <CarouselWithControls
-                    items={allPanels}
-                    showIndicators={true}
-                    renderItem={(p) => (
-                      <div className="rounded-lg overflow-hidden bg-background h-full flex items-center justify-center">
-                        {p.isLoading ? (
-                          <div className="flex flex-col items-center justify-center space-y-4">
-                            <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
-                            <div className="text-center">
-                              <p className="text-sm font-medium">Generating Panel {p.index}</p>
-                              <p className="text-xs text-muted-foreground">Please wait...</p>
-                            </div>
+              <div className="rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/10 flex items-center justify-center overflow-hidden p-4">
+                <CarouselWithControls
+                  items={allPanels}
+                  showIndicators={true}
+                  renderItem={(p) => (
+                    <div className="relative w-full h-[50vh] flex items-center justify-center bg-muted/20 rounded-lg overflow-hidden">
+                      {p.isLoading ? (
+                        <div className="flex flex-col items-center justify-center space-y-4">
+                          <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
+                          <div className="text-center">
+                            <p className="text-sm font-medium">Generating Panel {p.index}</p>
+                            <p className="text-xs text-muted-foreground">Please wait...</p>
                           </div>
-                        ) : (
-                          <img src={p.url} alt={`Panel ${p.index}`} className="max-h-full max-w-full object-contain" />
-                        )}
-                      </div>
-                    )}
-                  />
-                </div>
+                        </div>
+                      ) : (
+                        <img
+                          src={p.url}
+                          alt={`Panel ${p.index}`}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      )}
+                    </div>
+                  )}
+                />
               </div>
             </CardContent>
           </Card>

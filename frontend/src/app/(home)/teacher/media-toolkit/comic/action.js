@@ -137,12 +137,18 @@ export async function saveComic(comicData) {
 
 export async function getComics() {
   try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+    
+    const userId = session.user.id;
     const { db } = await connectToDatabase();
     const comicsCollection = db.collection("comics");
-    
+
     const comics = await comicsCollection
-      .find({})
-      .sort({ createdAt: -1 })
+      .find({ userId: new ObjectId(userId) }) // Filter comics by the logged-in user's ID
+      .sort({ "metadata.createdAt": -1 })
       .toArray();
 
     // Convert ObjectIds to strings to make them serializable
@@ -150,8 +156,9 @@ export async function getComics() {
       ...comic,
       _id: comic._id.toString(),
       userId: comic.userId.toString(),
-      createdAt: comic.createdAt.toISOString(),
-      updatedAt: comic.updatedAt.toISOString()
+      // Ensure nested metadata dates are also serialized
+      createdAt: comic.metadata?.createdAt?.toISOString() || new Date().toISOString(),
+      updatedAt: comic.metadata?.updatedAt?.toISOString() || new Date().toISOString()
     }));
 
     return {
@@ -160,7 +167,11 @@ export async function getComics() {
     };
   } catch (error) {
     console.error("Error fetching comics:", error);
-    throw new Error(error.message || "Failed to fetch comics");
+    return {
+      success: false,
+      message: error.message || "Failed to fetch comics",
+      comics: []
+    };
   }
 }
 

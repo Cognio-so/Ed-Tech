@@ -46,7 +46,9 @@ const PPTXViewer = ({
 
   const handlePreview = () => {
     if (presentationUrl) {
-      window.open(presentationUrl, '_blank', 'noopener,noreferrer');
+      // Use an online viewer to prevent direct download if the server forces it.
+      const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(presentationUrl)}`;
+      window.open(viewerUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -280,4 +282,3 @@ const PPTXViewer = ({
 };
 
 export default PPTXViewer;
-

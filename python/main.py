@@ -4,7 +4,7 @@ import logging
 from typing import List, Dict, Any, Optional, Union
 
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body, WebSocket, WebSocketDisconnect, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, WebSocket, WebSocketDisconnect, Form, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
@@ -1078,7 +1078,7 @@ def _parse_panel_prompts(story_text: str):
     return panels
 
 @app.post("/comics_stream_endpoint")
-async def comics_stream_endpoint(schema: ComicsSchema):
+async def comics_stream_endpoint(schema: ComicsSchema, request: Request):
     async def event_stream():
         import json
         async def send(obj: dict):
@@ -1111,6 +1111,11 @@ async def comics_stream_endpoint(schema: ComicsSchema):
                 return
 
             for i, prompt in enumerate(panel_prompts[:schema.num_panels]):
+                # FIX: Check if the client has disconnected before starting work for the next panel
+                if await request.is_disconnected():
+                    logger.info("Client disconnected, stopping comic generation stream.")
+                    break
+                
                 panel_index = i + 1
                 # Emit the panel prompt
                 async for chunk in send({"type": "panel_prompt", "index": panel_index, "prompt": prompt}):
@@ -1118,6 +1123,12 @@ async def comics_stream_endpoint(schema: ComicsSchema):
 
                 # Generate panel image synchronously via threadpool to avoid blocking
                 image_url = await run_in_threadpool(generate_comic_image, prompt, panel_index)
+                
+                # FIX: Check for disconnection again before sending the result
+                if await request.is_disconnected():
+                    logger.info("Client disconnected after image generation, stopping.")
+                    break
+                
                 async for chunk in send({
                     "type": "panel_image",
                     "index": panel_index,
@@ -1125,9 +1136,10 @@ async def comics_stream_endpoint(schema: ComicsSchema):
                 }):
                     yield chunk
 
-            # Done
-            async for chunk in send({"type": "done"}):
-                yield chunk
+            # Done (only send if not disconnected)
+            if not await request.is_disconnected():
+                async for chunk in send({"type": "done"}):
+                    yield chunk
 
         except Exception as e:
             logger.error(f"Error in comics stream: {e}", exc_info=True)

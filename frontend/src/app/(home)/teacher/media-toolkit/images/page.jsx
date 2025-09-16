@@ -14,7 +14,7 @@ import { getUserImages, deleteImageFromDatabase } from './action';
 export default function ImagesGenerator() {
     const [images, setImages] = useState([]);
     const [activeTab, setActiveTab] = useState('generate');
-    const [previewImage, setPreviewImage] = useState(null); // Add this line
+    const [previewImage, setPreviewImage] = useState(null);
 
     useEffect(() => {
         loadImages();
@@ -35,7 +35,6 @@ export default function ImagesGenerator() {
     };
 
     const handleImageGenerated = (newImage) => {
-        // Refresh the images list from database instead of manual state update
         loadImages();
         setActiveTab('gallery');
         toast.success("Image saved successfully!");
@@ -95,7 +94,7 @@ export default function ImagesGenerator() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 py-8">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -103,14 +102,14 @@ export default function ImagesGenerator() {
                     transition={{ duration: 0.5 }}
                     className="mb-8"
                 >
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Image Generator</h1>
-                    <p className="text-gray-600">
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">AI Image Generator</h1>
+                    <p className="text-gray-600 dark:text-gray-400">
                         Create educational images, charts, and diagrams with AI assistance
                     </p>
                 </motion.div>
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 mb-6">
+                    <TabsList className="grid w-full grid-cols-2 mb-6 dark:bg-gray-800">
                         <TabsTrigger value="generate" className="flex items-center gap-2">
                             <Image className="h-4 w-4" />
                             Generate New Image
@@ -127,16 +126,16 @@ export default function ImagesGenerator() {
 
                     <TabsContent value="gallery" className="space-y-6">
                         {images.length === 0 ? (
-                            <Card className="border-0 shadow-lg">
+                            <Card className="border-0 shadow-lg dark:bg-gray-900">
                                 <CardContent className="flex flex-col items-center justify-center py-12">
-                                    <Image className="h-16 w-16 text-gray-400 mb-4" />
-                                    <h3 className="text-lg font-medium text-gray-900 mb-2">No images yet</h3>
-                                    <p className="text-gray-500 text-center mb-4">
+                                    <Image className="h-16 w-16 text-gray-400 dark:text-gray-500 mb-4" />
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No images yet</h3>
+                                    <p className="text-gray-500 dark:text-gray-400 text-center mb-4">
                                         Generate your first AI image to get started
                                     </p>
                                     <Button 
                                         onClick={() => setActiveTab('generate')}
-                                        className="bg-blue-600 hover:bg-blue-700"
+                                        className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
                                     >
                                         Generate Image
                                     </Button>
@@ -151,8 +150,8 @@ export default function ImagesGenerator() {
                                         animate={{ opacity: 1, scale: 1 }}
                                         transition={{ duration: 0.3 }}
                                     >
-                                        <Card className="border-0 shadow-lg overflow-hidden hover:shadow-xl transition-shadow">
-                                            <div className="aspect-square bg-gray-100 relative">
+                                        <Card className="border-gray-200 dark:border-gray-800 shadow-lg overflow-hidden hover:shadow-xl transition-shadow dark:bg-gray-800">
+                                            <div className="aspect-square bg-gray-100 dark:bg-gray-700 relative">
                                                 <img
                                                     src={image.imageUrl}
                                                     alt={image.title}
@@ -163,7 +162,7 @@ export default function ImagesGenerator() {
                                                         size="sm"
                                                         variant="secondary"
                                                         onClick={() => handlePreviewImage(image)}
-                                                        className="h-8 w-8 p-0"
+                                                        className="h-8 w-8 p-0 dark:bg-gray-900/50 dark:hover:bg-gray-900"
                                                     >
                                                         <Eye className="h-4 w-4" />
                                                     </Button>
@@ -171,7 +170,7 @@ export default function ImagesGenerator() {
                                                         size="sm"
                                                         variant="secondary"
                                                         onClick={() => handleDownloadImage(image.imageUrl, image.title)}
-                                                        className="h-8 w-8 p-0"
+                                                        className="h-8 w-8 p-0 dark:bg-gray-900/50 dark:hover:bg-gray-900"
                                                     >
                                                         <Download className="h-4 w-4" />
                                                     </Button>
@@ -187,11 +186,11 @@ export default function ImagesGenerator() {
                                             </div>
                                             
                                             <CardContent className="p-4">
-                                                <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">
+                                                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 line-clamp-2">
                                                     {image.title}
                                                 </h3>
                                                 
-                                                <div className="space-y-2 text-sm text-gray-600">
+                                                <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                                                     <div className="flex items-center gap-2">
                                                         <Tag className="h-3 w-3" />
                                                         <span>{image.topic}</span>
@@ -209,10 +208,10 @@ export default function ImagesGenerator() {
                                                 </div>
                                                 
                                                 <div className="flex flex-wrap gap-1 mt-3">
-                                                    <Badge variant="secondary" className="text-xs">
+                                                    <Badge variant="secondary" className="text-xs dark:bg-gray-700 dark:text-gray-300">
                                                         {image.visualType}
                                                     </Badge>
-                                                    <Badge variant="outline" className="text-xs">
+                                                    <Badge variant="outline" className="text-xs dark:border-gray-600 dark:text-gray-400">
                                                         {image.language}
                                                     </Badge>
                                                     {image.difficultyFlag && (
@@ -231,26 +230,25 @@ export default function ImagesGenerator() {
                 </Tabs>
             </div>
 
-            {/* Image Preview Modal */}
             {previewImage && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg max-w-2xl max-h-[105vh] overflow-auto">
-                        <div className="p-4 border-b flex justify-between items-center">
-                            <h3 className="text-lg font-semibold">{previewImage.title}</h3>
+                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-lg max-w-2xl w-full max-h-[90vh] flex flex-col">
+                        <div className="p-4 border-b dark:border-gray-800 flex justify-between items-center">
+                            <h3 className="text-lg font-semibold dark:text-gray-100">{previewImage.title}</h3>
                             <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={handleClosePreview}
-                                className="h-8 w-8 p-0"
+                                className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
                             >
-                                ×
+                                <span className="text-2xl">&times;</span>
                             </Button>
                         </div>
-                        <div className="p-0">
+                        <div className="p-4 flex-grow overflow-auto">
                             <img
                                 src={previewImage.imageUrl}
                                 alt={previewImage.title}
-                                className="w-full h-full rounded-lg"
+                                className="w-full h-auto rounded-lg"
                             />
                         </div>
                     </div>
