@@ -1,4 +1,3 @@
-// Python Backend API Client
 class PythonApiClient {
   constructor() {
     this.baseUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:8000';
@@ -416,18 +415,19 @@ class PythonApiClient {
   }
 
   // Comics streaming: returns the raw fetch Response
-  async startComicsStream(comicsData) {
+  async startComicsStream(comicsData, signal) { // FIX: Accept signal as an argument
     const url = `${this.baseUrl}/comics_stream_endpoint`;
     const payload = {
       instructions: comicsData.instructions,
-      grade_level: comicsData.gradeLevel || '8', // Use auto-detected grade
+      grade_level: comicsData.gradeLevel || '8', // Correctly maps gradeLevel to grade_level
       num_panels: parseInt(comicsData.numPanels),
-      language: comicsData.language || 'English', // Add language parameter with English default
+      language: comicsData.language || 'English',
     };
     return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal, // FIX: Pass the signal to the fetch request
     });
   }
 

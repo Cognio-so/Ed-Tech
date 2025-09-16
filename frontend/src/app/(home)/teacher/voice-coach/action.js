@@ -378,8 +378,8 @@ export async function uploadDocumentsToVoiceCoach(formData) {
 
     console.log('Uploading documents to Voice Coach:', { fileCount: files.length, sessionId });
 
-    // FIXED: Call the correct method with correct parameters
-    const response = await PythonApi.uploadDocumentsForChatbot(sessionId, files);
+    // CORRECTED: Call the dedicated method for the teacher chatbot
+    const response = await PythonApi.uploadDocumentsForTeacherChatbot(sessionId, files);
 
     if (response.success) {
       return {
