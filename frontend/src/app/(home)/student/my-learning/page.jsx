@@ -81,7 +81,7 @@ const typeCharacters = {
   image: '🖼️',
   content: '📝',
   assessment: '🎯',
-  external: '🌐',
+  external: '��',
   lesson: '📚',
   websearch: '🔍'
 };
@@ -101,7 +101,7 @@ const contentTypes = {
 const ProgressCharacter = () => (
   <div className="hidden lg:block absolute right-4 top-4">
     <div className="relative w-24 h-24">
-      <div className="absolute inset-0 text-5xl" style={{ animation: 'gentle-bounce 4s ease-in-out infinite' }}>🎓</div>
+      <div className="absolute inset-0 text-5xl" style={{ animation: 'gentle-bounce 4s ease-in-out infinite' }}>��</div>
       <div className="absolute -top-2 -right-2 text-xl" style={{ animation: 'gentle-spin 6s linear infinite' }}>⭐</div>
       <div className="absolute -top-6 right-2 text-lg" style={{ animation: 'gentle-pulse 3s ease-in-out infinite' }}>✨</div>
       <style jsx>{`
@@ -125,20 +125,19 @@ const ProgressCharacter = () => (
 export default function MyLearningPage() {
   const [progressData, setProgressData] = useState([]);
   const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("all");
   const [selectedContent, setSelectedContent] = useState(null);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [editingFeedback, setEditingFeedback] = useState(null);
   const [isStartLearningOpen, setIsStartLearningOpen] = useState(false);
   const [feedbackDialog, setFeedbackDialog] = useState({ open: false, content: null });
-  const [feedbackText, setFeedbackText] = useState("");
-  const [submittingFeedback, setSubmittingFeedback] = useState(false);
-  const [activeTab, setActiveTab] = useState("all");
 
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
-    setLoading(true);
     try {
       const [progressResult, statsResult] = await Promise.all([
         getStudentProgress(),
@@ -146,19 +145,22 @@ export default function MyLearningPage() {
       ]);
 
       if (progressResult.success) {
-        setProgressData(progressResult.data);
+        console.log('Progress data loaded:', progressResult.data);
+        setProgressData(progressResult.data || []);
       } else {
-        toast.error("Failed to load progress data");
+        console.error('Failed to load progress:', progressResult.error);
+        toast.error("Failed to load your learning progress");
       }
 
       if (statsResult.success) {
+        console.log('Stats loaded:', statsResult.data);
         setStats(statsResult.data);
+      } else {
+        console.error('Failed to load stats:', statsResult.error);
       }
     } catch (error) {
       console.error("Error loading data:", error);
-      toast.error("Failed to load data");
-    } finally {
-      setLoading(false);
+      toast.error("Failed to load your learning data");
     }
   };
 
@@ -167,59 +169,76 @@ export default function MyLearningPage() {
     setIsStartLearningOpen(true);
   };
 
-  const handleLearningComplete = () => {
+  const handleLearningComplete = (contentId, completionData) => {
+    // Update the progress data with completion information
+    setProgressData(prevData => 
+      prevData.map(item => 
+        item.contentId === contentId 
+          ? { 
+              ...item, 
+              status: 'completed',
+              completionData,
+              progress: { ...item.progress, completedAt: new Date() }
+            }
+          : item
+      )
+    );
+    
+    // Close the learning dialog
     setIsStartLearningOpen(false);
     setSelectedContent(null);
-    loadData(); // Refresh data after completion
+    
+    // Show success message
+    toast.success(" Great job! You've completed this content!");
+    
+    // Reload data to get updated stats
+    loadData();
   };
 
-  const handleFeedback = (content) => {
+  const handleAddFeedback = (content) => {
     setFeedbackDialog({ open: true, content });
-    setFeedbackText(content.completionData?.feedback || "");
+    setFeedbackText("");
+    setEditingFeedback(null);
+  };
+
+  const handleEditFeedback = (content, feedback) => {
+    setFeedbackDialog({ open: true, content });
+    setFeedbackText(feedback.text);
+    setEditingFeedback(feedback);
   };
 
   const handleSubmitFeedback = async () => {
-    if (!feedbackDialog.content) return;
+    if (!feedbackText.trim() || !feedbackDialog.content) return;
 
-    setSubmittingFeedback(true);
     try {
-      const contentId = feedbackDialog.content.contentId;
       let result;
-
-      if (feedbackText.trim()) {
-        // Add or update feedback
-        if (feedbackDialog.content.completionData?.feedback) {
-          result = await updateFeedback(contentId, feedbackText.trim());
-        } else {
-          result = await addFeedback(contentId, feedbackText.trim());
-        }
+      if (editingFeedback) {
+        result = await updateFeedback(editingFeedback._id, feedbackText);
       } else {
-        // Delete feedback if empty
-        result = await deleteFeedback(contentId);
+        result = await addFeedback(feedbackDialog.content.contentId, feedbackText);
       }
 
       if (result.success) {
-        toast.success("Feedback saved successfully! 💬");
+        toast.success(editingFeedback ? "Feedback updated successfully!" : "Feedback added successfully!");
         setFeedbackDialog({ open: false, content: null });
         setFeedbackText("");
-        loadData(); // Refresh data
+        setEditingFeedback(null);
+        loadData(); // Reload to get updated data
       } else {
-        toast.error(result.error || "Failed to save feedback");
+        toast.error(result.error || "Failed to submit feedback");
       }
     } catch (error) {
       console.error("Error submitting feedback:", error);
-      toast.error("Failed to save feedback");
-    } finally {
-      setSubmittingFeedback(false);
+      toast.error("Failed to submit feedback");
     }
   };
 
-  const handleToggleBookmark = async (content) => {
+  const handleToggleBookmark = async (contentId, isBookmarked) => {
     try {
-      const result = await toggleBookmark(content.contentId);
+      const result = await toggleBookmark(contentId, !isBookmarked);
       if (result.success) {
-        toast.success(result.bookmarked ? "Bookmarked! 🔖" : "Removed from bookmarks");
-        loadData(); // Refresh data
+        toast.success(isBookmarked ? "Removed from bookmarks" : "Added to bookmarks");
+        loadData(); // Reload to get updated data
       } else {
         toast.error(result.error || "Failed to update bookmark");
       }
@@ -232,11 +251,12 @@ export default function MyLearningPage() {
   const getItemColor = (subject) => gradients[subject] || 'from-gray-300 to-gray-400';
 
   const formatTime = (minutes) => {
+    if (!minutes || minutes === 0) return "0m";
     if (minutes < 60) {
-      return `${minutes}m`;
+      return `${Math.round(minutes)}m`;
     }
     const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
+    const remainingMinutes = Math.round(minutes % 60);
     return `${hours}h ${remainingMinutes}m`;
   };
 
@@ -253,6 +273,10 @@ export default function MyLearningPage() {
   const renderProgressCard = (item, index) => {
     const isCompleted = item.status === 'completed';
     const progress = item.progress?.percentage || 0;
+    const timeSpent = item.progress?.timeSpent || 0;
+    const score = item.completionData?.score;
+    const feedback = item.completionData?.feedback;
+    const bookmarked = item.metadata?.bookmarked || false;
     
     return (
       <motion.div
@@ -286,7 +310,7 @@ export default function MyLearningPage() {
             )}
             <div className="absolute bottom-2 left-2">
               <Badge className="bg-black/20 text-white border-0 text-xs font-semibold backdrop-blur-sm">
-                {item.completionData?.score ? `🏆 ${item.completionData.score}%` : `⭐ ${item.progress?.percentage || 0}%`}
+                {score ? `🏆 ${score}%` : `⭐ ${Math.round(progress)}%`}
               </Badge>
             </div>
             <div className="absolute top-2 left-2">
@@ -295,11 +319,11 @@ export default function MyLearningPage() {
                 size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleToggleBookmark(item);
+                  handleToggleBookmark(item.contentId, bookmarked);
                 }}
                 className="p-1 h-8 w-8 bg-white/20 hover:bg-white/30 backdrop-blur-sm"
               >
-                {item.metadata?.bookmarked ? (
+                {bookmarked ? (
                   <BookmarkCheck className="h-4 w-4 text-white" />
                 ) : (
                   <Bookmark className="h-4 w-4 text-white" />
@@ -311,29 +335,33 @@ export default function MyLearningPage() {
             <div className="space-y-3 flex-1">
               <div>
                 <h3 className="font-bold text-base text-gray-800 dark:text-white line-clamp-2 group-hover:text-purple-600 transition-colors">
-                  {item.contentTitle}
+                  {item.contentTitle || 'Untitled Content'}
                 </h3>
                 <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2 mt-1">
-                  {item.contentType} • {item.subject}
+                  {item.contentType || 'content'} • {item.subject || 'General'}
                 </p>
               </div>
               
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge className={`bg-gradient-to-r ${getItemColor(item.subject)} text-white border-0 font-semibold text-xs`}>
-                  {item.subject}
+                  {item.subject || 'General'}
                 </Badge>
-                <Badge variant="outline" className="text-xs">Grade {item.grade}</Badge>
-                <Badge variant="outline" className="text-xs">{item.status.replace('_', ' ')}</Badge>
+                <Badge variant="outline" className="text-xs">
+                  Grade {item.grade || 'All'}
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {item.status?.replace('_', ' ') || 'not started'}
+                </Badge>
               </div>
               
               <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
                 <span className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  {formatTime(item.progress?.timeSpent || 0)}
+                  {formatTime(timeSpent)}
                 </span>
                 <span className="flex items-center gap-1">
                   <Trophy className="h-3 w-3" />
-                  {item.completionData?.score ? `${item.completionData.score}%` : 'N/A'}
+                  {score ? `${score}%` : 'N/A'}
                 </span>
               </div>
 
@@ -342,18 +370,26 @@ export default function MyLearningPage() {
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
                     <span>Progress</span>
-                    <span>{Math.floor(progress)}%</span>
+                    <span>{Math.round(progress)}%</span>
                   </div>
                   <Progress value={progress} className="h-2" />
                 </div>
               )}
 
               {/* Feedback Preview */}
-              {item.completionData?.feedback && (
+              {feedback && (
                 <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2">
-                    <strong>💬 Your feedback:</strong> {item.completionData.feedback}
+                    <strong>💬 Your feedback:</strong> {feedback}
                   </p>
+                </div>
+              )}
+
+              {/* Completion Date */}
+              {isCompleted && item.completionData?.completedAt && (
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  <Calendar className="h-3 w-3 inline mr-1" />
+                  Completed: {new Date(item.completionData.completedAt).toLocaleDateString()}
                 </div>
               )}
             </div>
@@ -377,11 +413,11 @@ export default function MyLearningPage() {
                   className="w-full rounded-xl"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleFeedback(item);
+                    handleAddFeedback(item);
                   }}
                 >
                   <MessageSquare className="mr-2 h-3 w-3" />
-                  {item.completionData?.feedback ? 'Edit Feedback' : 'Add Feedback'}
+                  {feedback ? 'Edit Feedback' : 'Add Feedback'}
                 </Button>
               )}
             </div>
@@ -392,6 +428,8 @@ export default function MyLearningPage() {
   };
 
   const filteredData = useMemo(() => {
+    if (!progressData || progressData.length === 0) return [];
+    
     switch (activeTab) {
       case 'completed':
         return progressData.filter(item => item.status === 'completed');
@@ -403,17 +441,6 @@ export default function MyLearningPage() {
         return progressData;
     }
   }, [progressData, activeTab]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-purple-600" />
-          <p className="text-lg text-gray-600 dark:text-gray-300">Loading your learning progress...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900">
@@ -453,19 +480,19 @@ export default function MyLearningPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900/30 dark:to-blue-800/30">
                     <Target className="h-8 w-8 mx-auto mb-2 text-blue-600" />
-                    <p className="text-3xl font-bold text-blue-600">{stats.totalContent}</p>
+                    <p className="text-3xl font-bold text-blue-600">{stats.totalContent || 0}</p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">Total Content</p>
                   </div>
                   
                   <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-green-100 to-green-200 dark:from-green-900/30 dark:to-green-800/30">
                     <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-600" />
-                    <p className="text-3xl font-bold text-green-600">{stats.completedContent}</p>
+                    <p className="text-3xl font-bold text-green-600">{stats.completedContent || 0}</p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">Completed</p>
                   </div>
                   
                   <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-yellow-100 to-yellow-200 dark:from-yellow-900/30 dark:to-yellow-800/30">
                     <Clock className="h-8 w-8 mx-auto mb-2 text-yellow-600" />
-                    <p className="text-3xl font-bold text-yellow-600">{formatTime(stats.totalTimeSpent)}</p>
+                    <p className="text-3xl font-bold text-yellow-600">{formatTime(stats.totalTimeSpent || 0)}</p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">Time Spent</p>
                   </div>
                   
@@ -574,10 +601,10 @@ export default function MyLearningPage() {
                 </Button>
                 <Button
                   onClick={handleSubmitFeedback}
-                  disabled={submittingFeedback}
+                  disabled={false} // No submitting state in this simplified version
                   className="rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
                 >
-                  {submittingFeedback ? (
+                  {editingFeedback ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Saving...

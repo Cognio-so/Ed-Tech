@@ -41,15 +41,8 @@ import remarkGfm from 'remark-gfm';
 import PythonApi from '@/lib/PythonApi';
 import { toast } from 'sonner';
 import { 
-    sendChatMessage, 
     uploadDocuments, 
-    startVoiceSession, 
-    stopVoiceSession,
-    performWebSearch,
-    getAiTutorHealth,
     createAiTutorSession,
-    getStudentLearningInsights,
-    saveAiTutorChatSession,
     getStudentProgressData,
     getStudentAchievementsData,
     getStudentLearningStats,
@@ -57,9 +50,6 @@ import {
 } from '../app/(home)/student/ai-tutor/action';
 import { saveStudentConversation } from '../app/(home)/student/history/action';
 
-// Add these imports for fetching real student data
-import { getStudentProgress, getProgressStats } from '../app/(home)/student/my-learning/action';
-import { getStudentAchievements, getAchievementStats } from '../app/(home)/student/achievements/action';
 
 const AiTutor = () => {
     const [messages, setMessages] = useState([
@@ -84,7 +74,6 @@ const AiTutor = () => {
     const [mediaRecorder, setMediaRecorder] = useState(null);
     const [isListening, setIsListening] = useState(false);
     const [transcription, setTranscription] = useState('');
-    const audioPlayerRef = useRef(null);
     const mediaStreamRef = useRef(null);
     const hasErrorRef = useRef(false);
     const nextStartTimeRef = useRef(0);
@@ -376,7 +365,7 @@ const AiTutor = () => {
                     totalStudyTime: studentData.progress?.reduce((sum, p) => sum + (p.progress?.timeSpent || 0), 0) || 0
                 },
                 achievements: studentData.achievements || [],
-                learning_stats: studentData.stats || {},
+                learning_stats: studentData.learningStats || {},
                 assessments: studentData.assessments || [],
                 lessons: studentData.lessons || [],
                 resources: studentData.resources || [],
@@ -467,6 +456,16 @@ const AiTutor = () => {
                                         ? { ...msg, isStreaming: false }
                                         : msg
                                 ));
+                                
+                                // Save conversation to history asynchronously (don't block UI)
+                                setTimeout(async () => {
+                                    try {
+                                        const updatedMessages = [...messages, userMessage, streamingMessage];
+                                        await saveConversationToHistory(updatedMessages, 'text');
+                                    } catch (error) {
+                                        console.error('Failed to save conversation:', error);
+                                    }
+                                }, 0);
                             } else if (data.type === 'error') {
                                 throw new Error(data.message || 'Unknown error');
                             }
@@ -1373,12 +1372,22 @@ const AiTutor = () => {
             <p className="mb-2 last:mb-0" {...props} />
         ),
         ul: ({ node, ...props }) => (
-            <ul className="list-disc list-inside mb-2 space-y-1" {...props} />
+            <ul 
+                className="mb-2 space-y-1 ml-4" 
+                style={{ listStyleType: 'disc', paddingLeft: '1rem' }}
+                {...props} 
+            />
         ),
         ol: ({ node, ...props }) => (
-            <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />
+            <ol 
+                className="mb-2 space-y-1 ml-4" 
+                style={{ listStyleType: 'decimal', paddingLeft: '1rem' }}
+                {...props} 
+            />
         ),
-        li: ({ node, ...props }) => <li {...props} />,
+        li: ({ node, ...props }) => (
+            <li className="mb-1 leading-relaxed" style={{ display: 'list-item' }} {...props} />
+        ),
         strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
         em: ({ node, ...props }) => <em className="italic" {...props} />,
         code: ({ node, inline, ...props }) => (
@@ -1461,7 +1470,7 @@ const AiTutor = () => {
     // For brevity, I'll include the essential parts of the render method
     if (dataLoading) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900 flex items-center justify-center">
+            <div className="h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900 flex items-center justify-center overflow-hidden">
                 <div className="text-center">
                     <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                     <p className="text-lg text-gray-600 dark:text-gray-400">Loading your learning data...</p>
@@ -1471,213 +1480,144 @@ const AiTutor = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900">
-            {/* Header */}
-            <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/90 backdrop-blur-md"
-            >
-                <div className="w-full px-2 py-2">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                            <div className="relative">
-                                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center">
-                                    <Sparkle className="w-5 h-5 text-white" />
-                                </div>
-                            </div>
-                            <div>
-                                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                                    AI Tutor
-                                </h1>
-                                <p className="text-sm text-gray-600 dark:text-gray-400">
-                                    Your personalized learning companion
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            {uploadedFiles.length > 0 && (
-                                <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                    📎 {uploadedFiles.length} file(s)
-                                </Badge>
-                            )}
-                            <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse" />
-                                Online
-                            </Badge>
-                            <Button variant="ghost" size="icon">
-                                <Settings className="w-5 h-5" />
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            </motion.div>
-
-            <div className="w-full px-4 py-6">
-                <div className="w-full">
-                    {/* Main Chat Area */}
-                    <div className="w-full">
-                        <motion.div
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.1 }}
-                        >
-                            <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg h-[610px] flex flex-col">
-                                {/* Messages Area */}
-                                <div className="flex-1 overflow-hidden">
-                                    <ScrollArea ref={scrollAreaRef} className="h-full w-full">
-                                        <div className="p-4 space-y-2 min-h-full">
-                                            <AnimatePresence>
-                                                {messages.map((message) => (
-                                                    <motion.div
-                                                        key={message.id}
-                                                        initial={{ opacity: 0, y: 20 }}
-                                                        animate={{ opacity: 1, y: 0 }}
-                                                        exit={{ opacity: 0, y: -20 }}
-                                                        className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                                                    >
-                                                        <div className={`flex items-start space-x-3 max-w-[80%] ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row space-x-3'}`}>
-                                                            <Avatar className="w-8 h-8 flex-shrink-0">
-                                                                <AvatarFallback className="text-lg">
-                                                                    {message.avatar}
-                                                                </AvatarFallback>
-                                                            </Avatar>
-                                                            <div className={`rounded-2xl px-3 py-2 ${message.type === 'user'
-                                                                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
-                                                                    : 'text-black dark:text-white'
-                                                                }`}>
-                                                                {renderMessageContent(message)}
-                                                            </div>
-                                                        </div>
-                                                    </motion.div>
-                                                ))}
-                                            </AnimatePresence>
-
-                                            {isLoading && (
+        <div className="flex-1 flex flex-col overflow-hidden px-2 py-1 h-[679px]">
+            <div className="flex-1 flex flex-col overflow-hidden">
+                {/* Main Chat Area */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="flex-1 flex flex-col overflow-hidden"
+                    >
+                        <Card className="bg-white/90 dark:bg-purple-800/90 backdrop-blur-sm border-0 shadow-lg flex-1 flex flex-col overflow-hidden">
+                            {/* Messages Area */}
+                            <div className="flex-1 overflow-hidden">
+                                <ScrollArea ref={scrollAreaRef} className="h-full w-full">
+                                    <div className="p-4 space-y-2">
+                                        <AnimatePresence>
+                                            {messages.map((message) => (
                                                 <motion.div
+                                                    key={message.id}
                                                     initial={{ opacity: 0, y: 20 }}
                                                     animate={{ opacity: 1, y: 0 }}
-                                                    className="flex justify-start"
+                                                    exit={{ opacity: 0, y: -20 }}
+                                                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                                                 >
-                                                    <div className="flex items-start space-x-3">
+                                                    <div className={`flex items-start space-x-3 max-w-[80%] ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row space-x-3'}`}>
                                                         <Avatar className="w-8 h-8 flex-shrink-0">
                                                             <AvatarFallback className="text-lg">
-                                                                <Sparkle className="w-4 h-4 text-yellow-500" />
+                                                                {message.avatar}
                                                             </AvatarFallback>
                                                         </Avatar>
-                                                        <div className="text-black dark:text-white text-sm animate-pulse">
-                                                            ⚪
+                                                        <div className={`rounded-2xl px-3 py-2 ${message.type === 'user'
+                                                                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+                                                                : 'text-black dark:text-white'
+                                                            }`}>
+                                                            {renderMessageContent(message)}
                                                         </div>
                                                     </div>
                                                 </motion.div>
-                                            )}
-                                        </div>
-                                        {/* FIXED: Proper scroll target */}
-                                        <div ref={messagesEndRef} className="h-4" />
-                                    </ScrollArea>
-                                </div>
+                                            ))}
+                                        </AnimatePresence>
 
-                                {/* Input Area - FIXED AT BOTTOM */}
-                                <div className="p-2 flex-shrink-0">
-                                    <div className="flex items-end space-x-3 w-full border-gray-200 dark:border-gray-700">
-                                        <div className="flex-1">
-                                            <Input
-                                                value={inputValue}
-                                                onChange={(e) => setInputValue(e.target.value)}
-                                                onKeyPress={handleKeyPress}
-                                                placeholder="Ask me anything about your homework..."
-                                                className="border bg-gray-50 dark:bg-gray-700 border-purple-500 dark:border-purple-500 rounded-2xl px-6 py-6 w-full text-black dark:text-white"
-                                                disabled={isLoading || isUploading}
-                                            />
-                                        </div>
-                                       <div className="flex items-center space-x-2">
-                                        <Button 
-                                        onClick={handleUpload}
-                                        disabled={isLoading || isUploading}
-                                        size="icon" 
-                                        className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-2xl px-6 py-3 text-white dark:text-white"
-                                        title="Upload documents"
-                                        >
-                                            {isUploading ? (
-                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                            ) : (
-                                                <UploadCloud className="w-4 h-4" />
-                                            )}
-                                        </Button>
-                                        
-                                        {/* NEW: Clear files button */}
-                                        {uploadedFiles.length > 0 && (
-                                            <Button 
-                                            onClick={handleClearFiles}
-                                            disabled={isLoading || isUploading}
-                                            size="icon" 
-                                            variant="outline"
-                                            className="rounded-2xl px-6 py-3"
-                                            title="Clear uploaded files"
+                                        {isLoading && !messages.some(msg => msg.isStreaming) && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 20 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className="flex justify-start"
                                             >
-                                                <File className="w-4 h-4" />
-                                            </Button>
+                                                <div className="flex items-start space-x-3">
+                                                    <Avatar className="w-8 h-8 flex-shrink-0">
+                                                        <AvatarFallback className="text-lg">
+                                                            <Sparkle className="w-4 h-4 text-yellow-500" />
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="text-black dark:text-white text-sm animate-pulse">
+                                                        ⚪
+                                                    </div>
+                                                </div>
+                                            </motion.div>
                                         )}
-                                        
-                                        <Button 
-                                        onClick={startVoiceSessionHandler}
-                                        disabled={isLoading || isUploading}
-                                        size="icon" 
-                                        className={`rounded-2xl px-6 py-3 ${
-                                            isVoiceActive 
-                                                ? 'bg-red-500 hover:bg-red-600' 
-                                                : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
-                                        } text-white dark:text-white`}
-                                        title={isVoiceActive ? 'Stop voice session' : 'Start real-time voice session'}
+                                    </div>
+                                    {/* FIXED: Proper scroll target */}
+                                    <div ref={messagesEndRef} className="h-4" />
+                                </ScrollArea>
+                            </div>
+
+                            {/* Input Area - FIXED AT BOTTOM */}
+                            <div className="flex-shrink-0 p-2">
+                                <div className="flex items-end space-x-3 w-full border-gray-200 dark:border-gray-700">
+                                    <div className="flex-1">
+                                        <Input
+                                            value={inputValue}
+                                            onChange={(e) => setInputValue(e.target.value)}
+                                            onKeyPress={handleKeyPress}
+                                            placeholder="Ask me anything about your homework..."
+                                            className="border bg-gray-50 dark:bg-purple-900 border-purple-500 dark:border-gray-500 rounded-2xl px-6 py-6 w-full text-black dark:text-white"
+                                            disabled={isLoading || isUploading}
+                                        />
+                                    </div>
+                                   <div className="flex items-center space-x-2 mb-2">
+                                    <Button 
+                                    onClick={handleUpload}
+                                    disabled={isLoading || isUploading}
+                                    size="icon" 
+                                    className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-2xl px-6 py-3 text-white dark:text-white"
+                                    title="Upload documents"
                                     >
-                                        {isVoiceActive ? (
-                                            <div className="w-4 h-4 bg-white rounded-full animate-pulse" />
+                                        {isUploading ? (
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                         ) : (
-                                            <AudioLines className="w-4 h-4" />
+                                            <UploadCloud className="w-4 h-4" />
                                         )}
                                     </Button>
-                                       <Button
-                                            onClick={handleSendMessage}
-                                            disabled={!inputValue.trim() || isLoading || isUploading}
-                                            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-2xl px-6 py-3 text-white dark:text-white"
+                                    
+                                    {/* NEW: Clear files button */}
+                                    {uploadedFiles.length > 0 && (
+                                        <Button 
+                                        onClick={handleClearFiles}
+                                        disabled={isLoading || isUploading}
+                                        size="icon" 
+                                        variant="outline"
+                                        className="rounded-2xl px-6 py-3"
+                                        title="Clear uploaded files"
                                         >
-                                            <Send className="w-4 h-4" />
+                                            <File className="w-4 h-4" />
                                         </Button>
-                                       </div>
-                                    </div>
+                                    )}
+                                    
+                                    <Button 
+                                    onClick={startVoiceSessionHandler}
+                                    disabled={isLoading || isUploading}
+                                    size="icon" 
+                                    className={`rounded-2xl px-6 py-3 ${
+                                        isVoiceActive 
+                                            ? 'bg-red-500 hover:bg-red-600' 
+                                            : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
+                                    } text-white dark:text-white`}
+                                    title={isVoiceActive ? 'Stop voice session' : 'Start real-time voice session'}
+                                >
+                                    {isVoiceActive ? (
+                                        <div className="w-4 h-4 bg-white rounded-full animate-pulse" />
+                                    ) : (
+                                        <AudioLines className="w-4 h-4" />
+                                    )}
+                                </Button>
+                                   <Button
+                                        onClick={handleSendMessage}
+                                        disabled={!inputValue.trim() || isLoading || isUploading}
+                                        className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-2xl px-6 py-3 text-white dark:text-white"
+                                    >
+                                        <Send className="w-4 h-4" />
+                                    </Button>
+                                   </div>
                                 </div>
-                            </Card>
-                        </motion.div>
-                    </div>
+                            </div>
+                        </Card>
+                    </motion.div>
                 </div>
             </div>
-            {isVoiceActive && (
-    <div className="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-200 dark:border-blue-800">
-        <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-                <div className={`w-3 h-3 rounded-full ${isListening ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
-                <span className="text-sm text-blue-700 dark:text-blue-300">
-                    Voice {isListening ? 'Listening' : 'Active'}
-                </span>
-            </div>
-            <Button
-                onClick={stopVoiceSessionHandler}
-                size="sm"
-                variant="outline"
-                className="text-xs"
-            >
-                Stop Voice
-            </Button>
-        </div>
-        {transcription && (
-            <div className="mt-2 p-2 bg-white dark:bg-gray-800 rounded border">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                    <strong>You said:</strong> {transcription}
-                </p>
-            </div>
-        )}
-    </div>
-)}
         </div>
     );
 };

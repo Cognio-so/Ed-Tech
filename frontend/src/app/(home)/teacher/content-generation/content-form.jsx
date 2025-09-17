@@ -887,7 +887,7 @@ export default function ContentForm() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <FileText className="h-12 w-12 text-gray-400 mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No saved content</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No saved content</h3>
                 <p className="text-gray-500 text-center mb-4">
                   Create your first content by filling out the form
                 </p>
@@ -1039,14 +1039,14 @@ export default function ContentForm() {
       {/* Presentation Viewer Modal */}
       {showPresentationModal && generatedPresentation && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
+          <div className="bg-white dark:bg-secondary rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b">
-              <h3 className="text-lg font-semibold">Generated Presentation</h3>
+              <h3 className="text-lg font-semibold dark:text-white">Generated Presentation</h3>
               <Button variant="outline" size="sm" onClick={() => setShowPresentationModal(false)}>
                 ✕
               </Button>
             </div>
-            <div className="p-4 overflow-auto max-h-[calc(90vh-80px)]">
+            <div className="p-4 overflow-auto max-h-[calc(90vh-80px)] text-black dark:text-white">
               <PPTXViewer
                 presentationUrl={generatedPresentation.task_result?.url}
                 downloadUrl={generatedPresentation.task_result?.download_url}
@@ -1063,15 +1063,15 @@ export default function ContentForm() {
       )}
 
       {previewContent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 bg-black/80  flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-secondary rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b">
-              <h3 className="text-lg font-semibold">Content Preview</h3>
+              <h3 className="text-lg font-semibold dark:text-white">Content Preview</h3>
               <Button variant="outline" size="sm" onClick={closePreview}>
                 ✕
               </Button>
             </div>
-            <div className="p-4 overflow-auto max-h-[calc(90vh-80px)]">
+            <div className="p-4 overflow-auto max-h-[calc(90vh-80px)] text-black dark:text-white">
               <ContentPreview
                 content={previewContent.generatedContent}
                 metadata={previewContent}

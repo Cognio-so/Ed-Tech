@@ -145,25 +145,6 @@ const PPTXViewer = ({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="bg-white/60 dark:bg-gray-800/60 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
-              {title || 'Generated Presentation'}
-            </h3>
-            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-              <span className="flex items-center gap-1">
-                <FileText className="h-4 w-4" />
-                {slideCount || 'Multiple'} slides
-              </span>
-              <span>PPTX Format</span>
-            </div>
-            {presentationUrl && (
-              <div className="mt-2 text-xs text-gray-500 break-all">
-                <strong>URL:</strong> {presentationUrl}
-              </div>
-            )}
-          </div>
-
-
           <div className="space-y-3">
             <h4 className="font-medium text-gray-700 dark:text-gray-300">
               Preview & Actions
@@ -270,10 +251,6 @@ const PPTXViewer = ({
                 </>
               )}
             </Button>
-          </div>
-
-          <div className="text-xs text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-gray-700">
-            <p>Generated with SlideSpeak AI • Supports PowerPoint, Google Slides, and more</p>
           </div>
         </CardContent>
       </Card>

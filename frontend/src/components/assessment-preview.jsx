@@ -172,7 +172,7 @@ export default function AssessmentPreview({
   }
 
   return (
-    <Card className="w-full">
+    <Card className="w-full dark:bg-secondary">
       <CardHeader>
         <div className="flex justify-between items-start">
           <div>
@@ -187,17 +187,17 @@ export default function AssessmentPreview({
               <Badge variant="outline">{assessment.language}</Badge>
               <Badge variant="outline">{assessment.status}</Badge>
             </div>
-            <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
-              <div className="flex items-center gap-1">
+            <div className="flex items-center gap-4 mt-3 text-sm text-gray-600 dark:text-white">
+              <div className="flex items-center gap-1 dark:text-white">
                 <Clock className="h-4 w-4" />
                 {assessment.duration} minutes
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 dark:text-white">
                 <BookOpen className="h-4 w-4" />
                 {assessment.numQuestions} questions
               </div>
               {assessment.metadata?.createdAt && (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 dark:text-white">
                   <Users className="h-4 w-4" />
                   {new Date(assessment.metadata.createdAt).toLocaleDateString()}
                 </div>
@@ -212,6 +212,7 @@ export default function AssessmentPreview({
                   size="sm"
                   onClick={handleCancelEdit}
                   className="text-red-600 hover:text-red-700"
+                  cursor="pointer"
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -219,6 +220,7 @@ export default function AssessmentPreview({
                   variant="default"
                   size="sm"
                   onClick={handleSaveEdit}
+                  cursor="pointer"
                 >
                   <Save className="h-4 w-4" />
                 </Button>
@@ -231,6 +233,7 @@ export default function AssessmentPreview({
                     size="sm"
                     onClick={handleStartEdit}
                     title="Edit Assessment"
+                    cursor="pointer"
                   >
                     <Edit className="h-4 w-4" />
                   </Button>
@@ -240,6 +243,7 @@ export default function AssessmentPreview({
                   size="sm"
                   onClick={handleCopyContent}
                   disabled={copied}
+                  cursor="pointer"
                 >
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </Button>
@@ -247,6 +251,7 @@ export default function AssessmentPreview({
                   variant="outline"
                   size="sm"
                   onClick={handleDownloadContent}
+                  cursor="pointer"
                 >
                   <Download className="h-4 w-4" />
                 </Button>
@@ -273,12 +278,14 @@ export default function AssessmentPreview({
               <Button
                 variant="outline"
                 onClick={handleCancelEdit}
+                cursor="pointer"
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleSaveEdit}
                 className="min-w-[100px]"
+                cursor="pointer"
               >
                 <Save className="h-4 w-4 mr-2" />
                 Save Changes
@@ -290,19 +297,19 @@ export default function AssessmentPreview({
             <div className="space-y-6">
               {/* Questions Section */}
               <div>
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 dark:text-white">
                   <BookOpen className="h-5 w-5" />
                   Questions
                 </h3>
                 <div className="space-y-6">
                   {questions.map((question, index) => (
-                    <div key={index} className="border rounded-lg p-4 bg-gray-50">
-                      <div className="flex items-start gap-3">
+                    <div key={index} className="border rounded-lg p-4 dark:bg-secondary">
+                      <div className="flex items-start gap-3 dark:text-white">
                         <Badge variant="outline" className="mt-1">
                           {question.number}
                         </Badge>
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
+                          <div className="flex items-center gap-2 mb-2 dark:text-white">
                             <Badge 
                               variant={question.type === 'mcq' ? 'default' : 
                                       question.type === 'true_false' ? 'secondary' : 'outline'}
@@ -312,12 +319,12 @@ export default function AssessmentPreview({
                                question.type === 'true_false' ? 'True/False' : 'Short Answer'}
                             </Badge>
                           </div>
-                          <p className="text-gray-900 mb-3">{question.text}</p>
+                          <p className="text-gray-900 mb-3 dark:text-white">{question.text}</p>
                           
                           {question.type === 'mcq' && question.options.length > 0 && (
                             <div className="space-y-1 ml-4">
                               {question.options.map((option, optIndex) => (
-                                <div key={optIndex} className="text-sm text-gray-700">
+                                <div key={optIndex} className="text-sm text-gray-700 dark:text-white">
                                   {option}
                                 </div>
                               ))}
@@ -333,14 +340,14 @@ export default function AssessmentPreview({
               {/* Solutions Section */}
               {solutions.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 dark:text-white">
                     <Check className="h-5 w-5" />
                     Solutions
                   </h3>
                   <div className="space-y-2">
                     {solutions.map((solution, index) => (
-                      <div key={index} className="border rounded-lg p-3 bg-green-50">
-                        <p className="text-sm text-gray-900">{solution}</p>
+                      <div key={index} className="border rounded-lg p-3 bg-green-50 dark:bg-secondary">
+                        <p className="text-sm text-gray-900 dark:text-white">{solution}</p>
                       </div>
                     ))}
                   </div>

@@ -3,7 +3,7 @@ const nextConfig = {
   experimental: {
     authInterrupts: true,
     serverActions: {
-      bodySizeLimit: '10mb', // Increase from default 1mb to 10mb
+      bodySizeLimit: '100mb', // Increased from 10mb to 100mb
     },
   },
   eslint:{

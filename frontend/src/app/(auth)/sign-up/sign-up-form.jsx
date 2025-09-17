@@ -46,7 +46,7 @@ export default function SignUpForm() {
         toast.error(error.message || "Sign up failed");
       } else {
         toast.success("Account created successfully");
-        router.push("/dashboard");
+        router.push("/student/dashboard");
       }
     } catch (err) {
       setError("An unexpected error occurred");
@@ -137,12 +137,12 @@ export default function SignUpForm() {
 
             <Button
               type="submit"
-              className="w-full h-11 bg-primary hover:bg-primary/90 text-white font-medium"
+              className="w-full h-11 bg-primary hover:bg-primary/90 text-white dark:text-black font-medium"
               disabled={isSubmitting}
             >
               {isSubmitting ? (
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-white dark:text-black border-t-transparent rounded-full animate-spin" />
                   Creating Account...
                 </div>
               ) : (
@@ -153,7 +153,7 @@ export default function SignUpForm() {
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border" />
+              <span className="w-full border-t border-border dark:border-border" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
               <span className="bg-background px-2 text-muted-foreground">Or continue with</span>

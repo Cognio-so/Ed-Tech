@@ -67,8 +67,8 @@ export async function getAllLibraryContent() {
         .limit(50)
         .toArray(),
       
-      // Web Searches
-      db.collection("webSearches")
+      // Web Searches - Fixed: Use correct collection name
+      db.collection("websearches")
         .find({ userId: new ObjectId(userId) })
         .sort({ "metadata.createdAt": -1 })
         .limit(50)
@@ -83,8 +83,13 @@ export async function getAllLibraryContent() {
           _id: item._id.toString(),
           userId: item.userId.toString(),
           type,
-          createdAt: item.metadata?.createdAt || item.createdAt,
-          updatedAt: item.metadata?.updatedAt || item.updatedAt
+          // Fix: Properly handle date serialization with fallbacks
+          createdAt: item.metadata?.createdAt?.toISOString() || 
+                    item.createdAt?.toISOString() || 
+                    new Date().toISOString(),
+          updatedAt: item.metadata?.updatedAt?.toISOString() || 
+                    item.updatedAt?.toISOString() || 
+                    new Date().toISOString()
         }));
       } else {
         console.error(`Error fetching ${type}:`, result.reason);
@@ -190,7 +195,7 @@ export async function deleteLibraryContent(contentId, contentType) {
         query = { _id: new ObjectId(contentId), userId: new ObjectId(userId) };
         break;
       case 'websearch':
-        collectionName = 'webSearches';
+        collectionName = 'websearches'; // Fixed: Use correct collection name
         query = { _id: new ObjectId(contentId), userId: new ObjectId(userId) };
         break;
       default:
@@ -292,7 +297,7 @@ export async function addContentToLesson(contentId, contentType, lessonData) {
         });
         break;
       case 'websearch':
-        collectionName = 'webSearches';
+        collectionName = 'websearches';
         content = await db.collection(collectionName).findOne({
           _id: new ObjectId(contentId),
           userId: new ObjectId(session.user.id)
@@ -313,7 +318,7 @@ export async function addContentToLesson(contentId, contentType, lessonData) {
       contentType: contentType,
       title: lessonData.title || `${content.title || content.topic || 'Untitled'} - Lesson`,
       subject: content.subject || 'General',
-      grade: lessonData.grade || content.grade || 'All', // Use grade from lessonData first
+      grade: lessonData.grade || content.grade || 'All',
       topic: content.topic || content.title || 'General Topic',
       contentData: content.generatedContent || content.content || content.description || '',
       lessonDescription: lessonData.lessonDescription || `Lesson based on ${contentType}: ${content.title || content.topic || 'Untitled'}`,
@@ -331,6 +336,20 @@ export async function addContentToLesson(contentId, contentType, lessonData) {
       },
       status: 'published'
     };
+
+    // **NEW: Add slide-specific fields for presentations**
+    if (contentType === 'slides') {
+      lessonDocument.presentationUrl = content.presentationUrl;
+      lessonDocument.slideImages = content.slideImages;
+      lessonDocument.slidesCount = content.slideCount || content.slidesCount;
+      lessonDocument.slideCount = content.slideCount;
+      lessonDocument.template = content.template;
+      lessonDocument.verbosity = content.verbosity;
+      lessonDocument.includeImages = content.includeImages;
+      lessonDocument.downloadUrl = content.downloadUrl;
+      lessonDocument.taskId = content.taskId;
+      lessonDocument.taskStatus = content.taskStatus;
+    }
 
     const result = await lessonsCollection.insertOne(lessonDocument);
 

@@ -61,14 +61,14 @@ export async function getStudentDashboardData() {
     // Normalize grades for matching
     const normalizedGrades = user.grades ? normalizeGrades(user.grades) : ['8'];
 
-    // Get progress data from the correct collection (studentProgress, not progress)
-    const progressData = await db.collection('studentProgress')
+    // Get progress data from the correct collection (progress, not studentProgress)
+    const progressData = await db.collection('progress')
       .find({ studentId: userId })
       .sort({ 'metadata.updatedAt': -1 })
       .toArray();
 
-    // Get achievements data
-    const achievementsData = await db.collection('studentAchievements')
+    // Get achievements data from the correct collection (achievements, not studentAchievements)
+    const achievementsData = await db.collection('achievements')
       .find({ studentId: userId })
       .sort({ earnedAt: -1 })
       .toArray();
@@ -284,10 +284,10 @@ export async function getQuickStats() {
     const user = await db.collection('user').findOne({ _id: userId });
     const normalizedGrades = user?.grades ? normalizeGrades(user.grades) : ['8'];
 
-    // Get counts - FIXED: Use correct collection names
+    // Get counts - UPDATED: Use correct collection names (progress and achievements)
     const [progressCount, achievementsCount, conversationsCount] = await Promise.all([
-      db.collection('studentProgress').countDocuments({ studentId: userId }),
-      db.collection('studentAchievements').countDocuments({ studentId: userId }),
+      db.collection('progress').countDocuments({ studentId: userId }),
+      db.collection('achievements').countDocuments({ studentId: userId }),
       db.collection('student_conversations').countDocuments({ studentId: userId })
     ]);
 
@@ -297,7 +297,7 @@ export async function getQuickStats() {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const todayActivity = await db.collection('studentProgress')
+    const todayActivity = await db.collection('progress')
       .countDocuments({
         studentId: userId,
         'metadata.updatedAt': {

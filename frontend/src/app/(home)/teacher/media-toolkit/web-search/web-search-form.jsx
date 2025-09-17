@@ -142,7 +142,7 @@ export default function WebSearchForm({ onSubmit, isLoading = false }) {
               <SelectContent>
                 {userGrades.map((gradeItem) => (
                   <SelectItem key={gradeItem} value={gradeItem}>
-                    Grade {gradeItem}
+                     {gradeItem}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -225,7 +225,7 @@ export default function WebSearchForm({ onSubmit, isLoading = false }) {
         <Button
           type="submit"
           disabled={!formData.topic.trim() || isLoading}
-          className="min-w-[140px] bg-gradient-to-r from-indigo-500 to-blue-600 hover:opacity-90 text-white"
+          className="min-w-[140px] bg-purple-600 hover:bg-purple-600/90 dark:bg-purple-600 dark:hover:bg-purple-600/90 text-white"
         >
           {isLoading ? (
             <>

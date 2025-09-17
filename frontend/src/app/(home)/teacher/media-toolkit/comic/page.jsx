@@ -303,22 +303,8 @@ export default function ComicPage() {
   ].sort((a, b) => a.index - b.index);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
-      <div className="container mx-auto p-6 space-y-8">
-        {/* Hero Header */}
-        <div className="text-center space-y-4">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20">
-            <BookOpen className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium text-primary">Comic Creator</span>
-          </div>
-          <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground via-foreground to-muted-foreground bg-clip-text text-transparent">
-            Create Educational Comics
-          </h1>
-          <p className="text-muted-foreground max-w-2xl mx-auto">
-            Transform educational content into engaging comic stories using AI. Perfect for visual learners and creative storytelling.
-          </p>
-        </div>
-
+    <div className="min-h-screen bg-background dark:bg-secondary rounded-3xl">
+      <div className="container mx-auto p-6 space-y-8"> 
         {/* Error Alert */}
         {error && (
           <Alert variant="destructive">
@@ -327,7 +313,7 @@ export default function ComicPage() {
         )}
 
         {/* Generation Card */}
-        <Card className="border-0 shadow-lg bg-card/50 backdrop-blur-sm">
+        <Card className="border-0 shadow-lg bg-card/50 backdrop-blur-sm dark:bg-secondary">
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-yellow-500" />
@@ -346,11 +332,11 @@ export default function ComicPage() {
 
         {/* Live Preview Controls */}
         {(comicImages.length > 0 || expectedPanels > 0) && (
-          <Card className="border-0 shadow-lg bg-card/50 backdrop-blur-sm">
+          <Card className="border-0 shadow-lg bg-card/50 backdrop-blur-sm dark:bg-secondary">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
-                  <Eye className="h-5 w-5 text-green-600" />
+                  <Eye className="h-5 w-5 text-primary" />
                   Live Preview
                   <Badge variant="secondary">{comicImages.length}/{expectedPanels} panels</Badge>
                 </CardTitle>
@@ -384,7 +370,7 @@ export default function ComicPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/10 flex items-center justify-center overflow-hidden p-4">
+              <div className="rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/10 flex items-center justify-center overflow-hidden p-4 dark:bg-secondary">
                 <CarouselWithControls
                   items={allPanels}
                   showIndicators={true}
@@ -392,7 +378,7 @@ export default function ComicPage() {
                     <div className="relative w-full h-[50vh] flex items-center justify-center bg-muted/20 rounded-lg overflow-hidden">
                       {p.isLoading ? (
                         <div className="flex flex-col items-center justify-center space-y-4">
-                          <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
+                          <Loader2 className="h-12 w-12 animate-spin text-primary" />
                           <div className="text-center">
                             <p className="text-sm font-medium">Generating Panel {p.index}</p>
                             <p className="text-xs text-muted-foreground">Please wait...</p>
@@ -412,103 +398,6 @@ export default function ComicPage() {
             </CardContent>
           </Card>
         )}
-
-        {/* Saved Comics Gallery */}
-        <Card className="border-0 shadow-lg bg-card/50 backdrop-blur-sm">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  Your Comics Library
-                  <Badge variant="secondary" className="ml-2">{savedComics.length}</Badge>
-                </CardTitle>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loadingSaved ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin" />
-              </div>
-            ) : savedComics.length === 0 ? (
-              <div className="text-center py-12">
-                <BookOpen className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-                <h3 className="text-lg font-semibold mb-2">No comics yet</h3>
-                <p className="text-muted-foreground mb-4">Create your first educational comic to get started</p>
-              </div>
-            ) : (
-              <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {savedComics.map((item) => (
-                  <div key={item._id} className="group relative">
-                    <Card className="overflow-hidden hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-background to-muted/20">
-                      {/* Thumbnail */}
-                      <div className="aspect-square overflow-hidden bg-gradient-to-br from-muted/20 to-muted/40 relative">
-                        {(item.imageUrls?.[0] || item.images?.[0]) ? (
-                          <>
-                            <img 
-                              src={item.imageUrls?.[0] || item.images?.[0]} 
-                              alt={item.instruction || item.instructions} 
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" 
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                          </>
-                        ) : (
-                          <div className="flex items-center justify-center h-full">
-                            <BookOpen className="h-12 w-12 text-muted-foreground/50" />
-                          </div>
-                        )}
-                        
-                        {/* Action Buttons Overlay */}
-                        <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                          <Button
-                            size="icon"
-                            variant="secondary"
-                            className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm"
-                            onClick={() => handlePreview(item)}
-                          >
-                            <Eye className="h-4 w-4 text-green-600" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="secondary"
-                            className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm"
-                            onClick={() => item.images?.[0] && handleDownload(item.images[0], `${item.instructions.slice(0,20)}.png`)}
-                          >
-                            <Download className="h-4 w-4 text-blue-600" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="secondary"
-                            className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm"
-                            onClick={() => handleDelete(item._id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
-                        </div>
-
-                        {/* Panel Count Badge */}
-                        <div className="absolute bottom-3 left-3">
-                          <Badge variant="secondary" className="bg-background/80 backdrop-blur-sm text-xs">
-                            {item.numPanels} panels
-                          </Badge>
-                        </div>
-                      </div>
-
-                      {/* Content */}
-                      <CardContent className="p-4">
-                        <h3 className="font-semibold text-sm line-clamp-2 mb-2">{item.instruction || item.instructions}</h3>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>Grade {item.grade || item.gradeLevel}</span>
-                          <span>{formatTime(item.createdAt)}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       {/* Live Viewer Dialog */}
@@ -606,7 +495,7 @@ export default function ComicPage() {
             <DialogHeader className="p-6 pb-2 border-b">
               <DialogTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Eye className="h-5 w-5 text-green-600" />
+                  <Eye className="h-5 w-5 text-primary" />
                   Comic Preview
                   {previewItem && (
                     <Badge variant="outline" className="ml-2">

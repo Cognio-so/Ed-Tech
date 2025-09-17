@@ -29,6 +29,7 @@ import {
 import { toast } from "sonner";
 import { getStudents, updateStudentGroup, updateStudentNotes, getClassStatistics } from "./action";
 import { authClient } from "@/lib/auth-client";
+import Loading from "./loading";
 
 export default function ClassGroupingPage() {
   const [user, setUser] = useState(null);
@@ -167,7 +168,7 @@ export default function ClassGroupingPage() {
   };
 
   if (loading) {
-    return <div>Loading...</div>;
+    return <Loading/>;
   }
 
   return (

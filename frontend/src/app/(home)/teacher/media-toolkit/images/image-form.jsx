@@ -32,7 +32,6 @@ const ImageForm = ({ onImageGenerated }) => {
     const [loadingUserData, setLoadingUserData] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Fetch user's assigned grades and subjects
     useEffect(() => {
         const fetchUserData = async () => {
             try {
@@ -42,7 +41,6 @@ const ImageForm = ({ onImageGenerated }) => {
                 if (result.success) {
                     setUserGrades(result.grades);
                     setUserSubjects(result.subjects);
-                    // Set default values if user has assigned data
                     if (result.grades.length > 0) {
                         setFormData(prev => ({ ...prev, grade: result.grades[0] }));
                     }
@@ -87,9 +85,6 @@ const ImageForm = ({ onImageGenerated }) => {
 
         setIsGenerating(true);
 
-        const loadingToast = toast.loading("Generating image... This may take a few moments.", {
-            duration: Infinity,
-        });
 
         try {
             const imageData = {
@@ -146,8 +141,6 @@ const ImageForm = ({ onImageGenerated }) => {
             const saveResult = await uploadImageToCloudinaryAndSave(generatedImage);
 
             if (saveResult.success) {
-                toast.success("Image saved successfully!");
-
                 if (onImageGenerated) {
                     onImageGenerated({
                         _id: saveResult.imageId,
@@ -201,21 +194,11 @@ const ImageForm = ({ onImageGenerated }) => {
             transition={{ duration: 0.5 }}
             className="w-full max-w-4xl mx-auto space-y-6"
         >
-            <Card className="border-gray-200 dark:border-gray-800 shadow-lg dark:bg-gray-900">
-                <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 border-b dark:border-gray-700">
-                    <CardTitle className="flex items-center gap-2 text-2xl font-bold text-gray-800 dark:text-gray-100">
-                        <Image className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                        AI Image Generator
-                    </CardTitle>
-                    <p className="text-gray-600 dark:text-gray-400 mt-2">
-                        Create educational images, charts, and diagrams with AI
-                    </p>
-                </CardHeader>
-                
+            <Card className="shadow-lg dark:bg-secondary ">
                 <CardContent className="p-6">
                     <form onSubmit={handleGenerate} className="space-y-6">
                         <div className="space-y-2">
-                            <Label htmlFor="title" className="text-sm font-medium flex items-center gap-2 dark:text-gray-300">
+                            <Label htmlFor="title" className="text-sm font-medium flex items-center gap-2 dark:text-white">
                                 <BookOpen className="h-4 w-4" />
                                 Image Title *
                             </Label>
@@ -225,13 +208,13 @@ const ImageForm = ({ onImageGenerated }) => {
                                 placeholder="Enter a descriptive title for your image"
                                 value={formData.title}
                                 onChange={(e) => handleInputChange('title', e.target.value)}
-                                className="w-full dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700"
+                                className="w-full dark:bg-secondary dark:text-white"
                                 required
                             />
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="topic" className="text-sm font-medium dark:text-gray-300">
+                            <Label htmlFor="topic" className="text-sm font-medium dark:text-white">
                                 Topic *
                             </Label>
                             <Input
@@ -240,27 +223,27 @@ const ImageForm = ({ onImageGenerated }) => {
                                 placeholder="e.g., Photosynthesis, Water Cycle, Solar System"
                                 value={formData.topic}
                                 onChange={(e) => handleInputChange('topic', e.target.value)}
-                                className="w-full dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700"
+                                className="w-full dark:bg-secondary dark:text-white"
                                 required
                             />
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label htmlFor="subject" className="text-sm font-medium dark:text-gray-300">
+                                <Label htmlFor="subject" className="text-sm font-medium dark:text-white">
                                     Subject *
                                 </Label>
                                 {loadingUserData ? (
                                     <div className="flex items-center justify-center p-4">
-                                        <Loader2 className="h-4 w-4 animate-spin mr-2 dark:text-gray-400" />
+                                        <Loader2 className="h-4 w-4 animate-spin mr-2 dark:text-white" />
                                         <span className="text-sm text-muted-foreground dark:text-gray-500">Loading subjects...</span>
                                     </div>
                                 ) : userSubjects.length > 0 ? (
                                     <Select value={formData.subject} onValueChange={(value) => handleInputChange('subject', value)}>
-                                        <SelectTrigger className="dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700">
+                                        <SelectTrigger className="dark:bg-secondary dark:text-white">
                                             <SelectValue placeholder="Select subject" />
                                         </SelectTrigger>
-                                        <SelectContent className="dark:bg-gray-800 dark:text-gray-200">
+                                        <SelectContent className="dark:bg-secondary dark:text-white">
                                             {userSubjects.map((sub) => (
                                                 <SelectItem key={sub} value={sub}>
                                                     {sub.charAt(0).toUpperCase() + sub.slice(1)}
@@ -269,27 +252,27 @@ const ImageForm = ({ onImageGenerated }) => {
                                         </SelectContent>
                                     </Select>
                                 ) : (
-                                    <div className="p-4 border border-dashed border-muted-foreground/25 dark:border-gray-700 rounded-md text-center">
-                                        <p className="text-sm text-muted-foreground dark:text-gray-500">No subjects assigned</p>
+                                    <div className="p-4 border border-dashed border-muted-foreground/25 dark:border-white rounded-md text-center">
+                                        <p className="text-sm text-muted-foreground dark:text-white">No subjects assigned</p>
                                     </div>
                                 )}
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="grade" className="text-sm font-medium dark:text-gray-300">
+                                <Label htmlFor="grade" className="text-sm font-medium dark:text-white">
                                     Grade Level *
                                 </Label>
                                 {loadingUserData ? (
                                     <div className="flex items-center justify-center p-4">
-                                        <Loader2 className="h-4 w-4 animate-spin mr-2 dark:text-gray-400" />
+                                        <Loader2 className="h-4 w-4 animate-spin mr-2 dark:text-white" />
                                         <span className="text-sm text-muted-foreground dark:text-gray-500">Loading grades...</span>
                                     </div>
                                 ) : userGrades.length > 0 ? (
                                     <Select value={formData.grade} onValueChange={(value) => handleInputChange('grade', value)}>
-                                        <SelectTrigger className="dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700">
+                                        <SelectTrigger className="dark:bg-secondary dark:text-white">
                                             <SelectValue placeholder="Select grade" />
                                         </SelectTrigger>
-                                        <SelectContent className="dark:bg-gray-800 dark:text-gray-200">
+                                        <SelectContent className="dark:bg-secondary dark:text-white">
                                             {userGrades.map((g) => (
                                                 <SelectItem key={g} value={g}>
                                                     {g.toUpperCase()}
@@ -298,15 +281,15 @@ const ImageForm = ({ onImageGenerated }) => {
                                         </SelectContent>
                                     </Select>
                                 ) : (
-                                    <div className="p-4 border border-dashed border-muted-foreground/25 dark:border-gray-700 rounded-md text-center">
-                                        <p className="text-sm text-muted-foreground dark:text-gray-500">No grades assigned</p>
+                                    <div className="p-4 border border-dashed border-muted-foreground/25 dark:border-white rounded-md text-center">
+                                        <p className="text-sm text-muted-foreground dark:text-white">No grades assigned</p>
                                     </div>
                                 )}
                             </div>
                         </div>
 
                         <div className="space-y-2">
-                            <Label className="text-sm font-medium flex items-center gap-2 dark:text-gray-300">
+                            <Label className="text-sm font-medium flex items-center gap-2 dark:text-white">
                                 <Palette className="h-4 w-4" />
                                 Visual Type *
                             </Label>
@@ -320,7 +303,7 @@ const ImageForm = ({ onImageGenerated }) => {
                                         <label className={`block p-4 border-2 rounded-lg cursor-pointer transition-all ${
                                             formData.visualType === type.value
                                                 ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/50 dark:border-blue-500'
-                                                : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
+                                                : 'border-gray-200 hover:border-gray-300 dark:border-white dark:hover:border-gray-600'
                                         }`}>
                                             <input
                                                 type="radio"
@@ -331,8 +314,8 @@ const ImageForm = ({ onImageGenerated }) => {
                                                 className="sr-only"
                                             />
                                             <div className="text-center">
-                                                <div className="font-medium text-gray-900 dark:text-gray-100">{type.label}</div>
-                                                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{type.description}</div>
+                                                <div className="font-medium text-gray-900 dark:text-white">{type.label}</div>
+                                                <div className="text-sm text-gray-500 dark:text-white mt-1">{type.description}</div>
                                             </div>
                                         </label>
                                     </motion.div>
@@ -341,7 +324,7 @@ const ImageForm = ({ onImageGenerated }) => {
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="instructions" className="text-sm font-medium dark:text-gray-300">
+                            <Label htmlFor="instructions" className="text-sm font-medium dark:text-white">
                                 Detailed Instructions *
                             </Label>
                             <Textarea
@@ -349,22 +332,22 @@ const ImageForm = ({ onImageGenerated }) => {
                                 placeholder="Describe what you want in the image. Be specific about colors, style, elements, and any text labels needed..."
                                 value={formData.instructions}
                                 onChange={(e) => handleInputChange('instructions', e.target.value)}
-                                className="w-full min-h-[100px] dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700"
+                                className="w-full min-h-[100px] dark:bg-secondary dark:text-white"
                                 required
                             />
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2 dark:text-gray-300">
+                                <Label className="text-sm font-medium flex items-center gap-2 dark:text-white">
                                     <Globe className="h-4 w-4" />
                                     Language for Labels
                                 </Label>
                                 <Select value={formData.language} onValueChange={(value) => handleInputChange('language', value)}>
-                                    <SelectTrigger className="dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700">
+                                    <SelectTrigger className="dark:bg-secondary dark:text-white">
                                         <SelectValue />
                                     </SelectTrigger>
-                                    <SelectContent className="dark:bg-gray-800 dark:text-gray-200">
+                                    <SelectContent className="dark:bg-secondary dark:text-white">
                                         {language.map((lang) => (
                                             <SelectItem key={lang} value={lang}>
                                                 {lang}
@@ -375,7 +358,7 @@ const ImageForm = ({ onImageGenerated }) => {
                             </div>
 
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium dark:text-gray-300">
+                                <Label className="text-sm font-medium dark:text-white">
                                     Advanced Difficulty
                                 </Label>
                                 <div className="flex items-center space-x-2">
@@ -384,7 +367,7 @@ const ImageForm = ({ onImageGenerated }) => {
                                         checked={formData.difficultyFlag}
                                         onCheckedChange={(checked) => handleInputChange('difficultyFlag', checked)}
                                     />
-                                    <Label htmlFor="difficulty" className="text-sm text-gray-600 dark:text-gray-400">
+                                    <Label htmlFor="difficulty" className="text-sm text-muted-foreground dark:text-white">
                                         More detailed and complex
                                     </Label>
                                 </div>
@@ -398,7 +381,7 @@ const ImageForm = ({ onImageGenerated }) => {
                             <Button
                                 type="submit"
                                 disabled={isGenerating}
-                                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 text-lg font-medium dark:from-blue-500 dark:to-indigo-500 dark:hover:from-blue-600 dark:hover:to-indigo-600"
+                                className="w-full text-black dark:text-white py-3 text-lg font-medium bg-purple-600 hover:bg-purple-600/90"
                             >
                                 {isGenerating ? (
                                     <>
@@ -423,17 +406,7 @@ const ImageForm = ({ onImageGenerated }) => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5 }}
                 >
-                    <Card className="border-gray-200 dark:border-gray-800 shadow-lg dark:bg-gray-900">
-                        <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-gray-800 dark:to-gray-800 border-b dark:border-gray-700">
-                            <CardTitle className="flex items-center gap-2 text-xl font-bold text-gray-800 dark:text-gray-100">
-                                <Eye className="h-5 w-5 text-green-600 dark:text-green-400" />
-                                Generated Image Preview
-                            </CardTitle>
-                            <p className="text-gray-600 dark:text-gray-400">
-                                Review your generated image and save it to your gallery
-                            </p>
-                        </CardHeader>
-                        
+                    <Card className="border-gray-200 dark:border-white shadow-lg dark:bg-secondary">
                         <CardContent className="p-6">
                             <div className="space-y-4">
                                 <div className="flex justify-center">
@@ -446,9 +419,9 @@ const ImageForm = ({ onImageGenerated }) => {
                                     </div>
                                 </div>
 
-                                <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg">
-                                    <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">{generatedImage.title}</h3>
-                                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                <div className="bg-gray-50 dark:bg-secondary p-4 rounded-lg">
+                                    <h3 className="font-semibold text-gray-900 dark:text-white mb-2">{generatedImage.title}</h3>
+                                    <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground dark:text-white">
                                         <div><strong>Topic:</strong> {generatedImage.topic}</div>
                                         <div><strong>Subject:</strong> {generatedImage.subject}</div>
                                         <div><strong>Grade:</strong> {generatedImage.grade}</div>
@@ -465,7 +438,7 @@ const ImageForm = ({ onImageGenerated }) => {
                                     <Button
                                         onClick={handleSave}
                                         disabled={isSaving}
-                                        className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 text-lg font-medium dark:from-green-500 dark:to-emerald-500 dark:hover:from-green-600 dark:hover:to-emerald-600"
+                                        className="w-full bg-purple-600 hover:bg-purple-600/90 text-white py-3 text-lg font-medium dark:from-green-500 dark:to-emerald-500 dark:hover:from-green-600 dark:hover:to-emerald-600 cursor-pointer"
                                     >
                                         {isSaving ? (
                                             <>
