@@ -11,7 +11,7 @@ export default async function VerifyEmailPage() {
     const session = await getServerSession();
     const user = session?.user;
     if(!user) unauthorized();
-    if(user.emailVerified) redirect("/dashboard");
+    if(user.emailVerified) redirect("/student/dashboard");
  
 
 

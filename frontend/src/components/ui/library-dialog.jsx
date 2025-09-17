@@ -160,17 +160,42 @@ export default function LibraryDialog({
       case 'image':
         return (
           <div className="h-full flex flex-col">
-            <div className="text-center mb-4 flex-shrink-0">
-              <h3 className="text-lg font-semibold">{content.title}</h3>
-              <p className="text-sm text-muted-foreground">{content.topic}</p>
-            </div>
             <div className="flex-1 min-h-0 flex items-center justify-center">
               <div className="relative max-w-full max-h-full">
-                <img 
-                  src={content.imageUrl} 
-                  alt={content.title}
-                  className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
-                />
+                {content.imageUrl ? (
+                  <img 
+                    src={content.imageUrl} 
+                    alt={content.title}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+                    loading="lazy"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      const fallbackDiv = document.createElement('div');
+                      fallbackDiv.className = 'text-center py-8 text-foreground';
+                      fallbackDiv.innerHTML = `
+                        <div>
+                          <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                          </svg>
+                          <p class="text-sm">Image failed to load</p>
+                        </div>
+                      `;
+                      e.target.parentNode.appendChild(fallbackDiv);
+                    }}
+                  />
+                ) : content.imageBase64 ? (
+                  <img 
+                    src={`data:image/png;base64,${content.imageBase64}`} 
+                    alt={content.title}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="text-center py-8 text-foreground">
+                    <Image className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+                    <p className="text-sm">No image data available</p>
+                  </div>
+                )}
                 <div className="absolute top-2 right-2">
                   <Button
                     size="sm"
@@ -183,6 +208,11 @@ export default function LibraryDialog({
                 </div>
               </div>
             </div>
+            {content.instructions && (
+              <div className="p-4 bg-muted/50 border-t">
+                <p className="text-sm text-muted-foreground">{content.instructions}</p>
+              </div>
+            )}
           </div>
         );
       
@@ -218,8 +248,37 @@ export default function LibraryDialog({
   const renderMetadata = () => {
     return (
       <div className="mb-4">
-        <h3 className="text-lg font-semibold">{content.title}</h3>
-        <p className="text-sm text-muted-foreground">{content.topic}</p>
+        <h3 className="text-lg font-semibold mb-3">{content.title}</h3>
+        <div className="grid grid-cols-2 gap-4">
+          {content.topic && (
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-muted-foreground">Topic:</span>
+              <span className="text-sm">{content.topic}</span>
+            </div>
+          )}
+          {content.subject && (
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-muted-foreground">Subject:</span>
+              <span className="text-sm">{content.subject}</span>
+            </div>
+          )}
+          {content.grade && (
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-muted-foreground">Grade:</span>
+              <span className="text-sm">{content.grade}</span>
+            </div>
+          )}
+          {content.createdAt && (
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-muted-foreground">Date:</span>
+              <span className="text-sm">{new Date(content.createdAt).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "short",
+                day: "numeric"
+              })}</span>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -237,7 +296,7 @@ export default function LibraryDialog({
                   {contentTypes[content.type]?.label}
                 </Badge>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 mr-4">
                 <Button
                   variant="outline"
                   size="sm"

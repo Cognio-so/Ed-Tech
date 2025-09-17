@@ -48,8 +48,14 @@ export async function uploadComicImagesToCloudinaryAndSave(comicData, userId) {
       }
     }
 
+    // Create a title from the instruction (first 50 characters)
+    const title = comicData.instructions 
+      ? comicData.instructions.substring(0, 50) + (comicData.instructions.length > 50 ? '...' : '')
+      : 'Untitled Comic';
+
     const comicDoc = {
       userId: new ObjectId(userId),
+      title: title, // Add title field
       instruction: comicData.instructions,
       subject: comicData.subject || "General",
       grade: comicData.gradeLevel,
@@ -72,16 +78,38 @@ export async function uploadComicImagesToCloudinaryAndSave(comicData, userId) {
 
     const result = await collection.insertOne(comicDoc);
     
+    // Properly serialize the comic object for client components
+    const serializedComic = {
+      _id: result.insertedId.toString(),
+      userId: userId, // Keep as string since it's already a string parameter
+      title: title, // Add title field
+      instruction: comicData.instructions,
+      subject: comicData.subject || "General",
+      grade: comicData.gradeLevel,
+      language: comicData.language || "English",
+      numPanels: comicData.numPanels,
+      comicType: comicData.comicType || "educational",
+      imageUrls: uploadedImageUrls,
+      cloudinaryPublicIds: cloudinaryPublicIds,
+      images: comicData.images,
+      metadata: {
+        createdAt: comicDoc.metadata.createdAt.toISOString(),
+        updatedAt: comicDoc.metadata.updatedAt.toISOString(),
+        tags: [comicData.subject, comicData.gradeLevel, comicData.language],
+        isPublic: false,
+        downloadCount: 0,
+        viewCount: 0
+      },
+      status: "completed",
+      createdAt: comicDoc.metadata.createdAt.toISOString(),
+      updatedAt: comicDoc.metadata.updatedAt.toISOString()
+    };
+    
     return {
       success: true,
       message: "Comic saved successfully",
       id: result.insertedId.toString(),
-      comic: {
-        _id: result.insertedId.toString(),
-        ...comicDoc,
-        createdAt: comicDoc.metadata.createdAt,
-        updatedAt: comicDoc.metadata.updatedAt
-      }
+      comic: serializedComic
     };
   } catch (error) {
     console.error("Save comic error:", error);
@@ -101,9 +129,15 @@ export async function saveComic(comicData) {
     
     const userId = session.user.id;
 
+    // Create a title from the instruction (first 50 characters)
+    const title = comicData.instructions 
+      ? comicData.instructions.substring(0, 50) + (comicData.instructions.length > 50 ? '...' : '')
+      : 'Untitled Comic';
+
     const comicDocument = {
       _id: new ObjectId(),
       userId: new ObjectId(userId),
+      title: title, // Add title field
       instruction: comicData.instructions,
       subject: comicData.subject || "General",
       grade: comicData.gradeLevel,

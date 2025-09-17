@@ -9,7 +9,6 @@ import { ObjectId } from 'mongodb';
 function normalizeGrades(userGrades) {
   const normalizedGrades = [];
   
-  
   userGrades.forEach(grade => {
     // Add the original grade as-is
     normalizedGrades.push(grade);
@@ -20,15 +19,11 @@ function normalizeGrades(userGrades) {
       // Only add the numeric version if it's a valid grade number
       if (/^\d+$/.test(withoutGrade)) {
         normalizedGrades.push(withoutGrade);
-      } else {
-        console.log(`Grade "${grade}" -> Added "${grade}" only (not a simple number)`);
       }
     } else if (/^\d+$/.test(grade)) {
-      // If it's just a number, add the "Grade X" version
+      // If it's just a number, add the "Grade " version
       const withGrade = `Grade ${grade}`;
       normalizedGrades.push(withGrade);
-    } else {
-      console.log(`Grade "${grade}" -> Added "${grade}" only (not a simple number)`);
     }
   });
   
@@ -156,12 +151,11 @@ export async function getStudentLessons() {
       lessons: transformedLessons
     };
   } catch (error) {
-    console.error('Error fetching student lessons:', error);
     throw new Error(error.message || 'Failed to fetch lessons');
   }
 }
 
-// Get all student content with proper grade matching
+// Optimized function to get all student content with faster queries
 export async function getAllStudentContent() {
   try {
     const session = await getServerSession();
@@ -169,12 +163,14 @@ export async function getAllStudentContent() {
       throw new Error('User not authenticated');
     }
 
-
     const { db } = await connectToDatabase();
     const usersCollection = db.collection('user');
 
-    // Get student's grade
-    const user = await usersCollection.findOne({ _id: new ObjectId(session.user.id) });
+    // Get student's grade with projection to fetch only needed fields
+    const user = await usersCollection.findOne(
+      { _id: new ObjectId(session.user.id) },
+      { projection: { grades: 1 } }
+    );
     
     if (!user) {
       throw new Error('User not found');
@@ -188,27 +184,90 @@ export async function getAllStudentContent() {
       };
     }
 
-
     // Normalize grades for matching
     const normalizedGrades = normalizeGrades(user.grades);
 
-    // First, get lessons from the lessons collection (primary source)
-    const lessons = await db.collection('lessons')
-      .find({ 
-        grade: { $in: normalizedGrades },
-        status: 'published'
-      })
-      .sort({ 'metadata.createdAt': -1 })
-      .toArray();
+    // Fetch from both lessons and presentations collections
+    const [lessonsResult, presentationsResult] = await Promise.all([
+      // Get lessons from lessons collection
+      db.collection('lessons')
+        .find({ 
+          grade: { $in: normalizedGrades },
+          status: 'published'
+        })
+        .sort({ 'metadata.createdAt': -1 })
+        .limit(50)
+        .toArray(),
+      
+      // Get presentations directly from presentations collection
+      db.collection('presentations')
+        .find({ 
+          grade: { $in: normalizedGrades },
+          status: 'published'
+        })
+        .sort({ 'metadata.createdAt': -1 })
+        .limit(50)
+        .toArray()
+    ]);
 
-    // Get student's progress for these lessons
-    const progressRecords = await db.collection('studentProgress')
+    // Process lessons
+    const lessons = lessonsResult.map(lesson => ({
+      ...lesson,
+      _id: lesson._id.toString(),
+      type: 'lesson',
+      resourceType: lesson.contentType || 'content'
+    }));
+
+    // Process presentations as slides
+    const presentations = presentationsResult.map(presentation => ({
+      ...presentation,
+      _id: presentation._id.toString(),
+      type: 'slides',
+      resourceType: 'slides',
+      // Map presentation fields to lesson-like structure
+      title: presentation.title,
+      subject: presentation.subject || 'General',
+      grade: presentation.grade,
+      topic: presentation.topic,
+      description: presentation.description || presentation.instructions || '',
+      content: presentation.content || '',
+      lessonDescription: presentation.description || presentation.instructions || '',
+      difficulty: presentation.difficulty || 'Medium',
+      language: presentation.language || 'English',
+      duration: presentation.duration || 30,
+      metadata: presentation.metadata,
+      status: presentation.status,
+      // Include all slide-specific fields
+      presentationUrl: presentation.presentationUrl,
+      slideImages: presentation.slideImages,
+      slidesCount: presentation.slideCount || presentation.slidesCount,
+      slideCount: presentation.slideCount,
+      template: presentation.template,
+      verbosity: presentation.verbosity,
+      includeImages: presentation.includeImages,
+      downloadUrl: presentation.downloadUrl,
+      taskId: presentation.taskId,
+      taskStatus: presentation.taskStatus
+    }));
+
+    // Combine lessons and presentations
+    const allContent = [...lessons, ...presentations]
+      .sort((a, b) => new Date(b.metadata?.createdAt || b.createdAt) - new Date(a.metadata?.createdAt || a.createdAt));
+
+    // Get student's progress for all content
+    const progressRecords = await db.collection('progress')
       .find({ 
         studentId: new ObjectId(session.user.id),
-        contentId: { $in: lessons.map(lesson => new ObjectId(lesson._id)) }
+        contentId: { $in: allContent.map(item => new ObjectId(item._id)) }
+      })
+      .project({
+        contentId: 1,
+        progress: 1,
+        status: 1,
+        completionData: 1,
+        metadata: 1
       })
       .toArray();
-
 
     // Create a progress map for quick lookup
     const progressMap = {};
@@ -216,42 +275,75 @@ export async function getAllStudentContent() {
       progressMap[progress.contentId.toString()] = progress;
     });
 
-    // Transform lessons to include progress and proper resource type
-    const transformedLessons = await Promise.all(lessons.map(async (lesson) => {
-      const progress = progressMap[lesson._id.toString()];
+    // Fetch referenced content for comics, images, and slides
+    const contentIds = lessons
+      .filter(lesson => lesson.contentId && (
+        lesson.contentType === 'image' || 
+        lesson.contentType === 'comic' || 
+        lesson.contentType === 'slides' ||
+        lesson.contentType === 'presentation'
+      ))
+      .map(lesson => new ObjectId(lesson.contentId));
+
+    let referencedContentMap = {};
+    if (contentIds.length > 0) {
+      // Fetch all referenced content including presentations
+      const [images, comics, presentations] = await Promise.all([
+        db.collection('images').find({ _id: { $in: contentIds } }).toArray(),
+        db.collection('comics').find({ _id: { $in: contentIds } }).toArray(),
+        db.collection('presentations').find({ _id: { $in: contentIds } }).toArray()
+      ]);
+
+      // Create lookup maps
+      images.forEach(img => {
+        referencedContentMap[img._id.toString()] = { type: 'image', data: img };
+      });
+      comics.forEach(comic => {
+        referencedContentMap[comic._id.toString()] = { type: 'comic', data: comic };
+      });
+      presentations.forEach(presentation => {
+        referencedContentMap[presentation._id.toString()] = { type: 'presentation', data: presentation };
+      });
+    }
+
+    // Transform all content with progress data
+    const transformedContent = allContent.map((item) => {
+      const progress = progressMap[item._id];
       
-      // Determine resource type based on lesson content
-      let resourceType = 'content';
-      if (lesson.assessmentId || lesson.assessmentContent) {
+      // Determine resource type
+      let resourceType = item.resourceType;
+      if (item.type === 'lesson') {
+        if (item.assessmentId || item.assessmentContent) {
         resourceType = 'assessment';
-      } else if (lesson.contentType) {
-        resourceType = lesson.contentType;
+        } else if (item.contentType) {
+          resourceType = item.contentType;
+        }
       }
 
-      // Base transformed lesson
-      let transformedLesson = {
-        _id: lesson._id.toString(),
-        resourceId: lesson._id.toString(),
-        teacherId: lesson.teacherId.toString(),
-        title: lesson.title,
-        subject: lesson.subject,
-        grade: lesson.grade,
-        topic: lesson.topic,
-        description: lesson.lessonDescription,
-        content: lesson.contentData || lesson.assessmentContent,
+      // Base transformed item
+      let transformedItem = {
+        _id: item._id,
+        resourceId: item._id,
+        teacherId: item.teacherId?.toString() || item.userId?.toString(),
+        title: item.title,
+        subject: item.subject || 'General',
+        grade: item.grade,
+        topic: item.topic,
+        description: item.description || item.lessonDescription || '',
+        content: item.content || item.contentData || '',
         resourceType: resourceType,
-        difficulty: lesson.difficulty,
-        language: lesson.language,
-        estimatedTimeMinutes: lesson.duration || 30,
-        rating: 4.5, // Default rating
-        views: lesson.metadata?.viewCount || 0,
-        likes: 0, // Default likes
+        difficulty: item.difficulty || 'Medium',
+        language: item.language || 'English',
+        estimatedTimeMinutes: item.duration || 30,
+        rating: 4.5,
+        views: item.metadata?.viewCount || 0,
+        likes: 0,
         metadata: {
-          ...lesson.metadata,
-          createdAt: safeToISOString(lesson.metadata?.createdAt),
-          updatedAt: safeToISOString(lesson.metadata?.updatedAt)
+          ...item.metadata,
+          createdAt: safeToISOString(item.metadata?.createdAt) || safeToISOString(item.createdAt),
+          updatedAt: safeToISOString(item.metadata?.updatedAt) || safeToISOString(item.updatedAt)
         },
-        status: lesson.status,
+        status: item.status,
         progress: progress ? {
           currentStep: progress.progress?.currentStep || 0,
           totalSteps: progress.progress?.totalSteps || 1,
@@ -263,70 +355,91 @@ export async function getAllStudentContent() {
           score: progress.completionData?.score,
           attempts: progress.metadata?.attempts || 0,
           bookmarked: progress.metadata?.bookmarked || false
-        } : null
+        } : null,
+        
+        // Include slide-specific fields
+        presentationUrl: item.presentationUrl,
+        slideImages: item.slideImages,
+        slidesCount: item.slidesCount || item.slideCount,
+        slideCount: item.slideCount,
+        template: item.template,
+        verbosity: item.verbosity,
+        includeImages: item.includeImages,
+        downloadUrl: item.downloadUrl,
+        taskId: item.taskId,
+        taskStatus: item.taskStatus,
+        
+        // Include other content fields
+        imageUrl: item.imageUrl,
+        imageBase64: item.imageBase64,
+        visualType: item.visualType,
+        instructions: item.instructions,
+        difficultyFlag: item.difficultyFlag,
+        cloudinaryPublicId: item.cloudinaryPublicId,
+        imageUrls: item.imageUrls,
+        images: item.images,
+        panels: item.panels,
+        numPanels: item.numPanels,
+        comicType: item.comicType,
+        instruction: item.instruction,
+        cloudinaryPublicIds: item.cloudinaryPublicIds
       };
 
-      // If this lesson references content from another collection, fetch that content
-      if (lesson.contentId && (lesson.contentType === 'image' || lesson.contentType === 'comic')) {
+      // If this lesson references content from another collection, merge that data
+      if (item.contentId && referencedContentMap[item.contentId]) {
+        const referencedContent = referencedContentMap[item.contentId];
         
-        try {
-          let referencedContent = null;
-          
-          if (lesson.contentType === 'image') {
-            referencedContent = await db.collection('images').findOne({ 
-              _id: new ObjectId(lesson.contentId) 
-            });
-          } else if (lesson.contentType === 'comic') {
-            referencedContent = await db.collection('comics').findOne({ 
-              _id: new ObjectId(lesson.contentId) 
-            });
-          }
-          
-          if (referencedContent) {
-            
-            // Merge the referenced content data into the lesson
-            if (lesson.contentType === 'image') {
-              transformedLesson = {
-                ...transformedLesson,
-                imageUrl: referencedContent.imageUrl,
-                imageBase64: referencedContent.imageBase64,
-                visualType: referencedContent.visualType,
-                instructions: referencedContent.instructions,
-                difficultyFlag: referencedContent.difficultyFlag,
-                cloudinaryPublicId: referencedContent.cloudinaryPublicId
-              };
-            } else if (lesson.contentType === 'comic') {
-              transformedLesson = {
-                ...transformedLesson,
-                imageUrls: referencedContent.imageUrls,
-                images: referencedContent.images,
-                panels: referencedContent.panels,
-                numPanels: referencedContent.numPanels,
-                comicType: referencedContent.comicType,
-                instruction: referencedContent.instruction,
-                instructions: referencedContent.instructions,
-                cloudinaryPublicIds: referencedContent.cloudinaryPublicIds
-              };
-            }
-          } else {
-            console.warn(`No ${lesson.contentType} content found for contentId:`, lesson.contentId);
-          }
-        } catch (error) {
-          console.error(`Error fetching ${lesson.contentType} content:`, error);
+        if (referencedContent.type === 'image') {
+          const imgData = referencedContent.data;
+          transformedItem = {
+            ...transformedItem,
+            imageUrl: imgData.imageUrl || transformedItem.imageUrl,
+            imageBase64: imgData.imageBase64 || transformedItem.imageBase64,
+            visualType: imgData.visualType || transformedItem.visualType,
+            instructions: imgData.instructions || transformedItem.instructions,
+            difficultyFlag: imgData.difficultyFlag || transformedItem.difficultyFlag,
+            cloudinaryPublicId: imgData.cloudinaryPublicId || transformedItem.cloudinaryPublicId
+          };
+        } else if (referencedContent.type === 'comic') {
+          const comicData = referencedContent.data;
+          transformedItem = {
+            ...transformedItem,
+            imageUrls: comicData.imageUrls || transformedItem.imageUrls,
+            images: comicData.images || transformedItem.images,
+            panels: comicData.panels || transformedItem.panels,
+            numPanels: comicData.numPanels || transformedItem.numPanels,
+            comicType: comicData.comicType || transformedItem.comicType,
+            instruction: comicData.instruction || transformedItem.instruction,
+            instructions: comicData.instructions || transformedItem.instructions,
+            cloudinaryPublicIds: comicData.cloudinaryPublicIds || transformedItem.cloudinaryPublicIds
+          };
+        } else if (referencedContent.type === 'presentation') {
+          // Handle presentation/slide data
+          const presentationData = referencedContent.data;
+          transformedItem = {
+            ...transformedItem,
+            presentationUrl: presentationData.presentationUrl || transformedItem.presentationUrl,
+            slideImages: presentationData.slideImages || transformedItem.slideImages,
+            slidesCount: presentationData.slideCount || presentationData.slidesCount || transformedItem.slidesCount,
+            slideCount: presentationData.slideCount || transformedItem.slideCount,
+            template: presentationData.template || transformedItem.template,
+            verbosity: presentationData.verbosity || transformedItem.verbosity,
+            includeImages: presentationData.includeImages || transformedItem.includeImages,
+            downloadUrl: presentationData.downloadUrl || transformedItem.downloadUrl,
+            taskId: presentationData.taskId || transformedItem.taskId,
+            taskStatus: presentationData.taskStatus || transformedItem.taskStatus
+          };
         }
       }
 
-      return transformedLesson;
-    }));
-
-    
+      return transformedItem;
+    });
 
     return {
       success: true,
-      lessons: transformedLessons
+      lessons: transformedContent
     };
   } catch (error) {
-    console.error('Error fetching all student content:', error);
     throw new Error(error.message || 'Failed to fetch content');
   }
 }
@@ -952,7 +1065,7 @@ export async function updateLessonViewCount(lessonId) {
   }
 }
 
-// Get lesson statistics
+// Optimized function to get lesson stats
 export async function getLessonStats() {
   try {
     const session = await getServerSession();
@@ -962,10 +1075,13 @@ export async function getLessonStats() {
 
     const { db } = await connectToDatabase();
     const usersCollection = db.collection('user');
-    const studentProgressCollection = db.collection('studentProgress');
+    const progressCollection = db.collection('progress');
 
-    // Get student's grade
-    const user = await usersCollection.findOne({ _id: new ObjectId(session.user.id) });
+    // Get student's grade with projection
+    const user = await usersCollection.findOne(
+      { _id: new ObjectId(session.user.id) },
+      { projection: { grades: 1 } }
+    );
     
     if (!user || !user.grades || user.grades.length === 0) {
       return {
@@ -983,57 +1099,382 @@ export async function getLessonStats() {
     // Normalize grades for matching
     const normalizedGrades = normalizeGrades(user.grades);
 
-    // Get total content from all collections
-    const collections = ['lessons', 'contents', 'presentations', 'comics', 'images', 'videos', 'assessments', 'webSearches'];
-    let totalLessons = 0;
-    const allSubjects = new Set();
-
-    for (const collectionName of collections) {
-      try {
-        const count = await db.collection(collectionName).countDocuments({
-          grade: { $in: normalizedGrades },
-          status: 'published'
-        });
-        totalLessons += count;
-
-        // Get unique subjects from this collection
-        const subjects = await db.collection(collectionName).distinct('subject', {
-          grade: { $in: normalizedGrades },
-          status: 'published'
-        });
-        subjects.forEach(subject => allSubjects.add(subject));
-      } catch (error) {
-        console.error(`Error getting stats from ${collectionName}:`, error);
-      }
-    }
-
-    // Get completed lessons from studentProgress collection
-    const completedProgress = await studentProgressCollection.countDocuments({
-      studentId: new ObjectId(session.user.id),
-      status: 'completed'
+    // Use aggregation for faster counting
+    const totalLessonsPromise = db.collection('lessons').countDocuments({
+      grade: { $in: normalizedGrades },
+      status: 'published'
     });
 
-    // Get total time spent from studentProgress collection
-    const timeSpentResult = await studentProgressCollection.aggregate([
-      { $match: { studentId: new ObjectId(session.user.id) } },
-      { $group: { _id: null, totalTime: { $sum: '$progress.timeSpent' } } }
-    ]).toArray();
+    // Get completed lessons and total time spent in parallel
+    const [completedResult, timeSpentResult] = await Promise.all([
+      progressCollection.countDocuments({
+        studentId: new ObjectId(session.user.id),
+        status: 'completed'
+      }),
+      progressCollection.aggregate([
+        { $match: { studentId: new ObjectId(session.user.id) } },
+        { $group: { _id: null, totalTime: { $sum: '$progress.timeSpent' } } }
+      ]).toArray()
+    ]);
 
+    const totalLessons = await totalLessonsPromise;
     const totalTimeSpent = timeSpentResult.length > 0 ? timeSpentResult[0].totalTime : 0;
 
-   
+    // Get unique subjects count
+    const subjects = await db.collection('lessons').distinct('subject', {
+      grade: { $in: normalizedGrades },
+      status: 'published'
+    });
 
     return {
       success: true,
       stats: {
         totalLessons,
-        completedLessons: completedProgress,
+        completedLessons: completedResult,
         totalTimeSpent,
-        totalSubjects: allSubjects.size
+        totalSubjects: subjects.length
       }
     };
   } catch (error) {
     console.error('Error fetching lesson stats:', error);
     throw new Error(error.message || 'Failed to fetch lesson statistics');
+  }
+}
+
+// Update student progress when content is completed
+export async function updateStudentProgress(contentId, completionData = {}) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const progressCollection = db.collection('progress');
+    const achievementsCollection = db.collection('achievements');
+    const usersCollection = db.collection('user');
+
+    const studentId = new ObjectId(session.user.id);
+    const contentObjectId = new ObjectId(contentId);
+
+    // Update or create progress record
+    const progressData = {
+      studentId,
+      contentId: contentObjectId,
+      contentType: completionData.contentType || 'content',
+      contentTitle: completionData.contentTitle || 'Untitled',
+      subject: completionData.subject || 'General',
+      grade: completionData.grade || 'All',
+      status: 'completed',
+      progress: {
+        currentStep: 1,
+        totalSteps: 1,
+        percentage: 100,
+        timeSpent: completionData.timeSpent || 0,
+        lastAccessedAt: new Date()
+      },
+      completionData: {
+        completedAt: new Date(),
+        score: completionData.score || null,
+        answers: completionData.answers || [],
+        correctAnswers: completionData.correctAnswers || 0,
+        totalQuestions: completionData.totalQuestions || 0,
+        timeToComplete: completionData.timeToComplete || 0,
+        feedback: completionData.feedback || null
+      },
+      metadata: {
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        attempts: completionData.attempts || 1,
+        bookmarked: false
+      }
+    };
+
+    // Use upsert to update existing or create new progress record
+    await progressCollection.updateOne(
+      { 
+        studentId, 
+        contentId: contentObjectId 
+      },
+      { $set: progressData },
+      { upsert: true }
+    );
+
+    // Update user's total completed lessons count
+    await usersCollection.updateOne(
+      { _id: studentId },
+      { 
+        $inc: { 
+          'stats.completedLessons': 1,
+          'stats.totalTimeSpent': completionData.timeSpent || 0
+        },
+        $set: { 
+          'stats.lastActivity': new Date()
+        }
+      }
+    );
+
+    // Check for achievements
+    await checkAndAwardAchievements(studentId, contentId, completionData);
+
+    // Revalidate the learning library page
+    revalidatePath('/student/learning-library');
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating student progress:', error);
+    throw new Error(error.message || 'Failed to update progress');
+  }
+}
+
+// Check and award achievements based on completion
+async function checkAndAwardAchievements(studentId, contentId, completionData) {
+  try {
+    const { db } = await connectToDatabase();
+    const achievementsCollection = db.collection('achievements');
+    const progressCollection = db.collection('progress');
+
+    // Get student's current progress stats
+    const completedCount = await progressCollection.countDocuments({
+      studentId,
+      status: 'completed'
+    });
+
+    const totalTimeSpent = await progressCollection.aggregate([
+      { $match: { studentId, status: 'completed' } },
+      { $group: { _id: null, totalTime: { $sum: '$progress.timeSpent' } } }
+    ]).toArray();
+
+    const timeSpent = totalTimeSpent.length > 0 ? totalTimeSpent[0].totalTime : 0;
+
+    // Define achievement criteria
+    const achievements = [
+      {
+        id: 'first_lesson',
+        title: 'First Steps',
+        description: 'Complete your first lesson',
+        icon: '🎉',
+        criteria: { completedLessons: 1 },
+        current: { completedLessons: completedCount }
+      },
+      {
+        id: 'five_lessons',
+        title: 'Getting Started',
+        description: 'Complete 5 lessons',
+        icon: '🎉',
+        criteria: { completedLessons: 5 },
+        current: { completedLessons: completedCount }
+      },
+      {
+        id: 'ten_lessons',
+        title: 'Dedicated Learner',
+        description: 'Complete 10 lessons',
+        icon: '🏆',
+        criteria: { completedLessons: 10 },
+        current: { completedLessons: completedCount }
+      },
+      {
+        id: 'twenty_lessons',
+        title: 'Knowledge Seeker',
+        description: 'Complete 20 lessons',
+        icon: '🌟',
+        criteria: { completedLessons: 20 },
+        current: { completedLessons: completedCount }
+      },
+      {
+        id: 'one_hour',
+        title: 'Time Invested',
+        description: 'Spend 1 hour learning',
+        icon: '⏰',
+        criteria: { timeSpent: 3600 }, // 1 hour in seconds
+        current: { timeSpent }
+      },
+      {
+        id: 'five_hours',
+        title: 'Learning Champion',
+        description: 'Spend 5 hours learning',
+        icon: '💎',
+        criteria: { timeSpent: 18000 }, // 5 hours in seconds
+        current: { timeSpent }
+      }
+    ];
+
+    // Check each achievement
+    for (const achievement of achievements) {
+      const isEarned = checkAchievementCriteria(achievement.criteria, achievement.current);
+      
+      if (isEarned) {
+        // Check if student already has this achievement
+        const existingAchievement = await achievementsCollection.findOne({
+          studentId,
+          achievementId: achievement.id
+        });
+
+        if (!existingAchievement) {
+          // Award the achievement
+          await achievementsCollection.insertOne({
+            studentId,
+            achievementId: achievement.id,
+            title: achievement.title,
+            description: achievement.description,
+            icon: achievement.icon,
+            earnedAt: new Date(),
+            contentId: new ObjectId(contentId)
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking achievements:', error);
+    // Don't throw error here as it shouldn't break the main flow
+  }
+}
+
+// Helper function to check if achievement criteria is met
+function checkAchievementCriteria(criteria, current) {
+  for (const [key, value] of Object.entries(criteria)) {
+    if (current[key] < value) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Get student achievements
+export async function getStudentAchievements() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const achievementsCollection = db.collection('achievements');
+
+    const achievements = await achievementsCollection
+      .find({ studentId: new ObjectId(session.user.id) })
+      .sort({ earnedAt: -1 })
+      .toArray();
+
+    return {
+      success: true,
+      achievements: achievements.map(achievement => ({
+        id: achievement.achievementId,
+        title: achievement.title,
+        description: achievement.description,
+        icon: achievement.icon,
+        earnedAt: achievement.earnedAt,
+        contentId: achievement.contentId?.toString()
+      }))
+    };
+  } catch (error) {
+    console.error('Error fetching student achievements:', error);
+    throw new Error(error.message || 'Failed to fetch achievements');
+  }
+}
+
+// Get student progress summary
+export async function getStudentProgressSummary() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const progressCollection = db.collection('progress');
+    const achievementsCollection = db.collection('achievements');
+
+    const studentId = new ObjectId(session.user.id);
+
+    // Get progress stats
+    const [completedCount, totalTimeResult, achievementsCount] = await Promise.all([
+      progressCollection.countDocuments({ studentId, status: 'completed' }),
+      progressCollection.aggregate([
+        { $match: { studentId, status: 'completed' } },
+        { $group: { _id: null, totalTime: { $sum: '$progress.timeSpent' } } }
+      ]).toArray(),
+      achievementsCollection.countDocuments({ studentId })
+    ]);
+
+    const totalTimeSpent = totalTimeResult.length > 0 ? totalTimeResult[0].totalTime : 0;
+
+    return {
+      success: true,
+      summary: {
+        completedLessons: completedCount,
+        totalTimeSpent,
+        achievementsEarned: achievementsCount,
+        averageTimePerLesson: completedCount > 0 ? Math.round(totalTimeSpent / completedCount) : 0
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching progress summary:', error);
+    throw new Error(error.message || 'Failed to fetch progress summary');
+  }
+}
+
+// Mark content as bookmarked
+export async function toggleBookmark(contentId) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    const { db } = await connectToDatabase();
+    const progressCollection = db.collection('progress');
+
+    const studentId = new ObjectId(session.user.id);
+    const contentObjectId = new ObjectId(contentId);
+
+    // Check if progress record exists
+    const existingProgress = await progressCollection.findOne({
+      studentId,
+      contentId: contentObjectId
+    });
+
+    if (existingProgress) {
+      // Toggle bookmark status
+      await progressCollection.updateOne(
+        { studentId, contentId: contentObjectId },
+        { 
+          $set: { 
+            'metadata.bookmarked': !existingProgress.metadata?.bookmarked,
+            'metadata.updatedAt': new Date()
+          }
+        }
+      );
+    } else {
+      // Create new progress record with bookmark
+      await progressCollection.insertOne({
+        studentId,
+        contentId: contentObjectId,
+        contentType: 'content',
+        contentTitle: 'Untitled',
+        subject: 'General',
+        grade: 'All',
+        status: 'not_started',
+        progress: {
+          currentStep: 0,
+          totalSteps: 1,
+          percentage: 0,
+          timeSpent: 0,
+          lastAccessedAt: new Date()
+        },
+        metadata: {
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          attempts: 0,
+          bookmarked: true
+        }
+      });
+    }
+
+    revalidatePath('/student/learning-library');
+    return { success: true };
+  } catch (error) {
+    console.error('Error toggling bookmark:', error);
+    throw new Error(error.message || 'Failed to toggle bookmark');
   }
 }

@@ -54,7 +54,7 @@ export async function getTeacherProgressData() {
 
     const { db } = await connectToDatabase();
     
-    const progressData = await db.collection('studentProgress')
+    const progressData = await db.collection('progress')
       .find({})
       .sort({ createdAt: -1 })
       .limit(50)
@@ -105,7 +105,7 @@ export async function getTeacherAchievementsData() {
 
     const { db } = await connectToDatabase();
     
-    const achievementsData = await db.collection('studentAchievements')
+    const achievementsData = await db.collection('achievements')
       .find({})
       .sort({ earnedAt: -1 })
       .limit(50)
@@ -143,7 +143,7 @@ export async function getTeacherLearningStats() {
     const { db } = await connectToDatabase();
     
     // Get progress stats
-    const progressStats = await db.collection('studentProgress')
+    const progressStats = await db.collection('progress')
       .aggregate([
         {
           $group: {
@@ -158,7 +158,7 @@ export async function getTeacherLearningStats() {
       .toArray();
 
     // Get achievement stats
-    const achievementStats = await db.collection('studentAchievements')
+    const achievementStats = await db.collection('achievements')
       .aggregate([
         {
           $group: {
@@ -620,7 +620,7 @@ export async function getTeacherLearningInsights() {
     const { db } = await connectToDatabase();
     
     // Get insights from student progress data
-    const insights = await db.collection('studentProgress')
+    const insights = await db.collection('progress')
       .aggregate([
         {
           $group: {
@@ -1270,12 +1270,12 @@ export async function getStudentsForTeacher() {
       .toArray();
 
     // Get student progress data
-    const progressData = await db.collection('studentProgress')
+    const progressData = await db.collection('progress')
       .find({})
       .toArray();
 
     // Get student achievements
-    const achievementsData = await db.collection('studentAchievements')
+    const achievementsData = await db.collection('achievements')
       .find({})
       .toArray();
 

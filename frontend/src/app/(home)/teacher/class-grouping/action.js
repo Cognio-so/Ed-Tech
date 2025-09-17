@@ -70,7 +70,7 @@ export async function getStudents() {
 
     // Get progress data for all students
     const studentIds = students.map(s => new ObjectId(s._id));
-    const progressData = await db.collection('studentProgress')
+      const progressData = await db.collection('progress')
       .find({ studentId: { $in: studentIds } })
       .toArray();
 
@@ -205,7 +205,7 @@ export async function getClassStatistics() {
 
     // Get progress data for all students
     const studentIds = students.map(s => new ObjectId(s._id));
-    const progressData = await db.collection('studentProgress')
+    const progressData = await db.collection('progress')
       .find({ studentId: { $in: studentIds } })
       .toArray();
 

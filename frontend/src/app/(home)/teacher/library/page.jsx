@@ -31,17 +31,58 @@ import { getAllLibraryContent, deleteLibraryContent, addContentToLesson } from "
 import { authClient } from "@/lib/auth-client";
 import LibraryDialog from "@/components/ui/library-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import LibraryLoading from "./loading";
 
-// Content type configurations
+// Content type configurations with placeholder images
 const contentTypes = {
-  all: { label: "All", icon: FileText, color: "bg-gray-100" },
-  content: { label: "Content", icon: FileText, color: "bg-blue-100" },
-  slides: { label: "Slides", icon: Presentation, color: "bg-purple-100" },
-  comic: { label: "Comics", icon: BookOpen, color: "bg-green-100" },
-  image: { label: "Images", icon: Image, color: "bg-pink-100" },
-  video: { label: "Videos", icon: Video, color: "bg-red-100" },
-  assessment: { label: "Assessments", icon: FileCheck, color: "bg-yellow-100" },
-  websearch: { label: "Web Search", icon: Search, color: "bg-indigo-100" }
+  all: { 
+    label: "All", 
+    icon: FileText, 
+    color: "bg-gray-100",
+    placeholderImage: "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=300&fit=crop&crop=center"
+  },
+  content: { 
+    label: "Content", 
+    icon: FileText, 
+    color: "bg-blue-100",
+    placeholderImage: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=300&fit=crop&crop=center"
+  },
+  slides: { 
+    label: "Slides", 
+    icon: Presentation, 
+    color: "bg-purple-100",
+    placeholderImage: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=300&fit=crop&crop=center"
+  },
+  comic: { 
+    label: "Comics", 
+    icon: BookOpen, 
+    color: "bg-green-100",
+    placeholderImage: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&h=300&fit=crop&crop=center"
+  },
+  image: { 
+    label: "Images", 
+    icon: Image, 
+    color: "bg-pink-100",
+    placeholderImage: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=300&fit=crop&crop=center"
+  },
+  video: { 
+    label: "Videos", 
+    icon: Video, 
+    color: "bg-red-100",
+    placeholderImage: "https://images.unsplash.com/photo-1611162616475-46b635cb6868?w=400&h=300&fit=crop&crop=center"
+  },
+  assessment: { 
+    label: "Assessments", 
+    icon: FileCheck, 
+    color: "bg-yellow-100",
+    placeholderImage: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=300&fit=crop&crop=center"
+  },
+  websearch: { 
+    label: "Web Search", 
+    icon: Search, 
+    color: "bg-indigo-100",
+    placeholderImage: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=300&fit=crop&crop=center"
+  }
 };
 
 export default function LibraryPage() {
@@ -100,6 +141,7 @@ export default function LibraryPage() {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(item => 
         item.title?.toLowerCase().includes(query) ||
+        item.instruction?.toLowerCase().includes(query) ||
         item.topic?.toLowerCase().includes(query) ||
         item.subject?.toLowerCase().includes(query) ||
         item.grade?.toLowerCase().includes(query)
@@ -156,8 +198,8 @@ export default function LibraryPage() {
   const handleAddToLesson = async (item) => {
     setSelectedContentForLesson(item);
     setLessonFormData({
-      title: `${item.title || item.topic || 'Untitled'} - Lesson`,
-      lessonDescription: `Lesson based on ${item.type}: ${item.title || item.topic || 'Untitled'}`,
+      title: `${item.title || item.instruction || 'Untitled'} - Lesson`,
+      lessonDescription: `Lesson based on ${item.type}: ${item.title || item.instruction || 'Untitled'}`,
       learningObjectives: item.objective || '',
       grade: item.grade || '', // Keep existing grade if available
       isPublic: false
@@ -230,8 +272,69 @@ export default function LibraryPage() {
     return contentTypes[type]?.color || "bg-gray-100";
   };
 
+  // Get the appropriate image for each content type
+  const getContentImage = (item) => {
+    switch (item.type) {
+      case 'comic':
+        // For comics, use the first panel image if available
+        if (item.imageUrls && item.imageUrls.length > 0) {
+          return item.imageUrls[0];
+        }
+        if (item.images && item.images.length > 0) {
+          return item.images[0];
+        }
+        return contentTypes.comic.placeholderImage;
+      
+      case 'image':
+        // For images, use the actual image
+        if (item.imageUrl) {
+          return item.imageUrl;
+        }
+        if (item.images && item.images.length > 0) {
+          return item.images[0];
+        }
+        return contentTypes.image.placeholderImage;
+      
+      case 'slides':
+        // For slides, use the first slide image if available
+        if (item.slideImages && item.slideImages.length > 0) {
+          return item.slideImages[0];
+        }
+        if (item.images && item.images.length > 0) {
+          return item.images[0];
+        }
+        return contentTypes.slides.placeholderImage;
+      
+      case 'video':
+        // For videos, use thumbnail if available
+        if (item.thumbnailUrl) {
+          return item.thumbnailUrl;
+        }
+        if (item.thumbnail) {
+          return item.thumbnail;
+        }
+        return contentTypes.video.placeholderImage;
+      
+      case 'websearch':
+        // For web searches, use a web-related placeholder
+        return contentTypes.websearch.placeholderImage;
+      
+      case 'content':
+        // For content, use a document-related placeholder
+        return contentTypes.content.placeholderImage;
+      
+      case 'assessment':
+        // For assessments, use a quiz-related placeholder
+        return contentTypes.assessment.placeholderImage;
+      
+      default:
+        return contentTypes.all.placeholderImage;
+    }
+  };
+
+  // Use the proper loading component
   if (loading) {
-    return <div>Loading...</div>;
+    return <LibraryLoading />;
   }
 
   return (
@@ -297,80 +400,90 @@ export default function LibraryPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredContent.map((item) => (
-                <Card key={`${item.type}-${item._id}`} className="group hover:shadow-lg transition-shadow">
-                  <CardHeader className="p-0">
-                    <div className={`h-32 ${getContentColor(item.type)} flex items-center justify-center`}>
-                      {getContentIcon(item.type)}
+                <Card key={`${item.type}-${item._id}`} className="group hover:shadow-lg transition-shadow overflow-hidden h-full flex flex-col p-0">
+                  <div className="h-40 relative overflow-hidden">
+                    <img
+                      src={getContentImage(item)}
+                      alt={item.title || item.instruction || "Content"}
+                      loading="lazy"
+                      className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                      onError={(e) => {
+                        e.target.src = contentTypes[item.type]?.placeholderImage || contentTypes.all.placeholderImage;
+                      }}
+                    />
+                    <div className="absolute top-2 left-2">
+                      <Badge variant="secondary" className="text-xs bg-black/70 text-white px-2 py-1">
+                        {contentTypes[item.type]?.label || item.type}
+                      </Badge>
                     </div>
-                  </CardHeader>
-                  <CardContent className="p-4">
-                    <CardTitle className="text-sm font-medium line-clamp-2 mb-2">
-                      {item.title || "Untitled"}
-                    </CardTitle>
-                    
-                    <div className="space-y-1 text-xs text-muted-foreground mb-3">
-                      {item.topic && (
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">Topic:</span>
-                          <span className="line-clamp-1">{item.topic}</span>
-                        </div>
-                      )}
-                      {item.subject && (
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">Subject:</span>
-                          <span>{item.subject}</span>
-                        </div>
-                      )}
-                      {item.grade && (
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">Grade:</span>
-                          <span>{item.grade}</span>
-                        </div>
-                      )}
+                  </div>
+                  <CardContent className="p-3 flex flex-col flex-1">
+                    <div className="flex-1 space-y-2">
+                      <CardTitle className="text-sm font-medium line-clamp-2 leading-tight">
+                        {item.title || item.instruction || "Untitled"}
+                      </CardTitle>
+                      
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                        {item.topic && (
+                          <>
+                            <span className="font-medium">Topic:</span>
+                            <span className="line-clamp-1">{item.topic}</span>
+                          </>
+                        )}
+                        {item.subject && (
+                          <>
+                            <span className="font-medium">Subject:</span>
+                            <span className="line-clamp-1">{item.subject}</span>
+                          </>
+                        )}
+                        {item.grade && (
+                          <>
+                            <span className="font-medium">Grade:</span>
+                            <span className="line-clamp-1">{item.grade}</span>
+                          </>
+                        )}
+                        <span className="font-medium">Date:</span>
+                        <span className="line-clamp-1">{formatDate(item.createdAt)}</span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        <span>{formatDate(item.createdAt)}</span>
-                      </div>
+                    {/* Action Buttons - Fixed at bottom */}
+                    <div className="space-y-2 pt-3 mt-auto">
+                      {/* Add to Lesson Button */}
+                      <Button
+                        onClick={() => handleAddToLesson(item)}
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs h-8"
+                        size="sm"
+                      >
+                        <BookmarkPlus className="h-3 w-3 mr-1" />
+                        Add to Lesson
+                      </Button>
                       
-                      <div className="flex items-center gap-1">
+                      {/* Other Actions */}
+                      <div className="grid grid-cols-3 gap-1 mt-2">
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
                           onClick={() => handlePreview(item)}
-                          className="h-6 w-6 p-0 hover:bg-blue-100"
-                          title="Preview"
+                          className="text-xs h-7 px-2"
                         >
                           <Eye className="h-3 w-3" />
                         </Button>
                         <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleAddToLesson(item)}
-                          className="h-6 w-6 p-0 hover:bg-purple-100"
-                          title="Add to Lesson"
-                        >
-                          <BookmarkPlus className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
                           onClick={() => handleDownload(item)}
-                          className="h-6 w-6 p-0 hover:bg-green-100"
-                          title="Download"
+                          className="text-xs h-7 px-2"
                         >
                           <Download className="h-3 w-3" />
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
                           onClick={() => handleDelete(item._id, item.type)}
-                          className="h-6 w-6 p-0 hover:bg-red-100 text-red-600"
-                          title="Delete"
+                          className="text-xs h-7 px-2 text-red-600 hover:text-red-700"
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>

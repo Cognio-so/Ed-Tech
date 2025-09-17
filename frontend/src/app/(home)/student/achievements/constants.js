@@ -2,7 +2,7 @@
 export const ACHIEVEMENT_TYPES = {
   // Progress-based achievements
   FIRST_STEP: {
-    id: 'first_step',
+    id: 'first_lesson',
     name: 'First Steps',
     description: 'Complete your first learning content',
     icon: '👶',

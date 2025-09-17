@@ -33,7 +33,11 @@ import {
   CheckCircle,
   Lock,
   Eye,
-  EyeOff
+  EyeOff,
+  Users,
+  MessageSquare,
+  Bookmark,
+  Sunrise
 } from "lucide-react";
 import { toast } from "sonner";
 import { 
@@ -41,7 +45,9 @@ import {
   getAchievementStats, 
   checkAndAwardAchievements,
   getAllAvailableAchievements,
+  getAchievementProgress
 } from "./action";
+import { ACHIEVEMENT_TYPES } from "./constants";
 
 // Achievement categories with colors and icons
 const achievementCategories = {
@@ -118,7 +124,6 @@ export default function AchievementPage() {
   const [allAchievements, setAllAchievements] = useState([]);
   const [stats, setStats] = useState(null);
   const [progress, setProgress] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [checkingAchievements, setCheckingAchievements] = useState(false);
   const [activeTab, setActiveTab] = useState("earned");
   const [showLocked, setShowLocked] = useState(false);
@@ -128,7 +133,6 @@ export default function AchievementPage() {
   }, []);
 
   const loadData = async () => {
-    setLoading(true);
     try {
       const [achievementsResult, statsResult, allAchievementsResult, progressResult] = await Promise.all([
         getStudentAchievements(),
@@ -155,8 +159,6 @@ export default function AchievementPage() {
     } catch (error) {
       console.error("Error loading achievement data:", error);
       toast.error("Failed to load achievement data");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -219,46 +221,96 @@ export default function AchievementPage() {
     let current = 0;
     let target = 0;
 
-    switch (achievement.category) {
-      case 'progress':
-        if (achievement.criteria.completedContent) {
-          current = progress.completedContent;
-          target = achievement.criteria.completedContent;
-        }
+    switch (achievement.id) {
+      // Progress-based achievements
+      case 'first_lesson':
+        current = progress.completedContent;
+        target = 1;
         break;
-      case 'time':
-        if (achievement.criteria.totalTimeSpent) {
-          current = progress.totalTimeSpent;
-          target = achievement.criteria.totalTimeSpent;
-        }
+      case 'dedicated_learner':
+        current = progress.completedContent;
+        target = 5;
         break;
-      case 'performance':
-        if (achievement.criteria.perfectScore) {
-          current = progress.perfectScores;
-          target = achievement.criteria.perfectScore;
-        } else if (achievement.criteria.averageScore) {
-          current = Math.round(progress.averageScore);
-          target = achievement.criteria.averageScore;
-        } else if (achievement.criteria.goodScores) {
-          current = progress.goodScores;
-          target = achievement.criteria.goodScores;
-        }
+      case 'knowledge_seeker':
+        current = progress.completedContent;
+        target = 10;
         break;
-      case 'subject':
-        const subjectStat = progress.subjectStats[achievement.criteria.subject];
-        if (subjectStat) {
-          current = subjectStat.completed;
-          target = achievement.criteria.completedContent;
-        }
+      case 'learning_champion':
+        current = progress.completedContent;
+        target = 25;
         break;
-      case 'special':
-        if (achievement.criteria.feedbackCount) {
-          current = progress.feedbackCount;
-          target = achievement.criteria.feedbackCount;
-        } else if (achievement.criteria.bookmarkedContent) {
-          current = progress.bookmarkedContent;
-          target = achievement.criteria.bookmarkedContent;
-        }
+      case 'learning_master':
+        current = progress.completedContent;
+        target = 50;
+        break;
+      
+      // Time-based achievements
+      case 'time_investor':
+        current = progress.totalTimeSpent;
+        target = 300; // 5 hours
+        break;
+      case 'time_master':
+        current = progress.totalTimeSpent;
+        target = 1500; // 25 hours
+        break;
+      case 'time_legend':
+        current = progress.totalTimeSpent;
+        target = 6000; // 100 hours
+        break;
+      
+      // Performance-based achievements
+      case 'perfectionist':
+        current = progress.perfectScores;
+        target = 1;
+        break;
+      case 'high_achiever':
+        current = Math.round(progress.averageScore);
+        target = 90;
+        break;
+      case 'consistent_performer':
+        current = progress.goodScores;
+        target = 10;
+        break;
+      
+      // Subject-specific achievements
+      case 'math_whiz':
+        const mathStat = progress.subjectStats['Math'];
+        current = mathStat ? mathStat.completed : 0;
+        target = 5;
+        break;
+      case 'science_explorer':
+        const scienceStat = progress.subjectStats['Science'];
+        current = scienceStat ? scienceStat.completed : 0;
+        target = 5;
+        break;
+      case 'language_artist':
+        const englishStat = progress.subjectStats['English'];
+        current = englishStat ? englishStat.completed : 0;
+        target = 5;
+        break;
+      
+      // Streak achievements
+      case 'daily_learner':
+        current = progress.completedContent; // Simplified
+        target = 7;
+        break;
+      case 'weekly_warrior':
+        current = progress.completedContent; // Simplified
+        target = 30;
+        break;
+      
+      // Special achievements
+      case 'feedback_giver':
+        current = progress.feedbackCount;
+        target = 5;
+        break;
+      case 'bookmark_collector':
+        current = progress.bookmarkedContent;
+        target = 10;
+        break;
+      case 'early_bird':
+        current = progress.completedContent; // Simplified
+        target = 1;
         break;
     }
 
@@ -361,14 +413,23 @@ export default function AchievementPage() {
   };
 
   const filteredAchievements = useMemo(() => {
+    // Create a map of earned achievement IDs for quick lookup
+    const earnedAchievementIds = new Set(achievements.map(a => a.achievementId));
+    
+    // Mark achievements as earned if they exist in the earned achievements list
+    const achievementsWithEarnedStatus = allAchievements.map(achievement => ({
+      ...achievement,
+      earned: earnedAchievementIds.has(achievement.id)
+    }));
+
     if (activeTab === "earned") {
-      return allAchievements.filter(a => a.earned);
+      return achievementsWithEarnedStatus.filter(a => a.earned);
     } else if (activeTab === "locked") {
-      return allAchievements.filter(a => !a.earned);
+      return achievementsWithEarnedStatus.filter(a => !a.earned);
     } else {
-      return allAchievements.filter(a => a.category === activeTab);
+      return achievementsWithEarnedStatus.filter(a => a.category === activeTab);
     }
-  }, [allAchievements, activeTab]);
+  }, [allAchievements, achievements, activeTab]);
 
   const getTabIcon = (tabValue) => {
     switch(tabValue) {
@@ -384,17 +445,6 @@ export default function AchievementPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-yellow-900 dark:to-red-900 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-yellow-600" />
-          <p className="text-lg text-gray-600 dark:text-gray-300">Loading your achievements...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-orange-50 to-red-50 dark:from-gray-900 dark:via-yellow-900 dark:to-red-900">
       <div className="container mx-auto px-4 py-8 relative">
@@ -406,7 +456,7 @@ export default function AchievementPage() {
           transition={{ duration: 0.5 }}
           className="text-center mb-8"
         >
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-yellow-600 via-orange-600 to-red-600 bg-clip-text text-transparent/10 mb-2">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-yellow-600 via-orange-600 to-red-600 bg-clip-text text-transparent mb-2">
             🎉 Achievement Hall 🏆
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
@@ -446,27 +496,26 @@ export default function AchievementPage() {
                       </>
                     )}
                   </Button>
-
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-yellow-100 to-yellow-200 dark:from-yellow-900/30 dark:to-yellow-800/30">
                     <Trophy className="h-8 w-8 mx-auto mb-2 text-yellow-600" />
-                    <p className="text-3xl font-bold text-yellow-600">{stats.total.totalAchievements}</p>
+                    <p className="text-3xl font-bold text-yellow-600">{stats.totalAchievements || 0}</p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">Achievements</p>
                   </div>
                   
                   <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-orange-100 to-orange-200 dark:from-orange-900/30 dark:to-orange-800/30">
                     <Star className="h-8 w-8 mx-auto mb-2 text-orange-600" />
-                    <p className="text-3xl font-bold text-orange-600">{stats.total.totalPoints}</p>
+                    <p className="text-3xl font-bold text-orange-600">{stats.totalPoints || 0}</p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">Total Points</p>
                   </div>
                   
                   <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-red-100 to-red-200 dark:from-red-900/30 dark:to-red-800/30">
                     <Crown className="h-8 w-8 mx-auto mb-2 text-red-600" />
                     <p className="text-3xl font-bold text-red-600">
-                      {Math.round((stats.total.totalAchievements / 20) * 100)}%
+                      {Math.round(((stats.totalAchievements || 0) / Object.keys(ACHIEVEMENT_TYPES).length) * 100)}%
                     </p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">Completion</p>
                   </div>
@@ -474,7 +523,7 @@ export default function AchievementPage() {
                   <div className="text-center p-4 rounded-2xl bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-900/30 dark:to-purple-800/30">
                     <Gem className="h-8 w-8 mx-auto mb-2 text-purple-600" />
                     <p className="text-3xl font-bold text-purple-600">
-                      {stats.byCategory.length}
+                      {stats.categories?.length || 0}
                     </p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">Categories</p>
                   </div>

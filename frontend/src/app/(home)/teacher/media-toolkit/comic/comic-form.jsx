@@ -83,7 +83,7 @@ export default function ComicForm({ onSubmit, onStop, isLoading = false, isGener
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-6">
         {/* Left Column - Form Controls */}
         <div className="space-y-6">
           {/* Instructions */}
@@ -103,7 +103,7 @@ export default function ComicForm({ onSubmit, onStop, isLoading = false, isGener
           </div>
 
           {/* Subject and Grade Level */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className=" grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="subject">Subject</Label>
               {loadingUserData ? (
@@ -117,9 +117,6 @@ export default function ComicForm({ onSubmit, onStop, isLoading = false, isGener
                     <SelectValue placeholder="Select subject" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="General">
-                      General
-                    </SelectItem>
                     {userSubjects.map((sub) => (
                       <SelectItem key={sub} value={sub}>
                         {sub.charAt(0).toUpperCase() + sub.slice(1)}
@@ -135,7 +132,7 @@ export default function ComicForm({ onSubmit, onStop, isLoading = false, isGener
               )}
             </div>
 
-            <div className="space-y-2">
+            <div className=" space-y-2">
               <Label htmlFor="gradeLevel">Grade Level</Label>
               {loadingUserData ? (
                 <div className="flex items-center justify-center p-4">
@@ -152,7 +149,7 @@ export default function ComicForm({ onSubmit, onStop, isLoading = false, isGener
                       <SelectItem key={g} value={g}>
                         {g === "kg1" ? "Kindergarten 1" : 
                          g === "kg2" ? "Kindergarten 2" : 
-                         `Grade ${g}`}
+                         `${g}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -207,7 +204,7 @@ export default function ComicForm({ onSubmit, onStop, isLoading = false, isGener
               <Button
                 type="submit"
                 disabled={!canGenerate || isLoading}
-                className="flex-1 bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500 hover:opacity-90 text-white shadow-lg"
+                className="flex-1 bg-purple-600 hover:bg-purple-600/90 text-white shadow-lg"
                 size="lg"
               >
                 {isLoading ? (
@@ -235,75 +232,6 @@ export default function ComicForm({ onSubmit, onStop, isLoading = false, isGener
               </Button>
             )}
           </div>
-        </div>
-
-        {/* Right Column - Preview/Info */}
-        <div className="space-y-4">
-          <Card className="border-0 shadow-lg bg-card/50 backdrop-blur-sm">
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-yellow-500" />
-                Comic Preview
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Topic:</span>
-                  <Badge variant="outline" className="max-w-[200px] truncate">
-                    {formData.instructions.slice(0, 30)}
-                    {formData.instructions.length > 30 && "..."}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Subject:</span>
-                  <Badge variant="secondary">{formData.subject}</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Grade:</span>
-                  <Badge variant="secondary">
-                    {formData.gradeLevel === "kg1" ? "Kindergarten 1" : 
-                     formData.gradeLevel === "kg2" ? "Kindergarten 2" : 
-                     `Grade ${formData.gradeLevel}`}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Panels:</span>
-                  <Badge variant="secondary">{formData.numPanels}</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Language:</span>
-                  <Badge variant="secondary">{formData.language}</Badge>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t">
-                <p className="text-xs text-muted-foreground">
-                  Your comic will be generated with {formData.numPanels} panels, 
-                  tailored for {formData.gradeLevel === "kg1" ? "Kindergarten 1" : 
-                               formData.gradeLevel === "kg2" ? "Kindergarten 2" : 
-                               `Grade ${formData.gradeLevel}`} students in {formData.language}.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Generation Status */}
-          {isGenerating && (
-            <Card className="border-0 shadow-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
-                  <div>
-                    <p className="text-sm font-medium">Generating Comic...</p>
-                    <p className="text-xs text-muted-foreground">
-                      Creating {formData.numPanels} panels for your story
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
     </form>

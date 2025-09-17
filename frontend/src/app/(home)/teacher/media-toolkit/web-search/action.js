@@ -108,7 +108,7 @@ export async function getWebSearches() {
     
     const searches = await webSearchesCollection
       .find({ userId: new ObjectId(session.user.id) })
-      .sort({ createdAt: -1 })
+      .sort({ "metadata.createdAt": -1 })
       .toArray();
 
     // Convert ObjectIds to strings to make them serializable
@@ -116,8 +116,9 @@ export async function getWebSearches() {
       ...search,
       _id: search._id.toString(),
       userId: search.userId.toString(),
-      createdAt: search.createdAt.toISOString(),
-      updatedAt: search.updatedAt.toISOString()
+      // Fix: Use metadata dates and provide fallbacks
+      createdAt: search.metadata?.createdAt?.toISOString() || new Date().toISOString(),
+      updatedAt: search.metadata?.updatedAt?.toISOString() || new Date().toISOString()
     }));
 
     return {

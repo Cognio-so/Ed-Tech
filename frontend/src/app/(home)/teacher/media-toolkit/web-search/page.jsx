@@ -163,12 +163,7 @@ export default function WebSearchPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-2 mb-6">
-        <Search className="h-6 w-6 text-blue-600" />
-        <h1 className="text-2xl font-bold text-gray-900">Web Search</h1>
-      </div>
-
-      <div className="rounded-2xl border bg-card p-6 shadow-sm">
+      <div className="rounded-2xl border bg-card p-6 shadow-sm dark:bg-secondary">
         <WebSearchForm onSubmit={handleSearch} isLoading={isLoading} />
 
         {error && (
@@ -193,7 +188,7 @@ export default function WebSearchPage() {
               </div>
             </div>
             
-            <div className="p-4 border rounded-xl bg-background">
+            <div className="p-4 border rounded-xl bg-background dark:bg-secondary">
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
                   {searchResults.content}
@@ -225,7 +220,7 @@ export default function WebSearchPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {savedSearches.map((item) => (
-              <div key={item.id} className="group relative overflow-hidden rounded-2xl border bg-card shadow-sm hover:shadow-md transition-shadow p-4">
+              <div key={item.id} className="group relative overflow-hidden rounded-2xl border bg-card shadow-sm hover:shadow-md transition-shadow p-4 dark:bg-secondary">
                 <div className="text-sm font-semibold line-clamp-2">{item.metadata?.topic || 'Web Search'}</div>
                 <div className="text-xs text-muted-foreground">{item.metadata?.subject} • {item.metadata?.contentType}</div>
                 <div className="text-[11px] text-muted-foreground mt-1">{formatTime(item.createdAt)}</div>
@@ -240,7 +235,7 @@ export default function WebSearchPage() {
                     <Download className="h-4 w-4" />
                   </Button>
                   <Button size="icon" variant="outline" onClick={() => handleDelete(item.id)}>
-                    <Trash2 className="h-4 w-4 text-red-600" />
+                    <Trash2 className="h-4 w-4 text-primary" />
                   </Button>
                 </div>
               </div>

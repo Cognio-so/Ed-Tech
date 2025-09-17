@@ -31,6 +31,7 @@ import Link from "next/link"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { authClient } from "@/lib/auth-client"
 import { ModeToggle } from "@/components/ui/theme-toggle"
+import { Button } from "../ui/button"
 
 // Fun gradients for kids UI (from UIGradients)
 const kidGradients = {
@@ -94,6 +95,7 @@ export function StudentSidebar() {
   const router = useRouter()
   const [user, setUser] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [showUserActions, setShowUserActions] = useState(false)
 
   const isActivePath = useCallback((url) => {
     return pathname === url
@@ -122,6 +124,24 @@ export function StudentSidebar() {
       console.error("Logout error:", error)
     }
   }
+
+  const toggleUserActions = () => {
+    setShowUserActions(!showUserActions)
+  }
+
+  // Close user actions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showUserActions && !event.target.closest('.user-actions-container')) {
+        setShowUserActions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showUserActions])
 
   return (
     <Sidebar className="border-r border-border/40">
@@ -196,7 +216,34 @@ export function StudentSidebar() {
 
       {/* Footer with user profile and theme toggle */}
       <SidebarFooter className="border-t border-border/40 p-4">
-        <div className="flex items-center justify-between p-2 rounded-xl bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 backdrop-blur-sm w-full">
+        {/* User Actions - Only show when showUserActions is true */}
+        {showUserActions && (
+          <div className="flex items-center gap-2 p-2 mb-2 rounded-xl bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 backdrop-blur-sm user-actions-container">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="flex-1 h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+              title="Logout"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="ml-2 text-xs">
+                Logout
+              </span>
+            </Button>
+            
+            {/* Theme Toggle next to Logout */}
+            <div>
+              <ModeToggle />
+            </div>
+          </div>
+        )}
+
+        {/* User Profile Container - Clickable */}
+        <div 
+          className="flex items-center justify-between p-2 rounded-xl bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 backdrop-blur-sm w-full cursor-pointer hover:bg-gradient-to-r hover:from-violet-500/20 hover:to-fuchsia-500/20 transition-all duration-200 user-actions-container"
+          onClick={toggleUserActions}
+        >
           {isLoading ? (
             <div className="flex items-center gap-3 w-full">
               <div className="h-9 w-9 rounded-lg bg-gray-200 animate-pulse" />
@@ -215,25 +262,9 @@ export function StudentSidebar() {
               </Avatar>
               <div className="flex flex-col">
                 <p className="text-sm font-medium">{user?.name || 'Student'}</p>
-                <div className="flex items-center gap-1">
-                  <Star className="h-3 w-3 text-amber-500" />
-                  <p className="text-xs text-muted-foreground">Level 3</p>
-                </div>
               </div>
             </div>
           )}
-          <div className="flex items-center gap-2">
-            <ModeToggle />
-            {user && (
-              <button
-                onClick={handleLogout}
-                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-accent/60 transition-colors cursor-pointer"
-                title="Logout"
-              >
-                <LogOut className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-              </button>
-            )}
-          </div>
         </div>
       </SidebarFooter>
     </Sidebar>

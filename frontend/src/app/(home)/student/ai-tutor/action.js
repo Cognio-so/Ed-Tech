@@ -1,38 +1,73 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import PythonApi from "@/lib/PythonApi";
 import { getServerSession } from "@/lib/get-session";
 import { connectToDatabase } from "@/lib/db";
 import { ObjectId } from "mongodb";
 
-// Helper function to serialize MongoDB objects
-function serializeMongoData(data) {
-  if (data === null || data === undefined) return data;
-  
-  if (Array.isArray(data)) {
-    return data.map(item => serializeMongoData(item));
+// Cache for database connection to avoid repeated connections
+let dbConnection = null;
+const getDbConnection = async () => {
+  if (!dbConnection) {
+    const { db } = await connectToDatabase();
+    dbConnection = db;
   }
-  
-  if (typeof data === 'object') {
-    if (data._id && typeof data._id.toString === 'function') {
-      // Handle ObjectId
-      return {
-        ...data,
-        _id: data._id.toString()
-      };
+  return dbConnection;
+};
+
+// Helper function to serialize MongoDB objects based on actual schema
+const serializeProgressData = (items) => {
+  return items.map(item => ({
+    _id: item._id.toString(),
+    studentId: item.studentId.toString(),
+    contentId: item.contentId.toString(),
+    contentType: item.contentType,
+    contentTitle: item.contentTitle,
+    subject: item.subject,
+    grade: item.grade,
+    status: item.status,
+    progress: {
+      currentStep: item.progress?.currentStep || 0,
+      totalSteps: item.progress?.totalSteps || 1,
+      percentage: item.progress?.percentage || 0,
+      timeSpent: item.progress?.timeSpent || 0,
+      lastAccessedAt: item.progress?.lastAccessedAt ? item.progress.lastAccessedAt.toISOString() : null
+    },
+    completionData: item.completionData ? {
+      completedAt: item.completionData.completedAt ? item.completionData.completedAt.toISOString() : null,
+      score: item.completionData.score,
+      answers: item.completionData.answers || [],
+      correctAnswers: item.completionData.correctAnswers || 0,
+      totalQuestions: item.completionData.totalQuestions || 0,
+      timeToComplete: item.completionData.timeToComplete || 0,
+      feedback: item.completionData.feedback
+    } : null,
+    metadata: {
+      createdAt: item.metadata?.createdAt ? item.metadata.createdAt.toISOString() : null,
+      updatedAt: item.metadata?.updatedAt ? item.metadata.updatedAt.toISOString() : null,
+      attempts: item.metadata?.attempts || 0,
+      bookmarked: item.metadata?.bookmarked || false
     }
-    
-    const serialized = {};
-    for (const [key, value] of Object.entries(data)) {
-      serialized[key] = serializeMongoData(value);
-    }
-    return serialized;
-  }
-  
-  return data;
-}
+  }));
+};
+
+// Helper function to serialize achievement data
+const serializeAchievementData = (items) => {
+  return items.map(item => ({
+    _id: item._id.toString(),
+    studentId: item.studentId.toString(),
+    achievementId: item.achievementId,
+    name: item.title || item.name,
+    description: item.description,
+    icon: item.icon,
+    color: item.color,
+    category: item.category,
+    points: item.points,
+    earnedAt: item.earnedAt.toISOString(),
+    metadata: item.metadata
+  }));
+};
 
 // Helper function to safely convert dates to ISO strings
 function safeToISOString(dateValue) {
@@ -52,31 +87,16 @@ export async function getStudentProgressData() {
       throw new Error('Unauthorized');
     }
 
-    const { db } = await connectToDatabase();
+    const db = await getDbConnection();
     
-    const progressItems = await db.collection('studentProgress')
+    const progressItems = await db.collection('progress')
       .find({ studentId: new ObjectId(session.user.id) })
       .sort({ 'metadata.updatedAt': -1 })
       .toArray();
 
-    // Convert MongoDB objects to plain objects like achievements action does
-    const serializedProgress = progressItems.map(item => ({
-      _id: item._id.toString(),
-      studentId: item.studentId.toString(),
-      contentId: item.contentId.toString(),
-      completionData: item.completionData,
-      contentTitle: item.contentTitle,
-      contentType: item.contentType,
-      grade: item.grade,
-      metadata: item.metadata,
-      progress: item.progress,
-      status: item.status,
-      subject: item.subject
-    }));
-
     return { 
       success: true, 
-      data: serializedProgress 
+      data: serializeProgressData(progressItems)
     };
   } catch (error) {
     console.error('Error fetching student progress:', error);
@@ -92,31 +112,16 @@ export async function getStudentAchievementsData() {
       throw new Error('Unauthorized');
     }
 
-    const { db } = await connectToDatabase();
+    const db = await getDbConnection();
     
-    const achievements = await db.collection('studentAchievements')
+    const achievements = await db.collection('achievements')
       .find({ studentId: new ObjectId(session.user.id) })
       .sort({ earnedAt: -1 })
       .toArray();
 
-    // Convert MongoDB objects to plain objects like achievements action does
-    const serializedAchievements = achievements.map(achievement => ({
-      _id: achievement._id.toString(),
-      studentId: achievement.studentId.toString(),
-      achievementId: achievement.achievementId,
-      name: achievement.name,
-      description: achievement.description,
-      icon: achievement.icon,
-      color: achievement.color,
-      category: achievement.category,
-      points: achievement.points,
-      earnedAt: achievement.earnedAt.toISOString(),
-      metadata: achievement.metadata
-    }));
-
     return { 
       success: true, 
-      data: serializedAchievements 
+      data: serializeAchievementData(achievements)
     };
   } catch (error) {
     console.error('Error fetching student achievements:', error);
@@ -132,10 +137,10 @@ export async function getStudentLearningStats() {
       throw new Error('Unauthorized');
     }
 
-    const { db } = await connectToDatabase();
+    const db = await getDbConnection();
     
     // Get progress stats
-    const progressStats = await db.collection('studentProgress')
+    const progressStats = await db.collection('progress')
       .aggregate([
         { $match: { studentId: new ObjectId(session.user.id) } },
         {
@@ -143,15 +148,15 @@ export async function getStudentLearningStats() {
             _id: null,
             totalResources: { $sum: 1 },
             completedResources: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
-            averageProgress: { $avg: "$progress" },
-            totalStudyTime: { $sum: "$completionData.studyTime" }
+            averageProgress: { $avg: "$progress.percentage" },
+            totalStudyTime: { $sum: "$progress.timeSpent" }
           }
         }
       ])
       .toArray();
 
     // Get achievement stats
-    const achievementStats = await db.collection('studentAchievements')
+    const achievementStats = await db.collection('achievements')
       .aggregate([
         { $match: { studentId: new ObjectId(session.user.id) } },
         {
@@ -191,9 +196,9 @@ export async function getCurrentUserData() {
       throw new Error('Unauthorized');
     }
 
-    const { db } = await connectToDatabase();
+    const db = await getDbConnection();
     
-    const user = await db.collection('users')
+    const user = await db.collection('user')
       .findOne({ _id: new ObjectId(session.user.id) });
 
     if (!user) {
@@ -205,6 +210,7 @@ export async function getCurrentUserData() {
           email: session.user.email || 'student@example.com',
           name: session.user.name || 'Student',
           grade: '8',
+          grades: ['8'],
           subjects: ['Mathematics', 'Science', 'English']
         }
       };
@@ -215,8 +221,9 @@ export async function getCurrentUserData() {
       _id: user._id.toString(),
       email: user.email,
       name: user.name,
-      grade: user.grade,
-      subjects: user.subjects,
+      grade: user.grade || user.grades?.[0] || '8',
+      grades: user.grades || [user.grade || '8'],
+      subjects: user.subjects || ['Mathematics', 'Science', 'English'],
       role: user.role,
       createdAt: user.createdAt?.toISOString(),
       updatedAt: user.updatedAt?.toISOString()
@@ -235,6 +242,7 @@ export async function getCurrentUserData() {
         email: 'student@example.com',
         name: 'Student',
         grade: '8',
+        grades: ['8'],
         subjects: ['Mathematics', 'Science', 'English']
       }
     };
@@ -269,19 +277,19 @@ export async function sendChatMessage(formData) {
       };
     }
 
-    const { db } = await connectToDatabase();
+    const db = await getDbConnection();
 
     // Fetch real student data from database
     const user = await db.collection('user')
       .findOne({ _id: new ObjectId(session.user.id) });
 
     // Get student progress data
-    const progressData = await db.collection('studentProgress')
+    const progressData = await db.collection('progress')
       .find({ studentId: new ObjectId(session.user.id) })
       .toArray();
 
     // Get student achievements
-    const achievements = await db.collection('studentAchievements')
+    const achievements = await db.collection('achievements')
       .find({ studentId: new ObjectId(session.user.id) })
       .toArray();
 
@@ -306,7 +314,7 @@ export async function sendChatMessage(formData) {
       id: session.user.id,
       email: user?.email || session.user.email || "",
       name: user?.name || session.user.name || "Student",
-      grade: user?.grades?.[0] || "8",
+      grade: user?.grades?.[0] || user?.grade || "8",
       progress: {
         totalResources: progressData.length,
         completedResources: completedCount,
@@ -316,13 +324,13 @@ export async function sendChatMessage(formData) {
       },
       achievements: achievements.map(achievement => ({
         id: achievement._id.toString(),
-        name: achievement.name,
+        name: achievement.title || achievement.name,
         description: achievement.description,
         category: achievement.category,
         points: achievement.points,
         earnedAt: achievement.earnedAt.toISOString()
       })),
-      learningStats: {
+      learning_stats: {
         totalResources: progressData.length,
         completedResources: completedCount,
         averageProgress: progressData.length > 0 ? (completedCount / progressData.length) * 100 : 0,

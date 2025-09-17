@@ -146,7 +146,7 @@ export default function ContentPreview({
   };
 
   return (
-    <Card className="w-full">
+    <Card className="w-full dark:bg-secondary">
       <CardHeader>
         <div className="flex justify-between items-start">
           <div>

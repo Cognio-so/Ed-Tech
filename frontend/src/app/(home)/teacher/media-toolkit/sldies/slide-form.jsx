@@ -81,13 +81,13 @@ const SlideForm = ({ onPresentationGenerated }) => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      <Card className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 border-none shadow-lg">
+      <Card className="bg-white dark:bg-secondary border-none shadow-lg">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+          <CardTitle className="flex items-center gap-2 text-blue-800 dark:text-white">
             <FileText className="h-5 w-5" />
             Create AI Presentation
           </CardTitle>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-gray-600 dark:text-white">
             Generate professional presentations with AI-powered content and design
           </p>
         </CardHeader>
@@ -104,7 +104,7 @@ const SlideForm = ({ onPresentationGenerated }) => {
                 placeholder="e.g., Introduction to Machine Learning"
                 value={formData.title}
                 onChange={(e) => handleInputChange('title', e.target.value)}
-                className="bg-white/60 dark:bg-gray-800/60"
+                className="bg-white/60 dark:bg-secondary/60"
                 required
               />
             </div>
@@ -120,7 +120,7 @@ const SlideForm = ({ onPresentationGenerated }) => {
                 placeholder="e.g., Machine Learning Fundamentals"
                 value={formData.topic}
                 onChange={(e) => handleInputChange('topic', e.target.value)}
-                className="bg-white/60 dark:bg-gray-800/60"
+                className="bg-white/60 dark:bg-secondary/60"
                 required
               />
             </div>
@@ -137,7 +137,7 @@ const SlideForm = ({ onPresentationGenerated }) => {
                 max="50"
                 value={formData.slideCount}
                 onChange={(e) => handleInputChange('slideCount', parseInt(e.target.value) || 10)}
-                className="bg-white/60 dark:bg-gray-800/60"
+                className="bg-white/60 dark:bg-secondary/60"
               />
             </div>
 
@@ -150,7 +150,7 @@ const SlideForm = ({ onPresentationGenerated }) => {
                   Language
                 </Label>
                 <Select value={formData.language} onValueChange={(value) => handleInputChange('language', value)}>
-                  <SelectTrigger className="bg-white/60 dark:bg-gray-800/60">
+                  <SelectTrigger className="bg-white/60 dark:bg-secondary/60">
                     <SelectValue placeholder="Select language" />
                   </SelectTrigger>
                   <SelectContent>
@@ -169,7 +169,7 @@ const SlideForm = ({ onPresentationGenerated }) => {
                   Content Verbosity
                 </Label>
                 <Select value={formData.verbosity} onValueChange={(value) => handleInputChange('verbosity', value)}>
-                  <SelectTrigger className="bg-white/60 dark:bg-gray-800/60">
+                  <SelectTrigger className="bg-white/60 dark:bg-secondary/60">
                     <SelectValue placeholder="Select verbosity" />
                   </SelectTrigger>
                   <SelectContent>
@@ -187,7 +187,7 @@ const SlideForm = ({ onPresentationGenerated }) => {
                   Template
                 </Label>
                 <Select value={formData.template} onValueChange={(value) => handleInputChange('template', value)}>
-                  <SelectTrigger className="bg-white/60 dark:bg-gray-800/60">
+                  <SelectTrigger className="bg-white/60 dark:bg-secondary/60">
                     <SelectValue placeholder="Select template" />
                   </SelectTrigger>
                   <SelectContent>
@@ -202,12 +202,12 @@ const SlideForm = ({ onPresentationGenerated }) => {
             </div>
 
             {/* Include Stock Images */}
-            <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-gray-800/40 rounded-lg">
+            <div className="flex items-center justify-between p-4 bg-white/40 dark:bg-secondary/40 rounded-lg">
               <div className="flex items-center gap-3">
                 <Image className="h-4 w-4 text-blue-600" />
                 <div>
                   <Label className="text-sm font-medium">Include Stock Images</Label>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-gray-500 dark:text-white">
                     Add relevant images to enhance your presentation
                   </p>
                 </div>
@@ -228,7 +228,7 @@ const SlideForm = ({ onPresentationGenerated }) => {
                 placeholder="e.g., Focus on practical applications, include real-world examples, make it suitable for beginners..."
                 value={formData.instructions}
                 onChange={(e) => handleInputChange('instructions', e.target.value)}
-                className="bg-white/60 dark:bg-gray-800/60 min-h-[100px]"
+                className="bg-white/60 dark:bg-secondary/60 min-h-[100px]"
                 rows={4}
               />
             </div>
@@ -237,7 +237,7 @@ const SlideForm = ({ onPresentationGenerated }) => {
             <Button
               type="submit"
               disabled={isGenerating}
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-3"
+              className="w-full bg-purple-600 hover:bg-purple-600/90 text-white py-3"
             >
               {isGenerating ? (
                 <>

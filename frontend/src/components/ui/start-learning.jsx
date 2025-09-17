@@ -4,8 +4,7 @@ import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { 
   Eye, 
   X, 
@@ -37,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { updateStudentProgress } from '@/app/(home)/student/learning-library/action';
 
 // Add the same content type configuration as LibraryDialog
 const contentTypes = {
@@ -104,7 +104,9 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
             currentQuestion.options = ['True', 'False'];
           } else if (questionText.toLowerCase().includes('briefly explain') ||
                      questionText.toLowerCase().includes('explain') ||
-                     questionText.toLowerCase().includes('describe')) {
+                     questionText.toLowerCase().includes('describe') ||
+                     questionText.toLowerCase().includes('what is meant by') ||
+                     questionText.toLowerCase().includes('how')) {
             currentQuestion.type = 'short_answer';
           } else {
             currentQuestion.type = 'mcq';
@@ -130,11 +132,19 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
   const { questions, solutions } = parseAssessmentContent(assessment?.content || assessment?.generatedContent || assessment?.assessmentContent);
   
   // Debug logging
+  console.log('=== InteractiveAssessment Debug ===');
+  console.log('Assessment content:', assessment?.content?.substring(0, 200));
+  console.log('Parsed questions:', questions);
+  console.log('Student answers:', studentAnswers);
 
-
-  const handleAnswerChange = (questionIndex, answer) => {
-    const newAnswers = { ...studentAnswers, [questionIndex]: answer };
-    onAnswerChange(newAnswers);
+  const handleAnswerChange = (questionNumber, answer) => {
+    console.log('Answer changed:', questionNumber, answer);
+    // Only update if questionNumber is a valid string/number
+    if (questionNumber && typeof questionNumber === 'string' && questionNumber !== '[object Object]') {
+      const newAnswers = { ...studentAnswers, [questionNumber]: answer };
+      console.log('New answers object:', newAnswers);
+      onAnswerChange(questionNumber, answer);
+    }
   };
 
   const handleSubmit = async () => {
@@ -146,13 +156,13 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
     let correctAnswers = 0;
     const totalQuestions = questions.length;
 
-   
+    console.log('Submitting assessment with answers:', studentAnswers);
 
     questions.forEach((question, index) => {
       const studentAnswer = studentAnswers[question.number];
       const solutionLine = solutions.find(s => s.startsWith(`${question.number}.`));
       
-      
+      console.log(`Question ${question.number}:`, { studentAnswer, solutionLine });
 
       if (!solutionLine) {
         console.warn(`No solution found for question ${question.number}`);
@@ -175,6 +185,7 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
         isCorrect = studentLower === correctLower || correctLower.includes(studentLower);
       }
      
+      console.log(`Question ${question.number} result:`, { isCorrect, studentAnswer, correctAnswer });
       
       if (isCorrect) {
         correctAnswers++;
@@ -182,6 +193,8 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
     });
 
     const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+    
+    console.log('Final score:', { score, correctAnswers, totalQuestions });
     
     // Call the parent's onSubmit function with the calculated score
     if (onSubmit) {
@@ -193,7 +206,7 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
     const studentAnswer = studentAnswers[question.number] || '';
 
     return (
-      <div key={index} className="border rounded-lg p-6 bg-white shadow-sm mb-6">
+      <div key={index} className="border rounded-lg p-6 bg-white dark:bg-gray-800 shadow-sm mb-6">
         <div className="flex items-start gap-3 mb-4">
           <Badge variant="outline" className="mt-1">
             {question.number}
@@ -209,7 +222,7 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
                  question.type === 'true_false' ? 'True/False' : 'Short Answer'}
               </Badge>
             </div>
-            <p className="text-gray-900 mb-4 font-medium">{question.text}</p>
+            <p className="text-foreground mb-4 font-medium">{question.text}</p>
             
             {question.type === 'mcq' && question.options.length > 0 && (
               <RadioGroup
@@ -220,12 +233,18 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
                 {question.options.map((option, optIndex) => (
                   <div key={optIndex} className="flex items-center space-x-2">
                     <RadioGroupItem value={option} id={`q${question.number}-opt${optIndex}`} />
-                    <Label htmlFor={`q${question.number}-opt${optIndex}`} className="text-sm cursor-pointer">
+                    <Label htmlFor={`q${question.number}-opt${optIndex}`} className="text-sm cursor-pointer text-foreground">
                       {option}
                     </Label>
                   </div>
                 ))}
               </RadioGroup>
+            )}
+
+            {question.type === 'mcq' && question.options.length === 0 && (
+              <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md">
+                <p>This question appears to be missing options. Please contact your teacher.</p>
+              </div>
             )}
 
             {question.type === 'true_false' && (
@@ -236,13 +255,13 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
               >
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="True" id={`q${question.number}-true`} />
-                  <Label htmlFor={`q${question.number}-true`} className="text-sm cursor-pointer">
+                  <Label htmlFor={`q${question.number}-true`} className="text-sm cursor-pointer text-foreground">
                     True
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="False" id={`q${question.number}-false`} />
-                  <Label htmlFor={`q${question.number}-false`} className="text-sm cursor-pointer">
+                  <Label htmlFor={`q${question.number}-false`} className="text-sm cursor-pointer text-foreground">
                     False
                   </Label>
                 </div>
@@ -266,9 +285,9 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
   return (
     <div className="h-full flex flex-col">
       <div className="text-center mb-6 flex-shrink-0">
-        <h3 className="text-lg font-semibold">{assessment.title}</h3>
+        <h3 className="text-lg font-semibold text-foreground">{assessment.title}</h3>
         <p className="text-sm text-muted-foreground">{assessment.topic}</p>
-        <div className="flex items-center justify-center gap-4 mt-2 text-xs text-gray-600">
+        <div className="flex items-center justify-center gap-4 mt-2 text-xs text-muted-foreground">
           <Badge variant="outline">{assessment.subject}</Badge>
           <Badge variant="secondary">{assessment.grade}</Badge>
           <Badge variant="outline">{assessment.difficulty}</Badge>
@@ -404,7 +423,7 @@ const AssessmentReview = ({ assessment, studentAnswers, score, correctAnswers, t
 
     return (
       <div key={index} className={`border rounded-lg p-6 shadow-sm mb-6 ${
-        isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+        isCorrect ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
       }`}>
         <div className="flex items-start gap-3 mb-4">
           <Badge variant="outline" className="mt-1">
@@ -422,18 +441,18 @@ const AssessmentReview = ({ assessment, studentAnswers, score, correctAnswers, t
               </Badge>
               <Badge 
                 variant={isCorrect ? 'default' : 'destructive'}
-                className={`text-xs ${isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
+                className={`text-xs ${isCorrect ? 'bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200'}`}
               >
                 {isCorrect ? '✓ Correct' : '✗ Incorrect'}
               </Badge>
             </div>
-            <p className="text-gray-900 mb-4 font-medium">{question.text}</p>
+            <p className="text-foreground mb-4 font-medium">{question.text}</p>
             
             {/* Show student's answer */}
             <div className="mb-3">
-              <p className="text-sm font-medium text-gray-700 mb-1">Your Answer:</p>
+              <p className="text-sm font-medium text-foreground mb-1">Your Answer:</p>
               <div className={`p-3 rounded-md ${
-                isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                isCorrect ? 'bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200'
               }`}>
                 {studentAnswer || 'No answer provided'}
               </div>
@@ -441,8 +460,8 @@ const AssessmentReview = ({ assessment, studentAnswers, score, correctAnswers, t
 
             {/* Show correct answer */}
             <div className="mb-3">
-              <p className="text-sm font-medium text-gray-700 mb-1">Correct Answer:</p>
-              <div className="p-3 rounded-md bg-blue-100 text-blue-800">
+              <p className="text-sm font-medium text-foreground mb-1">Correct Answer:</p>
+              <div className="p-3 rounded-md bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200">
                 {correctAnswer}
               </div>
             </div>
@@ -450,13 +469,13 @@ const AssessmentReview = ({ assessment, studentAnswers, score, correctAnswers, t
             {/* Show options for MCQ */}
             {question.type === 'mcq' && question.options.length > 0 && (
               <div className="mt-3">
-                <p className="text-sm font-medium text-gray-700 mb-2">Options:</p>
+                <p className="text-sm font-medium text-foreground mb-2">Options:</p>
                 <div className="space-y-1">
                   {question.options.map((option, optIndex) => (
                     <div key={optIndex} className={`text-sm p-2 rounded ${
-                      option === correctAnswer ? 'bg-green-100 text-green-800 font-medium' :
-                      option === studentAnswer && !isCorrect ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-600'
+                      option === correctAnswer ? 'bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 font-medium' :
+                      option === studentAnswer && !isCorrect ? 'bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200' :
+                      'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'
                     }`}>
                       {option}
                     </div>
@@ -476,21 +495,21 @@ const AssessmentReview = ({ assessment, studentAnswers, score, correctAnswers, t
       <div className="text-center mb-6 flex-shrink-0">
         <div className="mb-4">
           <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
-            score >= 80 ? 'bg-green-100' : 
-            score >= 60 ? 'bg-yellow-100' : 'bg-red-100'
+            score >= 80 ? 'bg-green-100 dark:bg-green-800' : 
+            score >= 60 ? 'bg-yellow-100 dark:bg-yellow-800' : 'bg-red-100 dark:bg-red-800'
           }`}>
             <Trophy className={`h-10 w-10 ${
-              score >= 80 ? 'text-green-600' : 
-              score >= 60 ? 'text-yellow-600' : 'text-red-600'
+              score >= 80 ? 'text-green-600 dark:text-green-400' : 
+              score >= 60 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
             }`} />
           </div>
-          <h3 className="text-2xl font-bold mb-2">Assessment Review</h3>
-          <p className="text-3xl font-bold mb-2">{score}%</p>
-          <p className="text-gray-600 mb-4">
+          <h3 className="text-2xl font-bold text-foreground mb-2">Assessment Review</h3>
+          <p className="text-3xl font-bold text-foreground mb-2">{score}%</p>
+          <p className="text-foreground mb-4">
             {score >= 80 ? 'Excellent work!' : 
              score >= 60 ? 'Good job!' : 'Keep practicing!'}
           </p>
-          <div className="flex items-center justify-center gap-4 text-sm text-gray-600">
+          <div className="flex items-center justify-center gap-4 text-sm text-foreground">
             <Badge variant="outline">{assessment.subject}</Badge>
             <Badge variant="secondary">{assessment.grade}</Badge>
             <Badge variant="outline">{assessment.difficulty}</Badge>
@@ -546,7 +565,7 @@ export default function StartLearning({
           </DialogHeader>
           <div className="p-4 text-center">
             <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <p className="text-gray-600">Loading content...</p>
+            <p className="text-black dark:text-white">Loading content...</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -563,7 +582,7 @@ export default function StartLearning({
           </DialogHeader>
           <div className="p-4">
             <p className="text-red-600">Missing content ID or type. Please try again.</p>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-black dark:text-white mt-2">
               ContentId: {contentId || 'undefined'}<br/>
               ContentType: {contentType || 'undefined'}
             </p>
@@ -581,9 +600,11 @@ export default function StartLearning({
     timeSpent: 0,
     lastAccessedAt: new Date()
   });
+  const [studentAnswers, setStudentAnswers] = useState({});
   const [assessmentAnswers, setAssessmentAnswers] = useState({});
   const [assessmentScore, setAssessmentScore] = useState(null);
   const [showScore, setShowScore] = useState(false);
+  const [assessmentResults, setAssessmentResults] = useState(null);
   const [startTime, setStartTime] = useState(Date.now());
   const [isCompleted, setIsCompleted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -713,116 +734,146 @@ export default function StartLearning({
 
   const handleComplete = async () => {
     if (!content || (!content.id && !content._id)) {
-      console.error('Content missing ID field:', content);
+      console.error('No content ID available for completion');
       return;
     }
 
     setIsLoading(true);
-    
-    const contentId = content.id || content._id;
-    const contentType = content.type;
-    
-    const timeSpent = Math.round((Date.now() - startTime) / 60000);
-    
     try {
-      const response = await fetch('/api/student/progress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contentId: contentId,
-          contentType: contentType,
-          contentTitle: content.title,
-          subject: content.subject,
-          grade: content.grade,
-          status: 'completed',
-          progress: {
-            ...progress,
-            currentStep: progress.totalSteps,
-            percentage: 100,
-            timeSpent: progress.timeSpent + timeSpent,
-            lastAccessedAt: new Date()
-          },
-          completionData: {
-            completedAt: new Date(),
-            timeToComplete: progress.timeSpent + timeSpent
-          }
-        })
+      const timeSpent = Math.round((Date.now() - startTime) / 60000); // minutes
+      const contentId = content.id || content._id;
+      
+      // Use the action.js function directly instead of API call
+      await updateStudentProgress(contentId, {
+        contentType: content.type || content.contentType,
+        contentTitle: content.title,
+        subject: content.subject,
+        grade: content.grade,
+        timeSpent: timeSpent,
+        timeToComplete: timeSpent
       });
 
-      if (response.ok) {
-        setIsCompleted(true);
-        toast.success('Congratulations! You completed this content! 🎉');
-        if (onComplete) onComplete(contentId, contentType);
-      }
+      setIsCompleted(true);
+      
+      // Show success message
+      toast.success('Content completed successfully! 🎉', {
+        description: `You spent ${timeSpent} minutes learning about ${content.title}`
+      });
+
+      // Close dialog after a short delay
+      setTimeout(() => {
+        onClose();
+        onComplete && onComplete({ 
+          contentId, 
+          timeSpent, 
+          contentType: content.type || content.contentType 
+        });
+      }, 1500);
+
     } catch (error) {
       console.error('Error completing content:', error);
-      toast.error('Failed to mark as completed');
+      toast.error('Failed to mark content as complete. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleAssessmentSubmit = async (score, correctAnswers, totalQuestions, answers) => {
-    try {
-      setAssessmentScore(score);
-      setShowScore(true);
+  const handleAnswerChange = (questionNumber, answer) => {
+    setStudentAnswers(prev => ({
+      ...prev,
+      [questionNumber]: answer
+    }));
+  };
 
-      // Update progress with assessment results
-      await updateProgress(progress.totalSteps, true);
+  const handleAssessmentSubmit = async (score, correctAnswers, totalQuestions, answers) => {
+    setAssessmentScore(score);
+    setAssessmentResults({ score, correctAnswers, totalQuestions, answers });
+    setShowScore(true);
+    setIsCompleted(true);
+
+    try {
+      const timeSpent = Math.round((Date.now() - startTime) / 60000);
       
-      const response = await fetch('/api/student/progress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contentId: contentId,
-          contentType: contentType,
-          contentTitle: content.title,
-          subject: content.subject,
-          grade: content.grade,
-          status: 'completed',
-          progress: {
-            ...progress,
-            currentStep: progress.totalSteps,
-            percentage: 100,
-            timeSpent: progress.timeSpent + Math.round((Date.now() - startTime) / 60000),
-            lastAccessedAt: new Date()
-          },
-          completionData: {
-            completedAt: new Date(),
-            score: score,
-            answers: answers,
-            correctAnswers: correctAnswers,
-            totalQuestions: totalQuestions,
-            timeToComplete: progress.timeSpent + Math.round((Date.now() - startTime) / 60000)
-          }
-        })
+      // Use the action.js function directly instead of API call
+      await updateStudentProgress(content.id || content._id, {
+        contentType: content.type || content.contentType,
+        contentTitle: content.title,
+        subject: content.subject,
+        grade: content.grade,
+        timeSpent: timeSpent,
+        timeToComplete: timeSpent,
+        score: score,
+        correctAnswers: correctAnswers,
+        totalQuestions: totalQuestions,
+        answers: answers
       });
 
-      if (response.ok) {
-        setIsCompleted(true);
-        toast.success(`Assessment completed! Your score: ${score}% 🎉`);
-        if (onComplete) onComplete(contentId, contentType);
-      }
+      // Show success message
+      toast.success(`Assessment completed! Your score: ${score}% 🎉`, {
+        description: `You answered ${correctAnswers} out of ${totalQuestions} questions correctly`
+      });
+
+      // Close dialog after showing score for a few seconds
+      setTimeout(() => {
+        onClose();
+        onComplete && onComplete({ score, correctAnswers, totalQuestions });
+      }, 3000);
+
     } catch (error) {
-      console.error('Error submitting assessment:', error);
-      toast.error('Failed to submit assessment');
+      console.error('Error saving assessment progress:', error);
+      toast.error('Failed to save assessment results. Please try again.');
     }
   };
 
   const renderContentPreview = () => {
-    
-    
+    // Show score screen for completed assessments
+    if (content.type === 'assessment' && showScore && assessmentResults) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center text-center">
+          <div className="mb-6">
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
+              assessmentResults.score >= 80 ? 'bg-green-100 dark:bg-green-800' : 
+              assessmentResults.score >= 60 ? 'bg-yellow-100 dark:bg-yellow-800' : 'bg-red-100 dark:bg-red-800'
+            }`}>
+              <Trophy className={`h-10 w-10 ${
+                assessmentResults.score >= 80 ? 'text-green-600 dark:text-green-400' : 
+                assessmentResults.score >= 60 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
+              }`} />
+            </div>
+            <h3 className="text-2xl font-bold text-foreground mb-2">Assessment Complete!</h3>
+            <p className="text-3xl font-bold text-foreground mb-2">{assessmentResults.score}%</p>
+            <p className="text-foreground mb-4">
+              {assessmentResults.score >= 80 ? 'Excellent work!' : 
+               assessmentResults.score >= 60 ? 'Good job!' : 'Keep practicing!'}
+            </p>
+            <div className="text-sm text-muted-foreground mb-4">
+              <p>Correct: {assessmentResults.correctAnswers} / {assessmentResults.totalQuestions}</p>
+            </div>
+            <div className="flex items-center justify-center gap-4 text-sm text-foreground">
+              <Badge variant="outline">{content.subject}</Badge>
+              <Badge variant="secondary">{content.grade}</Badge>
+              <Badge variant="outline">{content.difficulty}</Badge>
+            </div>
+          </div>
+          <Button onClick={onClose} variant="outline" className="px-8">
+            Close
+          </Button>
+        </div>
+      );
+    }
+
+    // Show completion screen for other content types
     if (isCompleted && content.type !== 'assessment') {
       return (
         <div className="h-full flex flex-col items-center justify-center text-center">
           <div className="mb-6">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="h-10 w-10 text-green-600" />
+            <div className="w-20 h-20 bg-green-100 dark:bg-green-800 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="h-10 w-10 text-green-600 dark:text-green-400" />
             </div>
-            <h3 className="text-2xl font-bold text-green-600 mb-2">Completed!</h3>
-            <p className="text-gray-600">You have successfully completed this content.</p>
+            <h3 className="text-2xl font-bold text-green-600 dark:text-green-400 mb-2">Completed!</h3>
+            <p className="text-foreground">You have successfully completed this content.</p>
           </div>
-          <Button onClick={onClose} variant="outline">
+          <Button onClick={onClose} variant="outline" className="px-8">
             Close
           </Button>
         </div>
@@ -832,367 +883,74 @@ export default function StartLearning({
     switch (content.type) {
       case 'content':
         return (
-          <div className="h-full overflow-hidden">
-            <ContentPreview
-              content={content.contentData || content.generatedContent}
-              metadata={content}
-              isEditable={false}
-            />
-            <div className="mt-4 flex justify-center">
-              <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Mark as Complete
-              </Button>
-            </div>
-          </div>
-        );
-      
-      case 'assessment':
-      
-        
-        // Check if assessment is completed by looking at the progress data
-        const isCompletedByProgress = content?.progress?.status === 'completed' || 
-                                    content?.progress?.completedAt ||
-                                    content?.progress?.score !== undefined;
-        
-        
-        const hasCompletedAt = content?.progress?.completedAt || studentProgress?.completedAt;
-        const hasCompletedStatus = content?.progress?.status === 'completed' || studentProgress?.status === 'completed';
-        const isAssessmentCompleted = isCompleted || hasCompletedAt || hasCompletedStatus || isCompletedByProgress;
-        
-        
-        if (isAssessmentCompleted) {
-          
-          // Show completed assessment review
-          const completedScore = content?.progress?.score || 
-                               studentProgress?.score || 
-                               content?.progress?.completionData?.score ||
-                               assessmentScore || 0;
-          const completedAnswers = content?.progress?.completionData?.answers || 
-                                 studentProgress?.completionData?.answers ||
-                                 assessmentAnswers;
-          const correctAnswers = content?.progress?.completionData?.correctAnswers || 
-                               studentProgress?.completionData?.correctAnswers || 0;
-          const totalQuestions = content?.progress?.completionData?.totalQuestions || 
-                               studentProgress?.completionData?.totalQuestions || 0;
-          
-       
-          
-          return (
-            <div className="h-full overflow-hidden">
-              <AssessmentReview
-                assessment={content}
-                studentAnswers={completedAnswers}
-                score={completedScore}
-                correctAnswers={correctAnswers}
-                totalQuestions={totalQuestions}
-                onClose={onClose}
-              />
-            </div>
-          );
-        } else {
-          console.log('❌ SHOWING INTERACTIVE ASSESSMENT - Assessment is NOT completed');
-        }
-
-        if (showScore) {
-          return (
-            <div className="h-full flex flex-col items-center justify-center text-center">
-              <div className="mb-6">
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                  assessmentScore >= 80 ? 'bg-green-100' : 
-                  assessmentScore >= 60 ? 'bg-yellow-100' : 'bg-red-100'
-                }`}>
-                  <Trophy className={`h-10 w-10 ${
-                    assessmentScore >= 80 ? 'text-green-600' : 
-                    assessmentScore >= 60 ? 'text-yellow-600' : 'text-red-600'
-                  }`} />
-                </div>
-                <h3 className="text-2xl font-bold mb-2">Assessment Complete!</h3>
-                <p className="text-3xl font-bold mb-2">{assessmentScore}%</p>
-                <p className="text-gray-600">
-                  {assessmentScore >= 80 ? 'Excellent work!' : 
-                   assessmentScore >= 60 ? 'Good job!' : 'Keep practicing!'}
-                </p>
-              </div>
-              <Button onClick={onClose} variant="outline">
-                Close
-              </Button>
-            </div>
-          );
-        }
-
-        return (
-          <div className="h-full overflow-hidden">
-            <InteractiveAssessment
-              assessment={content}
-              studentAnswers={assessmentAnswers}
-              onAnswerChange={setAssessmentAnswers}
-              onSubmit={handleAssessmentSubmit}
-              hideSolutions={true}
-            />
-          </div>
-        );
-      
-      case 'lesson':
-      
-        
-        // Check if this is an assessment lesson
-        if (content.assessmentId || content.assessmentContent) {
-          // This is an assessment lesson - render as interactive assessment
-          const assessmentData = {
-            ...content,
-            generatedContent: content.assessmentContent || content.contentData || '',
-            type: 'assessment'
-          };
-          
-          if (showScore) {
-            return (
-              <div className="h-full flex flex-col items-center justify-center text-center">
-                <div className="mb-6">
-                  <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                    assessmentScore >= 80 ? 'bg-green-100' : 
-                    assessmentScore >= 60 ? 'bg-yellow-100' : 'bg-red-100'
-                  }`}>
-                    <Trophy className={`h-10 w-10 ${
-                      assessmentScore >= 80 ? 'text-green-600' : 
-                      assessmentScore >= 60 ? 'text-yellow-600' : 'text-red-600'
-                    }`} />
-                  </div>
-                  <h3 className="text-2xl font-bold mb-2">Assessment Complete!</h3>
-                  <p className="text-3xl font-bold mb-2">{assessmentScore}%</p>
-                  <p className="text-gray-600">
-                    {assessmentScore >= 80 ? 'Excellent work!' : 
-                     assessmentScore >= 60 ? 'Good job!' : 'Keep practicing!'}
-                  </p>
-                </div>
-                <Button onClick={onClose} variant="outline">
-                  Close
-                </Button>
-              </div>
-            );
-          }
-
-          return (
-            <div className="h-full overflow-hidden">
-              <InteractiveAssessment
-                assessment={assessmentData}
-                studentAnswers={assessmentAnswers}
-                onAnswerChange={setAssessmentAnswers}
-                onSubmit={handleAssessmentSubmit}
-                hideSolutions={true}
-              />
-            </div>
-          );
-        }
-        
-        // Check if this is an image lesson
-        if (content.contentType === 'image') {
-          console.log('Rendering image lesson with data:', {
-            imageUrl: content.imageUrl,
-            hasImageBase64: !!content.imageBase64,
-            visualType: content.visualType,
-            instructions: content.instructions
-          });
-          
-          return (
-            <div className="h-full flex flex-col">
-              <div className="text-center mb-4 flex-shrink-0">
-                <h3 className="text-lg font-semibold">{content.title}</h3>
-                <p className="text-sm text-muted-foreground">{content.topic}</p>
-                {content.visualType && (
-                  <Badge variant="outline" className="mt-2">
-                    {content.visualType.charAt(0).toUpperCase() + content.visualType.slice(1)}
-                  </Badge>
-                )}
-              </div>
-              <div className="flex-1 min-h-0 flex items-center justify-center">
-                <div className="relative max-w-full max-h-full">
-                  {content.imageUrl ? (
-                    <img 
-                      src={content.imageUrl} 
-                      alt={content.title}
-                      className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
-                      onError={(e) => {
-                        console.error('Image failed to load:', content.imageUrl);
-                        e.target.style.display = 'none';
-                        const fallbackDiv = document.createElement('div');
-                        fallbackDiv.className = 'text-center py-8 text-muted-foreground';
-                        fallbackDiv.innerHTML = `
-                          <div>
-                            <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                            </svg>
-                            <p class="text-sm">Image failed to load</p>
-                            <p class="text-xs text-muted-foreground mt-2">
-                              URL: ${content.imageUrl || 'Not provided'}
-                            </p>
-                          </div>
-                        `;
-                        e.target.parentNode.appendChild(fallbackDiv);
-                      }}
-                    />
-                  ) : content.imageBase64 ? (
-                    <img 
-                      src={`data:image/png;base64,${content.imageBase64}`} 
-                      alt={content.title}
-                      className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
-                    />
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <div>
-                        <Image className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-                        <p className="text-sm">No image data available</p>
-                        <p className="text-xs text-muted-foreground mt-2">
-                          Image URL: {content.imageUrl || 'Not provided'}<br/>
-                          Has Base64: {content.imageBase64 ? 'Yes' : 'No'}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {content.instructions && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Instructions:</h4>
-                  <p className="text-sm text-gray-600">{content.instructions}</p>
-                </div>
-              )}
-              <div className="mt-4 flex justify-center">
-                <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Mark as Complete
-                </Button>
-              </div>
-            </div>
-          );
-        }
-        
-        // Check if this is a comic lesson
-        if (content.contentType === 'comic') {
-          console.log('Rendering comic lesson with data:', {
-            panels: content.panels?.length || 0,
-            imageUrls: content.imageUrls?.length || 0,
-            images: content.images?.length || 0,
-            numPanels: content.numPanels
-          });
-          
-          const comicImages = content.panels?.map(panel => panel.imageUrl || panel.imageBase64) || 
-                             content.imageUrls || 
-                             content.images || [];
-          
-          if (comicImages.length === 0) {
-            return (
-              <div className="text-center py-8 text-muted-foreground h-full flex items-center justify-center">
-                <div>
-                  <BookOpen className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-                  <p className="text-sm">No comic panels available</p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Panels: {content.panels?.length || 0}<br/>
-                    Image URLs: {content.imageUrls?.length || 0}<br/>
-                    Images: {content.images?.length || 0}
-                  </p>
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div className="h-full flex flex-col">
-              <div className="text-center mb-4 flex-shrink-0">
-                <h3 className="text-lg font-semibold">{content.title}</h3>
-                <p className="text-sm text-muted-foreground">{content.topic || content.instruction}</p>
-              </div>
-              <div className="flex-1 min-h-0">
-                <CarouselWithControls
-                  items={comicImages.map((url, i) => ({ url, index: i + 1 }))}
-                  className="h-full"
-                  renderItem={(p) => (
-                    <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-full">
-                      <img 
-                        src={p.url} 
-                        alt={`Panel ${p.index}`} 
-                        className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
-                      />
-                    </div>
-                  )}
-                />
-              </div>
-              {currentStep === progress.totalSteps - 1 && (
-                <div className="mt-4 flex justify-center">
-                  <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Complete Comic
-                  </Button>
-                </div>
-              )}
-            </div>
-          );
-        }
-        
-        // Check if this is a presentation lesson
-        if (content.contentType === 'presentation') {
-          return (
-            <div className="h-full overflow-hidden">
+          <div className="h-full flex flex-col">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <ContentPreview
-                content={content.contentData || content.content || content.generatedContent}
+                content={content.generatedContent || content.contentData || content.content}
                 metadata={content}
                 isEditable={false}
               />
-              <div className="mt-4 flex justify-center">
-                <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Mark as Complete
-                </Button>
-              </div>
             </div>
-          );
-        }
+            <div className="mt-4 flex justify-center flex-shrink-0">
+              <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Completing...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Mark as Complete
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        );
         
-        // Regular lesson content - render as markdown
+      case 'slides':
+          return (
+          <div className="h-full flex flex-col">
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <PPTXViewer
+                presentationUrl={content.presentationUrl || content.url}
+                downloadUrl={content.downloadUrl}
+                title={content.title}
+                slideCount={content.slideCount || content.slidesCount}
+                status={content.status || 'SUCCESS'}
+                errorMessage={content.errorMessage}
+                onSave={() => {
+                  // Optional: Add save functionality if needed
+                  toast.success('Presentation saved to library!');
+                }}
+                isSaving={false}
+              />
+              </div>
+            <div className="mt-4 flex justify-center flex-shrink-0">
+              <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Completing...
+                  </>
+                ) : (
+                  <>
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Mark as Complete
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        );
+      
+      case 'video':
         return (
           <div className="h-full flex flex-col">
-            <div className="text-center mb-6">
-              <h3 className="text-lg font-semibold">{content.title}</h3>
-              <p className="text-sm text-muted-foreground">{content.topic}</p>
-            </div>
-            <div className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
-                {content.contentData || content.generatedContent || content.description || ''}
-              </ReactMarkdown>
-            </div>
-            <div className="mt-6 flex justify-center">
-              <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Mark as Complete
-              </Button>
-            </div>
-          </div>
-        );
-      
-      case 'slides': // Handle slides type directly - same as LibraryDialog
-        return (
-          <div className="h-full overflow-hidden">
-            <PPTXViewer
-              presentationUrl={content.presentationUrl}
-              title={content.title}
-              slideCount={content.slideCount}
-              status="completed"
-              isEditable={false}
-            />
-            <div className="mt-4 flex justify-center">
-              <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Mark as Complete
-              </Button>
-            </div>
-          </div>
-        );
-      
-      case 'video': // Handle video type directly - same as LibraryDialog
-        return (
-          <div className="h-full overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden">
             <VideoPreview
-              videoUrl={content.videoUrl}
+              videoUrl={content.videoUrl || content.url}
               title={content.title}
               slidesCount={content.slidesCount}
               status="completed"
@@ -1201,23 +959,44 @@ export default function StartLearning({
               videoId={content.videoId}
               isEditable={false}
             />
-            <div className="mt-4 flex justify-center">
+            </div>
+            <div className="mt-4 flex justify-center flex-shrink-0">
               <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Completing...
+                  </>
+                ) : (
+                  <>
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Mark as Complete
+                  </>
+                )}
               </Button>
             </div>
           </div>
         );
       
-      case 'comic': // Handle comic type directly - same as LibraryDialog
-        const comicImages = content.panels?.map(panel => panel.imageUrl || panel.imageBase64) || 
-                           content.imageUrls || 
-                           content.images || [];
+      case 'comic':
+        // Check if this is a comic lesson
+        if (content.contentType === 'comic') {
+          // Try multiple sources for comic images
+          let comicImages = [];
+          
+          if (content.panels && content.panels.length > 0) {
+            comicImages = content.panels.map(panel => panel.imageUrl || panel.imageBase64).filter(Boolean);
+          } else if (content.imageUrls && content.imageUrls.length > 0) {
+            comicImages = content.imageUrls;
+          } else if (content.images && content.images.length > 0) {
+            comicImages = content.images;
+          } else if (content.cloudinaryPublicIds && content.cloudinaryPublicIds.length > 0) {
+            comicImages = content.cloudinaryPublicIds.map(id => `https://res.cloudinary.com/demo/image/upload/${id}`);
+          }
         
         if (comicImages.length === 0) {
           return (
-            <div className="text-center py-8 text-muted-foreground h-full flex items-center justify-center">
+              <div className="text-center py-8 text-foreground h-full flex items-center justify-center">
               <div>
                 <BookOpen className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
                 <p className="text-sm">No comic panels available</p>
@@ -1228,11 +1007,7 @@ export default function StartLearning({
 
         return (
           <div className="h-full flex flex-col">
-            <div className="text-center mb-4 flex-shrink-0">
-              <h3 className="text-lg font-semibold">{content.title}</h3>
-              <p className="text-sm text-muted-foreground">{content.topic || content.instruction}</p>
-            </div>
-            <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-hidden">
               <CarouselWithControls
                 items={comicImages.map((url, i) => ({ url, index: i + 1 }))}
                 className="h-full"
@@ -1242,80 +1017,153 @@ export default function StartLearning({
                       src={p.url} 
                       alt={`Panel ${p.index}`} 
                       className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const fallbackDiv = document.createElement('div');
+                          fallbackDiv.className = 'text-center py-8 text-foreground';
+                          fallbackDiv.innerHTML = `
+                            <div>
+                              <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                              </svg>
+                              <p class="text-sm">Panel ${p.index} failed to load</p>
+                              <p class="text-xs text-muted-foreground mt-2">
+                                URL: ${p.url || 'Not provided'}
+                              </p>
+                            </div>
+                          `;
+                          e.target.parentNode.appendChild(fallbackDiv);
+                        }}
                     />
                   </div>
                 )}
               />
             </div>
-            {currentStep === progress.totalSteps - 1 && (
-              <div className="mt-4 flex justify-center">
+              <div className="mt-4 flex justify-center flex-shrink-0">
                 <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Completing...
+                    </>
+                  ) : (
+                    <>
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  Complete Comic
+                      Mark as Complete
+                    </>
+                  )}
                 </Button>
               </div>
-            )}
+          </div>
+        );
+        }
+        
+        // Fallback for non-comic content
+        return (
+          <div className="text-center py-8 text-foreground h-full flex items-center justify-center">
+            <div>
+              <BookOpen className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+              <p className="text-sm">Comic content not available</p>
+            </div>
           </div>
         );
       
-      case 'image': // Handle image type directly - same as LibraryDialog
-        
-        
+      case 'image':
+        // Check if this is an image lesson
+        if (content.contentType === 'image') {
         return (
           <div className="h-full flex flex-col">
-            <div className="text-center mb-4 flex-shrink-0">
-              <h3 className="text-lg font-semibold">{content.title}</h3>
-              <p className="text-sm text-muted-foreground">{content.topic}</p>
-              {content.visualType && (
-                <Badge variant="outline" className="mt-2">
-                  {content.visualType.charAt(0).toUpperCase() + content.visualType.slice(1)}
-                </Badge>
-              )}
-            </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <div className="flex flex-col h-full">
             <div className="flex-1 min-h-0 flex items-center justify-center">
               <div className="relative max-w-full max-h-full">
+                      {content.imageUrl ? (
                 <img 
                   src={content.imageUrl} 
                   alt={content.title}
                   className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+                          loading="lazy"
                   onError={(e) => {
-                    console.error('Image failed to load:', content.imageUrl);
-                    // Show fallback content
                     e.target.style.display = 'none';
                     const fallbackDiv = document.createElement('div');
-                    fallbackDiv.className = 'text-center py-8 text-muted-foreground';
+                            fallbackDiv.className = 'text-center py-8 text-foreground';
                     fallbackDiv.innerHTML = `
                       <div>
                         <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                         </svg>
                         <p class="text-sm">Image failed to load</p>
-                        <p class="text-xs text-muted-foreground mt-2">
-                          URL: ${content.imageUrl || 'Not provided'}
-                        </p>
                       </div>
                     `;
                     e.target.parentNode.appendChild(fallbackDiv);
                   }}
                 />
+                      ) : content.imageBase64 ? (
+                        <img 
+                          src={`data:image/png;base64,${content.imageBase64}`} 
+                          alt={content.title}
+                          className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="text-center py-8 text-foreground">
+                          <Image className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+                          <p className="text-sm">No image data available</p>
+                        </div>
+                      )}
               </div>
             </div>
             {content.instructions && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Instructions:</h4>
-                <p className="text-sm text-gray-600">{content.instructions}</p>
+                    <div className="p-4 bg-muted/50 border-t">
+                      <p className="text-sm text-muted-foreground">{content.instructions}</p>
               </div>
             )}
-            <div className="mt-4 flex justify-center">
+                </div>
+              </div>
+              <div className="mt-4 flex justify-center flex-shrink-0">
               <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Completing...
+                    </>
+                  ) : (
+                    <>
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Mark as Complete
+                    </>
+                  )}
               </Button>
             </div>
           </div>
         );
+        }
       
-      case 'websearch': // Handle websearch type directly - same as LibraryDialog
+        // Fallback for non-image content
+        return (
+          <div className="text-center py-8 text-foreground h-full flex items-center justify-center">
+            <div>
+              <Image className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+              <p className="text-sm">Image content not available</p>
+            </div>
+          </div>
+        );
+      
+      case 'assessment':
+        return (
+          <div className="h-full overflow-hidden">
+            <InteractiveAssessment
+              assessment={content}
+              onAnswerChange={handleAnswerChange}
+              studentAnswers={studentAnswers}
+              onSubmit={handleAssessmentSubmit}
+              hideSolutions={true}
+            />
+          </div>
+        );
+      
+      case 'external':
+      case 'websearch':
         return (
           <div className="h-full flex flex-col">
             <div className="text-center mb-4 flex-shrink-0">
@@ -1325,65 +1173,21 @@ export default function StartLearning({
             <div className="flex-1 min-h-0 overflow-auto">
               <div className="prose prose-sm dark:prose-invert max-w-none pr-4">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
-                  {content.searchResults || content.content || ''}
+                  {content.searchResults || content.generatedContent || content.content || ''}
                 </ReactMarkdown>
               </div>
             </div>
-            <div className="mt-4 flex justify-center">
-              <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Mark as Complete
-              </Button>
-            </div>
-          </div>
-        );
-      
-      case 'presentation': // Handle presentation content type
-        return (
-          <div className="h-full overflow-hidden">
-            <ContentPreview
-              content={content.contentData || content.content || content.generatedContent}
-              metadata={content}
-              isEditable={false}
-            />
-            <div className="mt-4 flex justify-center">
+            <div className="mt-4 flex justify-center flex-shrink-0">
               <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4" />
-                    <span>Completing...</span>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Completing...
                   </>
                 ) : (
                   <>
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    <span>Mark as Complete</span>
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        );
-      
-      case 'external': // Handle external/websearch content type
-        return (
-          <div className="h-full overflow-hidden">
-            <ContentPreview
-              content={content.searchResults || content.content || content.generatedContent}
-              metadata={content}
-              contentType="web-search"
-              isEditable={false}
-            />
-            <div className="mt-4 flex justify-center">
-              <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4" />
-                    <span>Completing...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    <span>Mark as Complete</span>
+                    Mark as Complete
                   </>
                 )}
               </Button>
@@ -1393,11 +1197,10 @@ export default function StartLearning({
       
       default:
         return (
-          <div className="text-center py-8 text-muted-foreground h-full flex items-center justify-center">
+          <div className="text-center py-8 text-foreground h-full flex items-center justify-center">
             <div>
               <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-              <p className="text-sm">Preview not available for this content type: {content.type}</p>
-              <p className="text-xs text-muted-foreground mt-2">Available keys: {Object.keys(content).join(', ')}</p>
+              <p className="text-sm">Content type not supported: {content.type}</p>
             </div>
           </div>
         );
@@ -1405,7 +1208,7 @@ export default function StartLearning({
   };
 
   const renderNavigation = () => {
-    if (isCompleted || content.type === 'assessment' || content.type === 'image' || content.type === 'content' || content.type === 'slides' || content.type === 'video' || content.type === 'websearch') {
+    if (isCompleted || content.type === 'assessment') {
       return null;
     }
 
@@ -1416,20 +1219,23 @@ export default function StartLearning({
           onClick={handlePrevious}
           disabled={currentStep === 0}
         >
-          <ArrowLeft className="mr-2 h-4 w-4" />
           Previous
         </Button>
         
-        <span className="text-sm text-gray-600">
-          {currentStep + 1} of {progress.totalSteps}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">
+            Step {currentStep + 1} of {progress.totalSteps}
         </span>
+          <Badge variant="outline" className="ml-2">
+            {contentTypes[content.type]?.label}
+          </Badge>
+        </div>
         
         <Button 
           onClick={handleNext}
           disabled={currentStep >= progress.totalSteps - 1}
         >
           Next
-          <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </div>
     );
@@ -1441,28 +1247,20 @@ export default function StartLearning({
         <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
           <DialogTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Eye className="h-5 w-5 text-blue-600" />
-              {isCompleted ? 'Review Content' : 'Learning Mode'}
+              <Eye className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <span className="text-foreground">{isCompleted ? 'Review Content' : 'Learning Mode'}</span>
               <Badge variant="outline" className="ml-2">
                 {contentTypes[content.type]?.label}
               </Badge>
               {isCompleted && (
-                <Badge className="bg-green-100 text-green-800 border-green-200">
+                <Badge className="bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 border-green-200 dark:border-green-700">
                   <CheckCircle className="mr-1 h-3 w-3" />
                   Completed
                 </Badge>
               )}
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="rounded-full p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-muted-foreground">
             {isCompleted ? 'Review your completed learning content' : 'Learn and interact with the content below'}
           </DialogDescription>
         </DialogHeader>
