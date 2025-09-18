@@ -163,12 +163,12 @@ export default function SignInForm() {
 
             <Button
               type="submit"
-              className="w-full h-11 bg-primary hover:bg-primary/90 text-black font-medium dark:text-black"
+              className="w-full h-11 bg-primary hover:bg-primary/90 text-black font-medium dark:text-black text-white"
               disabled={isLoading}
             >
               {isLoading ? (
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin dark:text-black text-black" />
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin dark:text-black text-white" />
                   Signing In...
                 </div>
               ) : (
