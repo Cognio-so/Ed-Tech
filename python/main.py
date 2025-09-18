@@ -77,7 +77,7 @@ app = FastAPI(
 # --- Add CORS Middleware ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://e-learning-frontend-navy.vercel.app"],  # Add your frontend URLs
+    allow_origins=["http://localhost:3000", "https://ed-tech-alpha-sable.vercel.app"],  # Add your frontend URLs
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -1095,7 +1095,7 @@ async def student_voice_websocket(websocket: WebSocket):
     """WebSocket endpoint for student voice communication."""
     # Check origin for CORS
     origin = websocket.headers.get("origin")
-    allowed_origins = ["http://localhost:3000", "https://e-learning-frontend-navy.vercel.app"]
+    allowed_origins = ["http://localhost:3000", "https://ed-tech-alpha-sable.vercel.app"]
     
     if origin not in allowed_origins:
         await websocket.close(code=1008, reason="Origin not allowed")
@@ -1127,7 +1127,7 @@ async def teacher_voice_websocket(websocket: WebSocket):
     """WebSocket endpoint for teacher voice communication."""
     # Check origin for CORS
     origin = websocket.headers.get("origin")
-    allowed_origins = ["http://localhost:3000", "https://e-learning-frontend-navy.vercel.app"]
+    allowed_origins = ["http://localhost:3000", "https://ed-tech-alpha-sable.vercel.app"]
     
     if origin not in allowed_origins:
         await websocket.close(code=1008, reason="Origin not allowed")
