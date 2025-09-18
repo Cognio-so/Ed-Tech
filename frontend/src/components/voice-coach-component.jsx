@@ -678,7 +678,7 @@ const VoiceCoach = () => {
             };
 
             // Connect to WebSocket endpoint
-            const ws = new WebSocket('ws://localhost:8000/ws/teacher-voice');
+            const ws = new WebSocket(`ws://${process.env.REACT_APP_BACKEND_URL}/ws/teacher-voice`);
             
             ws.onopen = () => {
                 console.log('Teacher voice WebSocket connected');
