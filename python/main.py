@@ -16,7 +16,6 @@ import aiohttp
 from datetime import datetime
 import base64
 import numpy as np
-import sounddevice as sd
 
 # --- Configure Logging ---
 logging.basicConfig(
