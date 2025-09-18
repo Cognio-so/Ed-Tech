@@ -803,7 +803,13 @@ class TeacherAsyncRAGTutor:
         teaching_data_str = "No teaching data provided. Please provide teacher name and student reports for analysis."
         if teaching_data:
             try:
-                teaching_data_str = json.dumps(teaching_data, indent=2)
+                # Only include actual data, no hardcoded values
+                filtered_teaching_data = {}
+                for key, value in teaching_data.items():
+                    if value and value != [] and value != {}:
+                        filtered_teaching_data[key] = value
+                
+                teaching_data_str = json.dumps(filtered_teaching_data, indent=2)
             except TypeError:
                 teaching_data_str = str(teaching_data)
 

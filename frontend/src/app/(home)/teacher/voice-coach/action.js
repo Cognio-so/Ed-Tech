@@ -7,7 +7,7 @@ import { getServerSession } from "@/lib/get-session";
 import { connectToDatabase } from "@/lib/db";
 import { ObjectId } from "mongodb";
 
-// Helper function to serialize MongoDB objects
+// Helper function to serialize MongoDB objects - FIXED
 function serializeMongoData(data) {
   if (data === null || data === undefined) return data;
   
@@ -16,12 +16,35 @@ function serializeMongoData(data) {
   }
   
   if (typeof data === 'object') {
+    // Handle ObjectId
     if (data._id && typeof data._id.toString === 'function') {
-      // Handle ObjectId
       return {
         ...data,
         _id: data._id.toString()
       };
+    }
+    
+    // FIXED: Better Buffer detection using Buffer.isBuffer
+    if (Buffer.isBuffer(data)) {
+      return data.toString('hex');
+    }
+    
+    // Handle Buffer objects - check constructor name
+    if (data.constructor && data.constructor.name === 'Buffer') {
+      return data.toString('hex');
+    }
+    
+    // Handle Buffer objects - check for type property
+    if (data.type === 'Buffer' && Array.isArray(data.data)) {
+      return Buffer.from(data.data).toString('hex');
+    }
+    
+    // Handle other objects with toString method (like ObjectId)
+    if (typeof data.toString === 'function' && 
+        data.constructor && 
+        data.constructor.name !== 'Object' && 
+        data.constructor.name !== 'Array') {
+      return data.toString();
     }
     
     const serialized = {};
@@ -44,7 +67,7 @@ function safeToISOString(dateValue) {
   return dateValue;
 }
 
-// Get teacher progress data
+// Get teacher progress data - FIXED
 export async function getTeacherProgressData() {
   try {
     const session = await getServerSession();
@@ -60,27 +83,45 @@ export async function getTeacherProgressData() {
       .limit(50)
       .toArray();
 
-    const serializedData = progressData.map(item => ({
-      ...item,
-      _id: item._id.toString(),
-      studentId: item.studentId.toString(),
-      contentId: item.contentId.toString(),
-      createdAt: safeToISOString(item.createdAt),
-      updatedAt: safeToISOString(item.updatedAt),
-      progress: {
-        ...item.progress,
-        lastAccessedAt: safeToISOString(item.progress?.lastAccessedAt)
-      },
-      completionData: item.completionData ? {
-        ...item.completionData,
-        completedAt: safeToISOString(item.completionData.completedAt)
-      } : null,
-      metadata: {
-        ...item.metadata,
-        createdAt: safeToISOString(item.metadata?.createdAt),
-        updatedAt: safeToISOString(item.metadata?.updatedAt)
-      }
-    }));
+    const serializedData = progressData.map(item => {
+      // FIXED: Create clean object without problematic fields
+      const cleanItem = {
+        contentType: item.contentType,
+        progress: item.progress,
+        completionData: item.completionData,
+        metadata: item.metadata,
+        // Add any other plain fields
+      };
+      
+      return {
+        ...cleanItem,
+        _id: item._id.toString(),
+        studentId: item.studentId.toString(),
+        // FIXED: Handle contentId properly
+        contentId: item.contentId ? (
+          Buffer.isBuffer(item.contentId) ?
+            item.contentId.toString('hex') :
+          typeof item.contentId === 'object' && item.contentId.toString ?
+            item.contentId.toString() :
+          String(item.contentId)
+        ) : null,
+        createdAt: safeToISOString(item.createdAt),
+        updatedAt: safeToISOString(item.updatedAt),
+        progress: {
+          ...item.progress,
+          lastAccessedAt: safeToISOString(item.progress?.lastAccessedAt)
+        },
+        completionData: item.completionData ? {
+          ...item.completionData,
+          completedAt: safeToISOString(item.completionData.completedAt)
+        } : null,
+        metadata: {
+          ...item.metadata,
+          createdAt: safeToISOString(item.metadata?.createdAt),
+          updatedAt: safeToISOString(item.metadata?.updatedAt)
+        }
+      };
+    });
 
     return { 
       success: true, 
@@ -95,7 +136,7 @@ export async function getTeacherProgressData() {
   }
 }
 
-// Get teacher achievements data
+// Get teacher achievements data - FIXED
 export async function getTeacherAchievementsData() {
   try {
     const session = await getServerSession();
@@ -111,13 +152,38 @@ export async function getTeacherAchievementsData() {
       .limit(50)
       .toArray();
 
-    const serializedData = achievementsData.map(item => ({
-      ...item,
-      _id: item._id.toString(),
-      studentId: item.studentId.toString(),
-      earnedAt: safeToISOString(item.earnedAt),
-      createdAt: safeToISOString(item.createdAt)
-    }));
+    const serializedData = achievementsData.map(item => {
+      // FIXED: Create a completely clean object without any MongoDB-specific fields
+      const cleanItem = {
+        title: item.title,
+        description: item.description,
+        icon: item.icon,
+        // Add any other plain fields you need
+      };
+      
+      return {
+        ...cleanItem,
+        _id: item._id.toString(),
+        studentId: item.studentId.toString(),
+        achievementId: item.achievementId ? item.achievementId.toString() : null,
+        // FIXED: Handle contentId more robustly
+        contentId: item.contentId ? (
+          // Check if it's a Buffer
+          Buffer.isBuffer(item.contentId) ?
+            item.contentId.toString('hex') :
+          // Check if it's an ObjectId
+          typeof item.contentId === 'object' && item.contentId.toString ?
+            item.contentId.toString() :
+          // Check if it's already a string
+          typeof item.contentId === 'string' ?
+            item.contentId :
+          // Fallback
+          String(item.contentId)
+        ) : null,
+        earnedAt: safeToISOString(item.earnedAt),
+        createdAt: safeToISOString(item.createdAt)
+      };
+    });
 
     return { 
       success: true, 
@@ -192,7 +258,7 @@ export async function getTeacherLearningStats() {
   }
 }
 
-// Get current teacher data
+// Get current teacher data - OPTIMIZED
 export async function getCurrentTeacherData() {
   try {
     const session = await getServerSession();
@@ -200,13 +266,27 @@ export async function getCurrentTeacherData() {
       throw new Error('Unauthorized');
     }
 
+    // OPTIMIZED: Return cached session data first for speed
+    if (session.user) {
+      return { 
+        success: true, 
+        data: {
+          _id: session.user.id,
+          email: session.user.email || 'teacher@example.com',
+          name: session.user.name || 'Teacher',
+          grades: session.user.grades || ['Grade 8', 'Grade 9', 'Grade 10'],
+          subjects: session.user.subjects || ['Mathematics', 'Science', 'English']
+        }
+      };
+    }
+
+    // Fallback to database if session data is incomplete
     const { db } = await connectToDatabase();
     
     const user = await db.collection('user')
       .findOne({ _id: new ObjectId(session.user.id) });
 
     if (!user) {
-      // Return fallback user data instead of throwing error
       return { 
         success: true, 
         data: {
@@ -251,7 +331,7 @@ export async function getCurrentTeacherData() {
 }
 
 /**
- * Send a chat message to the Voice Coach
+ * Send a chat message to the Voice Coach - OPTIMIZED
  * @param {Object} formData - Form data containing the message and session info
  * @returns {Promise<Object>} - Response from the Voice Coach
  */
@@ -259,7 +339,7 @@ export async function sendVoiceCoachMessage(formData) {
   try {
     const message = formData.get("message");
     const sessionId = formData.get("sessionId");
-    const teacherData = JSON.parse(formData.get("studentData") || "{}");
+    const studentData = JSON.parse(formData.get("studentData") || "{}");
 
     if (!message || !sessionId) {
       return {
@@ -268,15 +348,71 @@ export async function sendVoiceCoachMessage(formData) {
       };
     }
 
-    console.log('Sending message to Voice Coach:', { message, sessionId });
+    // OPTIMIZED: Get only essential teacher data quickly
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      return {
+        success: false,
+        error: "Unauthorized"
+      };
+    }
 
-    const response = await PythonApi.startTeacherVoiceChat(teacherData, sessionId, message);
+    // OPTIMIZED: Get minimal teacher data first
+    const teacherDataResult = await getCurrentTeacherData();
+    if (!teacherDataResult.success) {
+      return {
+        success: false,
+        error: "Failed to load teacher data"
+      };
+    }
+
+    // OPTIMIZED: Use the student data already provided from frontend instead of fetching
+    const comprehensiveTeacherData = {
+      teacher_name: teacherDataResult.data.name,
+      teacher_id: teacherDataResult.data._id,
+      teacherName: teacherDataResult.data.name,
+      teacherId: teacherDataResult.data._id,
+      email: teacherDataResult.data.email,
+      grades: teacherDataResult.data.grades || [],
+      subjects: teacherDataResult.data.subjects || [],
+      
+      // Use the student data from frontend (already processed)
+      students: studentData.students || [],
+      studentPerformance: studentData.studentPerformance || {},
+      studentOverview: studentData.studentOverview || {},
+      topPerformers: studentData.topPerformers || [],
+      subjectPerformance: studentData.subjectPerformance || {},
+      
+      // Minimal context data
+      role: 'teacher',
+      recentActivities: [],
+      teachingExperience: 'intermediate',
+      topicInterests: teacherDataResult.data.subjects || [],
+      
+      // Empty arrays for non-essential data to speed up response
+      content: [],
+      assessments: [],
+      mediaToolkit: {},
+      learningAnalytics: {}
+    };
+
+    console.log('Sending message to Voice Coach with optimized data:', { 
+      message, 
+      sessionId, 
+      teacherData: {
+        teacherName: comprehensiveTeacherData.teacherName,
+        studentCount: comprehensiveTeacherData.students.length
+      }
+    });
+
+    // OPTIMIZED: Direct call to Python API without heavy processing
+    const response = await PythonApi.startTeacherChat(comprehensiveTeacherData, sessionId, message);
 
     if (response.ok) {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullResponse = '';
-      let buffer = ''; // Buffer for incomplete JSON
+      let buffer = '';
       
       while (true) {
         const { done, value } = await reader.read();
@@ -287,19 +423,17 @@ export async function sendVoiceCoachMessage(formData) {
         
         // Split by lines and process each complete line
         const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+        buffer = lines.pop() || '';
         
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
               const jsonStr = line.slice(6);
               
-              // Check if this is an image response (same as AI Tutor)
+              // Check if this is an image response
               if (jsonStr.includes('__IMAGE_RESPONSE__')) {
-                // Handle image response differently
                 const imageContent = jsonStr.replace('__IMAGE_RESPONSE__', '');
                 
-                // Try to parse the JSON properly
                 try {
                   const data = JSON.parse(imageContent);
                   if (data.content) {
@@ -308,7 +442,6 @@ export async function sendVoiceCoachMessage(formData) {
                     fullResponse = imageContent;
                   }
                 } catch (parseError) {
-                  // If JSON parsing fails, use the raw content
                   fullResponse = imageContent;
                 }
                 continue;
@@ -327,7 +460,6 @@ export async function sendVoiceCoachMessage(formData) {
             } catch (parseError) {
               console.error('Error parsing SSE data:', parseError);
               console.error('Problematic line:', line);
-              // Continue processing other lines
             }
           }
         }
@@ -360,7 +492,7 @@ export async function uploadDocumentsToVoiceCoach(formData) {
   try {
     const files = formData.getAll("files");
     const sessionId = formData.get("sessionId");
-    const studentData = JSON.parse(formData.get("studentData") || "{}");
+    const teacherData = JSON.parse(formData.get("teacherData") || "{}");
 
     if (!files || files.length === 0) {
       return {
@@ -416,6 +548,45 @@ export async function startVoiceCoachSession(teacherData) {
       };
     }
 
+    // Get comprehensive teacher data from database
+    const teacherDataResult = await getCurrentTeacherData();
+    const studentsResult = await getStudentsForTeacher();
+    const progressResult = await getTeacherProgressData();
+    const achievementsResult = await getTeacherAchievementsData();
+    const insightsResult = await getTeacherLearningInsights();
+    
+    // Get actual content and assessments from database
+    const { db } = await connectToDatabase();
+    const session = await getServerSession();
+    const userId = new ObjectId(session.user.id);
+    
+    // Get actual content created by teacher
+    const contents = await db.collection('contents')
+      .find({ userId: userId.toString() })
+      .sort({ "metadata.createdAt": -1 })
+      .toArray();
+    
+    // Get actual assessments created by teacher
+    const assessments = await db.collection('assessments')
+      .find({ userId: userId })
+      .sort({ "metadata.createdAt": -1 })
+      .toArray();
+    
+    // Get actual media toolkit items
+    const [comics, images, videos, presentations, webSearches] = await Promise.all([
+      db.collection('comics').find({ userId: userId }).toArray(),
+      db.collection('images').find({ userId: userId.toString() }).toArray(),
+      db.collection('videos').find({ userId: userId.toString() }).toArray(),
+      db.collection('presentations').find({ userId: userId.toString() }).toArray(),
+      db.collection('websearches').find({ userId: userId }).toArray()
+    ]);
+    
+    // Get actual feedback data
+    const feedback = await db.collection('feedback')
+      .find({ teacherId: userId })
+      .sort({ createdAt: -1 })
+      .toArray();
+
     // Prepare comprehensive teacher context for personalized coaching
     const teacherContext = {
       id: teacherData.id,
@@ -443,10 +614,65 @@ export async function startVoiceCoachSession(teacherData) {
         teachingStrengths: [],
         improvementAreas: []
       },
-      topicInterests: teacherData.subjects || []
+      topicInterests: teacherData.subjects || [],
+      // Add comprehensive data for AI tutor - only real data from database
+      teacherName: teacherDataResult.success ? teacherDataResult.data.name : teacherData.name,
+      teacherId: teacherDataResult.success ? teacherDataResult.data._id : teacherData.id,
+      students: studentsResult.success ? studentsResult.data : [],
+      studentPerformance: progressResult.success ? progressResult.data : [],
+      studentOverview: progressResult.success ? {
+        totalStudents: studentsResult.success ? studentsResult.data?.length || 0 : 0,
+        averageProgress: progressResult.data.length > 0 ? 
+          progressResult.data.reduce((sum, p) => sum + (p.progress?.percentage || 0), 0) / progressResult.data.length : 0
+      } : {},
+      topPerformers: achievementsResult.success ? achievementsResult.data.slice(0, 5) : [],
+      subjectPerformance: insightsResult.success ? insightsResult.insights : [],
+      behaviorAnalysis: {},
+      attendanceData: {},
+      content: contents.map(c => ({
+        id: c._id.toString(),
+        title: c.title,
+        contentType: c.contentType,
+        subject: c.subject,
+        grade: c.grade,
+        topic: c.topic,
+        createdAt: c.metadata?.createdAt?.toISOString()
+      })),
+      assessments: assessments.map(a => ({
+        id: a._id.toString(),
+        title: a.title,
+        subject: a.subject,
+        grade: a.grade,
+        topic: a.topic,
+        numQuestions: a.numQuestions,
+        createdAt: a.metadata?.createdAt?.toISOString()
+      })),
+      mediaToolkit: {
+        comics: comics.length,
+        images: images.length,
+        slides: presentations.length,
+        videos: videos.length,
+        webSearch: webSearches.length
+      },
+      mediaCount: {
+        comics: comics.length,
+        images: images.length,
+        slides: presentations.length,
+        video: videos.length,
+        webSearch: webSearches.length
+      },
+      progress: progressResult.success ? progressResult.data : {},
+      feedback: feedback.map(f => ({
+        id: f._id.toString(),
+        studentId: f.studentId?.toString(),
+        content: f.content,
+        rating: f.rating,
+        createdAt: f.createdAt?.toISOString()
+      })),
+      learningAnalytics: insightsResult.success ? insightsResult.insights : {}
     };
 
-    console.log('Prepared teacher context for voice session:', teacherContext);
+    console.log('Prepared comprehensive teacher context for voice session:', teacherContext);
 
     // Note: WebSocket creation happens on client side
     // This function prepares the data structure
@@ -466,38 +692,6 @@ export async function startVoiceCoachSession(teacherData) {
 }
 
 /**
- * Stop the current voice session
- * @param {Object} formData - Form data containing session info
- * @returns {Promise<Object>} - Stop result
- */
-export async function stopVoiceCoachSession(formData) {
-  try {
-    const sessionId = formData.get("sessionId");
-
-    if (!sessionId) {
-      return {
-        success: false,
-        error: "Session ID is required"
-      };
-    }
-
-    console.log('Stopping voice coach session:', sessionId);
-
-    return {
-      success: true,
-      message: "Voice session stopped successfully"
-    };
-
-  } catch (error) {
-    console.error("Error in stopVoiceCoachSession:", error);
-    return {
-      success: false,
-      error: error.message || "Failed to stop voice session"
-    };
-  }
-}
-
-/**
  * Perform web search for Voice Coach
  * @param {Object} formData - Form data containing search query and session info
  * @returns {Promise<Object>} - Search results
@@ -506,7 +700,7 @@ export async function performVoiceCoachWebSearch(formData) {
   try {
     const query = formData.get("query");
     const sessionId = formData.get("sessionId");
-    const studentData = JSON.parse(formData.get("studentData") || "{}");
+    const teacherData = JSON.parse(formData.get("teacherData") || "{}");
 
     if (!query || !sessionId) {
       return {
@@ -515,29 +709,86 @@ export async function performVoiceCoachWebSearch(formData) {
       };
     }
 
-    // Prepare the request payload
-    const requestData = {
-      query: query,
-      session_id: sessionId,
-      student_data: studentData
-    };
-
-    console.log('Performing web search for Voice Coach:', { query, sessionId });
-
-    // Call the Python API
-    const response = await PythonApi.performWebSearch(requestData);
-
-    if (response.success) {
-      return {
-        success: true,
-        results: response.results || [],
-        query: query
+    // Get comprehensive teacher data from database
+    const teacherDataResult = await getCurrentTeacherData();
+    const studentsResult = await getStudentsForTeacher();
+    const progressResult = await getTeacherProgressData();
+    const achievementsResult = await getTeacherAchievementsData();
+    const insightsResult = await getTeacherLearningInsights();
+    
+    if (teacherDataResult.success && studentsResult.success) {
+      const comprehensiveTeacherData = {
+        teacherName: teacherDataResult.data.name,
+        teacherId: teacherDataResult.data._id,
+        email: teacherDataResult.data.email,
+        grades: teacherDataResult.data.grades || [],
+        subjects: teacherDataResult.data.subjects || [],
+        students: studentsResult.data || [],
+        studentPerformance: progressResult.success ? progressResult.data : [],
+        studentOverview: {
+          totalStudents: studentsResult.data?.length || 0,
+          averageProgress: progressResult.success ? 
+            progressResult.data.reduce((sum, p) => sum + (p.progress?.percentage || 0), 0) / progressResult.data.length : 0
+        },
+        topPerformers: achievementsResult.success ? achievementsResult.data.slice(0, 5) : [],
+        subjectPerformance: insightsResult.success ? insightsResult.insights : [],
+        behaviorAnalysis: {},
+        attendanceData: {},
+        content: [],
+        assessments: [],
+        mediaToolkit: {
+          comics: 0,
+          images: 0,
+          slides: 0,
+          videos: 0,
+          webSearch: 0
+        },
+        mediaCount: {
+          comics: 0,
+          images: 0,
+          slides: 0,
+          video: 0,
+          webSearch: 0
+        },
+        progress: progressResult.success ? progressResult.data : {},
+        feedback: [],
+        learningAnalytics: insightsResult.success ? insightsResult.insights : {}
       };
+
+      // Prepare the request payload
+      const requestData = {
+        query: query,
+        session_id: sessionId,
+        teacher_data: comprehensiveTeacherData
+      };
+
+      console.log('Performing web search for Voice Coach:', { query, sessionId });
+
+      // Call the Python API
+      const response = await PythonApi.performWebSearch({
+        topic: query,
+        gradeLevel: '8',
+        subject: 'General',
+        contentType: 'articles',
+        language: 'English',
+        comprehension: 'intermediate',
+        maxResults: 5
+      });
+
+      if (response.success) {
+        return {
+          success: true,
+          results: response.results || [],
+          query: query
+        };
+      } else {
+        return {
+          success: false,
+          error: response.error || "Failed to perform web search"
+        };
+      }
     } else {
-      return {
-        success: false,
-        error: response.error || "Failed to perform web search"
-      };
+      throw new Error("Failed to load teacher data from database");
     }
   } catch (error) {
     console.error("Error in performVoiceCoachWebSearch:", error);

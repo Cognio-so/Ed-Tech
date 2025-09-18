@@ -6,12 +6,10 @@ import aiohttp
 import sounddevice as sd
 import numpy as np
 from dotenv import load_dotenv
-from tavily import TavilyClient
 
 load_dotenv()
 
 API_KEY = os.getenv("OPENAI_API_KEY")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 MODEL = "gpt-realtime"  # Correct model name
 SAMPLE_RATE = 24000
 CHUNK_MS = 20
@@ -22,16 +20,6 @@ audio_queue = asyncio.Queue()
 speech_detected_event = asyncio.Event()
 assistant_speaking = False
 VAD_THRESHOLD = 2000  # Adjust as needed for your microphone sensitivity
-tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
-
-def web_search(query: str):
-    """Performs a web search using Tavily."""
-    try:
-        response = tavily_client.search(query=query, search_depth="advanced", max_results=1)
-        return json.dumps(response["results"])
-    except Exception as e:
-        print(f"Error during web search: {e}")
-        return json.dumps([{"error": str(e)}])
 
 def audio_callback(indata, frames, time, status):
     """This function is called by the sounddevice stream for each audio chunk."""
@@ -114,9 +102,6 @@ Core Instructions:
     *   **Encouraging Tone (On Success)**:
         *   When: The teacher shares a success story or a student shows significant improvement.
         *   How: Celebrate their success and reinforce positive outcomes! Use phrases like, "That's fantastic news! Your approach is clearly working.", "It's wonderful to see that kind of progress.", "Great job, {teacher_data.get('teacherName', 'teacher')}! That's a testament to your teaching."
-
-**Function calling:**
-- **Web Search (`web_search`)**: Use this to find new teaching methodologies, educational research, or real-world examples to supplement the generated content.
 """
     try:
         # Start the session
@@ -139,19 +124,6 @@ Core Instructions:
                         "input_audio_noise_reduction": {
                             "type": "near_field"
                         },
-                        "tools": [
-                            {
-                                "type": "function", # Note the nesting under a "function" key
-                                "name": "web_search",
-                                "description": "Search the web for fresh information, teaching strategies, and examples.",
-                                "parameters": {
-                                    "type": "object",
-                                    "properties": {"query": {"type": "string", "description": "Natural language search query"}},
-                                    "required": ["query"]
-                                }
-                            }
-                        ],
-                        "tool_choice": "auto",
                         "include": [ 
                             "item.input_audio_transcription.logprobs",
                         ],
@@ -178,7 +150,113 @@ Core Instructions:
     except Exception as e:
         print(f"An error occurred in send_audio: {e}")
 
+# NEW: WebSocket-compatible version for frontend integration
+async def run_teacher_voice_websocket(frontend_websocket, teacher_data):
+    """Run the teacher voice agent with WebSocket communication to frontend."""
+    mic_task = None
+    send_task = None
+    output_stream = None
+    global assistant_speaking
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(
+                URL,
+                headers={
+                    "Authorization": f"Bearer {API_KEY}",
+                    "OpenAI-Beta": "realtime=v1",
+                },
+                max_msg_size=10_000_000,
+            ) as openai_ws:
+                print("Connected to OpenAI for teacher voice")
 
+                mic_task = asyncio.create_task(microphone_stream())
+                send_task = asyncio.create_task(send_audio(openai_ws, teacher_data))
+
+                output_stream = sd.OutputStream(
+                    samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=CHUNK
+                )
+                output_stream.start()
+
+                async for msg in openai_ws:
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        event = json.loads(msg.data)
+                        if event.get("type") == "session.created":
+                            # Mark that assistant is now speaking
+                            assistant_speaking = True
+                            print("Start speaking")
+                            # Notify frontend
+                            await frontend_websocket.send_json({"type": "session_created"})
+                            
+                        elif event.get("type") == "response.audio.delta":
+                            pcm = base64.b64decode(event["delta"])
+                            output_stream.write(np.frombuffer(pcm, dtype=np.int16))
+                            # Also send to frontend
+                            await frontend_websocket.send_json({
+                                "type": "audio_delta",
+                                "audio": event["delta"]
+                            })
+                            
+                        elif event.get("type") == "response.error":
+                            print(f"Received an error from the server: {event}")
+                            await frontend_websocket.send_json({
+                                "type": "error",
+                                "message": f"OpenAI error: {event}"
+                            })
+                            
+                        elif event.get("type") == "error":
+                            print(f"An unexpected error occurred: {event}")
+                            await frontend_websocket.send_json({
+                                "type": "error",
+                                "message": f"Unexpected error: {event}"
+                            })
+                            break
+                            
+                        elif event.get("type") == "response.completed":
+                            print("Received completion event. Starting new turn.")
+                            assistant_speaking = False
+                            await frontend_websocket.send_json({"type": "response_completed"})
+                            
+                        elif event.get("type") == "session.terminated":
+                            print("Session terminated.")
+                            await frontend_websocket.send_json({"type": "session_terminated"})
+                            break
+                            
+                        else:
+                            print(f"Received event: {event.get('type')}")
+
+                    elif msg.type in (
+                        aiohttp.WSMsgType.CLOSED,
+                        aiohttp.WSMsgType.ERROR,
+                    ):
+                        print("WebSocket closed or errored.")
+                        await frontend_websocket.send_json({"type": "connection_error"})
+                        break
+
+    except Exception as e:
+        print(f"An error occurred in run_teacher_voice_websocket: {e}")
+        await frontend_websocket.send_json({
+            "type": "error",
+            "message": str(e)
+        })
+
+    finally:
+        if output_stream:
+            output_stream.stop()
+            output_stream.close()
+        if mic_task:
+            mic_task.cancel()
+        if send_task:
+            send_task.cancel()
+        
+        # Await tasks to ensure they are cancelled
+        tasks = [t for t in [mic_task, send_task] if t]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        print("Cleanup complete. Exiting.")
+
+# Original main function for standalone use
 async def main():
     mic_task = None
     send_task = None
@@ -189,15 +267,6 @@ async def main():
     # --- START OF MODIFIED SECTION ---
     # Get teacher and context details from terminal input
     teacher_name = input("Enter teacher's name: ")
-    # student_details_json = input("Enter student details with reports (in JSON format): ")
-    # generated_content_json = input("Enter generated content details (in JSON format): ")
-
-    # try:
-    #     student_details_with_reports = json.loads(student_details_json)
-    #     generated_content_details = json.loads(generated_content_json)
-    # except json.JSONDecodeError as e:
-    #     print(f"Invalid JSON format: {e}. Please try again.")
-    #     return
 
     teacher_data = {
         "teacher_name": teacher_name,
@@ -266,20 +335,6 @@ async def main():
                             pcm = base64.b64decode(event["delta"])
                             output_stream.write(np.frombuffer(pcm, dtype=np.int16))
                             
-                        elif event.get("type") == "conversation.item.create":
-                            if event.get("tool_calls"):
-                                for tool_call in event["tool_calls"]:
-                                    if tool_call.get("function", {}).get("name") == "web_search":
-                                        print("Performing web search...")
-                                        arguments = json.loads(tool_call["function"]["arguments"])
-                                        # Use asyncio.create_task to run the web search concurrently
-                                        search_results = await web_search(arguments["query"])
-                                        await ws.send_json({
-                                            "type": "tool_call_output",
-                                            "call_id": tool_call["id"],
-                                            "output": search_results
-                                        })
-
                         elif event.get("type") == "response.error":
                             print(f"Received an error from the server: {event}")
                             

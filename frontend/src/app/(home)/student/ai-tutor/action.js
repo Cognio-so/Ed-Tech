@@ -250,175 +250,87 @@ export async function getCurrentUserData() {
 }
 
 /**
- * Send a chat message to the AI Tutor
+ * Send a chat message to the AI Tutor - OPTIMIZED
  * @param {Object} formData - Form data containing the message and session info
  * @returns {Promise<Object>} - Response from the AI Tutor
  */
-export async function sendChatMessage(formData) {
+export async function sendAITutorMessage(formData) {
   try {
-    const query = formData.get("query");
-    const studentId = formData.get("studentId");
-    const messageHistory = JSON.parse(formData.get("messageHistory") || "[]");
-    const uploadedFiles = JSON.parse(formData.get("uploadedFiles") || "[]");
-
-    if (!query) {
-      return {
-        success: false,
-        error: "Query is required"
-      };
+    const message = formData.get("message");
+    const sessionId = formData.get("sessionId");
+    const studentData = JSON.parse(formData.get("studentData") || "{}");
+    
+    if (!message || !sessionId) {
+      throw new Error("Message and session ID are required");
     }
 
-    // Get session to verify user
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      return {
-        success: false,
-        error: "Unauthorized"
-      };
-    }
-
-    const db = await getDbConnection();
-
-    // Fetch real student data from database
-    const user = await db.collection('user')
-      .findOne({ _id: new ObjectId(session.user.id) });
-
-    // Get student progress data
-    const progressData = await db.collection('progress')
-      .find({ studentId: new ObjectId(session.user.id) })
-      .toArray();
-
-    // Get student achievements
-    const achievements = await db.collection('achievements')
-      .find({ studentId: new ObjectId(session.user.id) })
-      .toArray();
-
-    // Get student lessons/resources
-    const lessons = await db.collection('lessons')
-      .find({ 
-        grade: { $in: user?.grades || ['8'] },
-        status: 'published'
-      })
-      .limit(10)
-      .toArray();
-
-    // Calculate learning stats
-    const completedCount = progressData.filter(p => p.status === 'completed').length;
-    const totalTimeSpent = progressData.reduce((sum, p) => sum + (p.progress?.timeSpent || 0), 0);
-    const averageScore = progressData
-      .filter(p => p.completionData?.score !== undefined)
-      .reduce((sum, p, _, arr) => sum + p.completionData.score / arr.length, 0);
-
-    // Prepare comprehensive student data with proper serialization
-    const enhancedStudentData = {
-      id: session.user.id,
-      email: user?.email || session.user.email || "",
-      name: user?.name || session.user.name || "Student",
-      grade: user?.grades?.[0] || user?.grade || "8",
-      progress: {
-        totalResources: progressData.length,
-        completedResources: completedCount,
-        averageProgress: progressData.length > 0 ? (completedCount / progressData.length) * 100 : 0,
-        totalStudyTime: totalTimeSpent,
-        averageScore: averageScore || 0
-      },
-      achievements: achievements.map(achievement => ({
-        id: achievement._id.toString(),
-        name: achievement.title || achievement.name,
-        description: achievement.description,
-        category: achievement.category,
-        points: achievement.points,
-        earnedAt: achievement.earnedAt.toISOString()
-      })),
-      learning_stats: {
-        totalResources: progressData.length,
-        completedResources: completedCount,
-        averageProgress: progressData.length > 0 ? (completedCount / progressData.length) * 100 : 0,
-        totalStudyTime: totalTimeSpent,
-        totalAchievements: achievements.length,
-        recentAchievements: achievements.filter(a => 
-          new Date(a.earnedAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-        ).length
-      },
-      assessments: progressData.filter(p => p.contentType === 'assessment').map(p => ({
-        id: p._id.toString(),
-        contentId: p.contentId.toString(),
-        title: p.contentTitle,
-        subject: p.subject,
-        grade: p.grade,
-        status: p.status,
-        score: p.completionData?.score,
-        completedAt: safeToISOString(p.completionData?.completedAt)
-      })),
-      lessons: lessons.map(lesson => ({
-        id: lesson._id.toString(),
-        title: lesson.title,
-        subject: lesson.subject,
-        grade: lesson.grade,
-        contentType: lesson.contentType || 'lesson'
-      })),
-      resources: progressData.map(progress => ({
-        id: progress._id.toString(),
-        contentId: progress.contentId.toString(),
-        title: progress.contentTitle,
-        contentType: progress.contentType,
-        status: progress.status,
-        progress: progress.progress?.percentage || 0
-      })),
-      analytics: progressData.map(progress => ({
-        contentId: progress.contentId.toString(),
-        subject: progress.subject,
-        grade: progress.grade,
-        status: progress.status,
-        timeSpent: progress.progress?.timeSpent || 0,
-        score: progress.completionData?.score,
-        completedAt: safeToISOString(progress.completionData?.completedAt)
-      }))
+    // OPTIMIZED: Use pre-processed student data from state instead of recalculating
+    const optimizedStudentData = {
+      id: studentData.id || 'student_id',
+      email: studentData.email || 'student@example.com',
+      name: studentData.name || 'Student',
+      grade: studentData.grade || '8',
+      progress: studentData.progress || {},
+      achievements: studentData.achievements || [],
+      learning_stats: studentData.learningStats || {},
+      assessments: studentData.assessments || [],
+      lessons: studentData.lessons || [],
+      resources: studentData.resources || [],
+      analytics: studentData.analytics || []
     };
 
-    // Generate session ID if not provided
-    const sessionId = `student_${session.user.id}_${Date.now()}`;
-
-    console.log('Starting chatbot stream with payload:', {
-      session_id: sessionId,
-      query: query,
-      history: messageHistory,
-      web_search_enabled: true,
-      student_data: enhancedStudentData,
-      uploaded_files: uploadedFiles
-    });
-
-    // Send request to Python backend
-    const response = await PythonApi.startChatbotStream(
-      sessionId,
-      query,
-      enhancedStudentData,
-      uploadedFiles,
-      messageHistory,
-      true // webSearchEnabled
-    );
-
+    const pythonApi = new PythonApi();
+    const response = await pythonApi.startStudentChat(optimizedStudentData, sessionId, message);
+    
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Backend error: ${response.status} - ${errorText}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    // Return the response object for client-side streaming
-    // We can't return the Response object directly, so we'll return the URL and headers
+    // Handle streaming response
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullResponse = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'text_chunk') {
+                fullResponse += data.content;
+              } else if (data.type === 'done') {
+                break;
+              } else if (data.type === 'error') {
+                throw new Error(data.message);
+              }
+            } catch (e) {
+              // Skip invalid JSON lines
+              continue;
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
     return {
       success: true,
-      streamUrl: `${PythonApi.baseUrl}/chatbot_endpoint`,
-      sessionId: sessionId,
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      response: fullResponse
     };
 
   } catch (error) {
-    console.error("Error in sendChatMessage:", error);
+    console.error('Error in sendAITutorMessage:', error);
     return {
       success: false,
-      error: error.message || "Failed to send message to AI Tutor"
+      error: error.message
     };
   }
 }

@@ -6,13 +6,11 @@ import aiohttp
 import sounddevice as sd
 import numpy as np
 from dotenv import load_dotenv
-from tavily import TavilyClient
 
 load_dotenv()
 
 API_KEY = os.getenv("OPENAI_API_KEY")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-MODEL = "gpt-4o-realtime-preview-2024-10-01"  # Correct model name for real-time API
+MODEL = "gpt-realtime"  # Correct model name
 SAMPLE_RATE = 24000
 CHUNK_MS = 20
 CHUNK = int(SAMPLE_RATE * CHUNK_MS / 1000)
@@ -22,16 +20,6 @@ audio_queue = asyncio.Queue()
 speech_detected_event = asyncio.Event()
 assistant_speaking = False
 VAD_THRESHOLD = 2000  # Adjust as needed for your microphone sensitivity
-tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
-
-def web_search(query: str):
-    """Performs a web search using Tavily."""
-    try:
-        response = tavily_client.search(query=query, search_depth="advanced", max_results=1)
-        return json.dumps(response["results"])
-    except Exception as e:
-        print(f"Error during web search: {e}")
-        return json.dumps([{"error": str(e)}])
 
 def audio_callback(indata, frames, time, status):
     """This function is called by the sounddevice stream for each audio chunk."""
@@ -63,14 +51,19 @@ async def microphone_stream():
     except Exception as e:
         print(f"An error occurred in microphone stream: {e}")
 
-async def send_audio(ws, student_details):
+async def send_audio(ws, student_data):
     """Sends audio from the queue to the OpenAI WebSocket."""
     
     # Dynamically create the prompt with student details
-    prompt = f"""You are a friendly and encouraging AI study buddy for {student_details['name']}, a student in grade {student_details['grade']} studying {', '.join(student_details['subjects'])}. Your primary goal is to help them learn, feel supported, and complete their pending assignments.
+    student_name = student_data.get('name', 'the student')
+    student_grade = student_data.get('grade', '8')
+    subjects = ', '.join(student_data.get('subjects', ['General']))
+    pending_tasks = json.dumps(student_data.get('pending_tasks', []), indent=2)
+    
+    prompt = f"""You are a friendly and encouraging AI study buddy for {student_name}, a student in grade {student_grade} studying {subjects}. Your primary goal is to help them learn, feel supported, and complete their pending assignments.
 
 Here are the student's pending tasks:
-{json.dumps(student_details['pending_tasks'], indent=2)}
+{pending_tasks}
 
 Your main objective is to help the student solve these pending assignments by explaining the topics clearly and patiently. Engage the student in a conversation about their tasks, ask which one they want to work on, and then help them understand the underlying concepts.
 
@@ -86,13 +79,12 @@ Core Instructions:
         * How: Be gentle, supportive, and focus on the learning opportunity. Never be discouraging. Use phrases like, "No worries, that's a common mistake!", "That was a good try! We're very close," "It seems I had a little trouble with that request, let's try it another way," or "Don't worry if it's not perfect yet, learning is a process."
     - Excited Tone (On Success):
         * When: The student answers a question correctly, solves a problem, or completes a task successfully.
-        * How: Celebrate their achievement with genuine enthusiasm! This helps build their confidence. Use phrases like, "Yes, that's exactly right! Great job, {student_details['name']}!", "You nailed it! Fantastic work!", or "Awesome! You've successfully figured it out!"
+        * How: Celebrate their achievement with genuine enthusiasm! This helps build their confidence. Use phrases like, "Yes, that's exactly right! Great job, {student_name}!", "You nailed it! Fantastic work!", or "Awesome! You've successfully figured it out!"
     - Calm Tone (During Stress Detection):
         * When: The student's message contains keywords indicating stress, anxiety, or frustration (e.g., "I can't do this," "help," "I'm so confused," "this is too hard," "panic").
-        * How: Shift to a calm, patient, and steady tone. Reassure them that it's okay to feel this way and that you're there to help them through it. Use phrases like, "It's okay, let's take a deep breath," "We can work through this together, one step at a time," "I understand this can be challenging, but don't give up," or "Let's try a simpler approach.
-        
-        **Function calling:**
-        - **Web Search (`web_search`)**: Use this to find current, real-world information or examples related to their assignments."""
+        * How: Shift to a calm, patient, and steady tone. Reassure them that it's okay to feel this way and that you're there to help them through it. Use phrases like, "It's okay, let's take a deep breath," "We can work through this together, one step at a time," "I understand this can be challenging, but don't give up," or "Let's try a simpler approach."
+"""
+
     try:
         # Start the session
         await ws.send_json(
@@ -107,24 +99,13 @@ Core Instructions:
                             "threshold": 0.5,
                             "prefix_padding_ms": 300,
                             "silence_duration_ms": 500,
+                            "interrupt_response": True,
+                            "create_response": True
                         },
                         "input_audio_transcription": { "model": "gpt-4o-transcribe" },
                         "input_audio_noise_reduction": {
                             "type": "near_field"
                         },
-                        "tools": [
-                            {
-                                "type": "function", # Note the nesting under a "function" key
-                                "name": "web_search",
-                                "description": "Search the web for fresh information and examples.",
-                                "parameters": {
-                                    "type": "object",
-                                    "properties": {"query": {"type": "string", "description": "provide latest information, real-time answers, and examples."}},
-                                    "required": ["query"]
-                                }
-                            }
-                        ],
-                        "tool_choice": "auto",
                         "include": [ 
                             "item.input_audio_transcription.logprobs",
                         ],
@@ -151,55 +132,134 @@ Core Instructions:
     except Exception as e:
         print(f"An error occurred in send_audio: {e}")
 
-
-async def main():
+# NEW: WebSocket-compatible version for frontend integration
+async def run_student_voice_websocket(frontend_websocket, student_data):
+    """Run the student voice agent with WebSocket communication to frontend."""
     mic_task = None
     send_task = None
-    interrupt_task = None
     output_stream = None
     global assistant_speaking
     
-    # Get student details from command line arguments or environment
-    import sys
-    if len(sys.argv) > 3:
-        name = sys.argv[1]
-        grade = sys.argv[2]  # FIXED: Changed from class_name to grade
-        subjects_input = sys.argv[3]
-        subjects = [subject.strip() for subject in subjects_input.split(',')]
-        
-        # Get pending tasks from command line or use default
-        if len(sys.argv) > 4:
-            try:
-                pending_tasks = json.loads(sys.argv[4])
-            except json.JSONDecodeError:
-                pending_tasks = [
-                    {"topic": "General Studies", "status": "Not Started"}
-                ]
-        else:
-            pending_tasks = [
-                {"topic": "General Studies", "status": "Not Started"}
-            ]
-    else:
-        # Fallback to environment variables or defaults
-        name = os.getenv("STUDENT_NAME", "Student")
-        grade = os.getenv("STUDENT_GRADE", "8")  # FIXED: Changed from STUDENT_CLASS to STUDENT_GRADE
-        subjects_input = os.getenv("STUDENT_SUBJECTS", "Mathematics, Science")
-        subjects = [subject.strip() for subject in subjects_input.split(',')]
-        pending_tasks = [
-            {"topic": "General Studies", "status": "Not Started"}
-        ]
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(
+                URL,
+                headers={
+                    "Authorization": f"Bearer {API_KEY}",
+                    "OpenAI-Beta": "realtime=v1",
+                },
+                max_msg_size=10_000_000,
+            ) as openai_ws:
+                print("Connected to OpenAI for student voice")
 
-    student_details = {
-        "name": name,
-        "grade": grade,  # FIXED: Changed from class to grade
-        "subjects": subjects,
-        "pending_tasks": pending_tasks
+                mic_task = asyncio.create_task(microphone_stream())
+                send_task = asyncio.create_task(send_audio(openai_ws, student_data))
+
+                output_stream = sd.OutputStream(
+                    samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=CHUNK
+                )
+                output_stream.start()
+
+                async for msg in openai_ws:
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        event = json.loads(msg.data)
+                        if event.get("type") == "session.created":
+                            # Mark that assistant is now speaking
+                            assistant_speaking = True
+                            print("Start speaking")
+                            # Notify frontend
+                            await frontend_websocket.send_json({"type": "session_created"})
+                            
+                        elif event.get("type") == "response.audio.delta":
+                            pcm = base64.b64decode(event["delta"])
+                            output_stream.write(np.frombuffer(pcm, dtype=np.int16))
+                            # Also send to frontend
+                            await frontend_websocket.send_json({
+                                "type": "audio_delta",
+                                "audio": event["delta"]
+                            })
+                            
+                        elif event.get("type") == "response.error":
+                            print(f"Received an error from the server: {event}")
+                            await frontend_websocket.send_json({
+                                "type": "error",
+                                "message": f"OpenAI error: {event}"
+                            })
+                            
+                        elif event.get("type") == "error":
+                            print(f"An unexpected error occurred: {event}")
+                            await frontend_websocket.send_json({
+                                "type": "error",
+                                "message": f"Unexpected error: {event}"
+                            })
+                            break
+                            
+                        elif event.get("type") == "response.completed":
+                            print("Received completion event. Starting new turn.")
+                            assistant_speaking = False
+                            await frontend_websocket.send_json({"type": "response_completed"})
+                            
+                        elif event.get("type") == "session.terminated":
+                            print("Session terminated.")
+                            await frontend_websocket.send_json({"type": "session_terminated"})
+                            break
+                            
+                        else:
+                            print(f"Received event: {event.get('type')}")
+
+                    elif msg.type in (
+                        aiohttp.WSMsgType.CLOSED,
+                        aiohttp.WSMsgType.ERROR,
+                    ):
+                        print("WebSocket closed or errored.")
+                        await frontend_websocket.send_json({"type": "connection_error"})
+                        break
+
+    except Exception as e:
+        print(f"An error occurred in run_student_voice_websocket: {e}")
+        await frontend_websocket.send_json({
+            "type": "error",
+            "message": str(e)
+        })
+
+    finally:
+        if output_stream:
+            output_stream.stop()
+            output_stream.close()
+        if mic_task:
+            mic_task.cancel()
+        if send_task:
+            send_task.cancel()
+        
+        # Await tasks to ensure they are cancelled
+        tasks = [t for t in [mic_task, send_task] if t]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        print("Cleanup complete. Exiting.")
+
+# Original main function for standalone use
+async def main():
+    mic_task = None
+    send_task = None
+    output_stream = None
+    global assistant_speaking
+    
+    # Get student details from terminal input
+    student_name = input("Enter student's name: ")
+    student_grade = input("Enter student's grade: ")
+
+    student_data = {
+        "name": student_name,
+        "grade": student_grade,
+        "subjects": ["Mathematics", "Science", "English"],
+        "pending_tasks": [
+            {"subject": "Math", "task": "Complete algebra homework", "due": "Tomorrow"},
+            {"subject": "Science", "task": "Study for chemistry test", "due": "Friday"}
+        ]
     }
     
-    print(f"\nStarting study session for {student_details['name']}...")
-    print(f"Grade: {student_details['grade']}")  # FIXED: Changed from Class to Grade
-    print(f"Subjects: {', '.join(student_details['subjects'])}")
-    print(f"Pending Tasks: {len(student_details['pending_tasks'])} tasks")
+    print(f"\nStarting student voice session for {student_data['name']}...")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -214,8 +274,8 @@ async def main():
                 print("Connected to OpenAI. Speak...")
 
                 mic_task = asyncio.create_task(microphone_stream())
-                # Pass student details to the send_audio task
-                send_task = asyncio.create_task(send_audio(ws, student_details))
+                # Pass student data to the send_audio task
+                send_task = asyncio.create_task(send_audio(ws, student_data))
 
                 output_stream = sd.OutputStream(
                     samplerate=SAMPLE_RATE, channels=1, dtype="int16", blocksize=CHUNK
@@ -229,31 +289,11 @@ async def main():
                             # Mark that assistant is now speaking
                             assistant_speaking = True
                             print("Start speaking")
-
-                        elif event.get("type") == "response.audio.delta":
-                            try:
-                                pcm = base64.b64decode(event["delta"])
-                                audio_data = np.frombuffer(pcm, dtype=np.int16)
-                                if len(audio_data) > 0:
-                                    output_stream.write(audio_data)
-                            except Exception as e:
-                                print(f"Error playing audio delta: {e}")
-                                continue
                             
-                        elif event.get("type") == "conversation.item.create":
-                            if event.get("tool_calls"):
-                                for tool_call in event["tool_calls"]:
-                                    if tool_call.get("function", {}).get("name") == "web_search":
-                                        print("Performing web search...")
-                                        arguments = json.loads(tool_call["function"]["arguments"])
-                                        # Use asyncio.create_task to run the web search concurrently
-                                        search_results = await web_search(arguments["query"])
-                                        await ws.send_json({
-                                            "type": "tool_call_output",
-                                            "call_id": tool_call["id"],
-                                            "output": search_results
-                                        })
-
+                        elif event.get("type") == "response.audio.delta":
+                            pcm = base64.b64decode(event["delta"])
+                            output_stream.write(np.frombuffer(pcm, dtype=np.int16))
+                            
                         elif event.get("type") == "response.error":
                             print(f"Received an error from the server: {event}")
                             
@@ -290,16 +330,13 @@ async def main():
             mic_task.cancel()
         if send_task:
             send_task.cancel()
-        if interrupt_task:
-            interrupt_task.cancel()
         
         # Await tasks to ensure they are cancelled
-        tasks = [t for t in [mic_task, send_task, interrupt_task] if t]
+        tasks = [t for t in [mic_task, send_task] if t]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
         print("Cleanup complete. Exiting.")
-
 
 if __name__ == "__main__":
     try:
