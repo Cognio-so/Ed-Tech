@@ -404,7 +404,7 @@ const AiTutor = () => {
 
             console.log('Sending payload to Python backend:', payload);
 
-            const response = await fetch('http://localhost:8000/chatbot_endpoint', {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_PYTHON_API_URL}/chatbot_endpoint`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -671,7 +671,7 @@ const AiTutor = () => {
             };
 
             // FIXED: Use direct WebSocket connection like voice-coach instead of PythonApi
-            const ws = new WebSocket('ws://localhost:8000/ws/student-voice');
+            const ws = new WebSocket(`${process.env.NEXT_PUBLIC_PYTHON_API_URL}/ws/student-voice`);
             
             ws.onopen = () => {
                 console.log('Student voice WebSocket connected');
