@@ -672,7 +672,9 @@ const AiTutor = () => {
 
             // FIXED: Use proper WebSocket URL construction
             const backendUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:8000';
-            const wsUrl = backendUrl.replace(/^https?:\/\//, '').replace(/^http/, 'ws').replace(/^https/, 'wss');
+            const wsUrl = backendUrl.startsWith('https://') 
+                ? backendUrl.replace('https://', 'wss://')
+                : backendUrl.replace('http://', 'ws://');
             const ws = new WebSocket(`${wsUrl}/ws/student-voice`);
             
             ws.onopen = () => {
