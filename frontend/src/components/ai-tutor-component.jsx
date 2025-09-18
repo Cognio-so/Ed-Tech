@@ -670,8 +670,10 @@ const AiTutor = () => {
                 learningAnalytics: statsResult.success ? statsResult.data : {}
             };
 
-            // FIXED: Use direct WebSocket connection like voice-coach instead of PythonApi
-            const ws = new WebSocket(`${process.env.NEXT_PUBLIC_PYTHON_API_URL}/ws/student-voice`);
+            // FIXED: Use proper WebSocket URL construction
+            const backendUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:8000';
+            const wsUrl = backendUrl.replace(/^https?:\/\//, '').replace(/^http/, 'ws').replace(/^https/, 'wss');
+            const ws = new WebSocket(`${wsUrl}/ws/student-voice`);
             
             ws.onopen = () => {
                 console.log('Student voice WebSocket connected');
