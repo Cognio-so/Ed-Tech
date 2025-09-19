@@ -15,11 +15,11 @@ export async function generatePresentation(presentationData) {
 
     // Transform frontend data to match Python backend schema
     const pythonSchema = {
-      topic: presentationData.topic,
-      instructions: presentationData.instructions || '',
-      slideCount: parseInt(presentationData.slideCount),
-      language: presentationData.language,
-      includeImages: presentationData.includeImages !== false,
+      plain_text: presentationData.topic,                    // ✅ Fixed: was 'topic'
+      custom_user_instructions: presentationData.instructions || '',  // ✅ Fixed: was 'instructions'
+      length: parseInt(presentationData.slideCount),         // ✅ Fixed: was 'slideCount'
+      language: presentationData.language,                   // ✅ Remove conversion, let PythonApi.js handle it
+      fetch_images: presentationData.includeImages !== false,  // ✅ Fixed: was 'includeImages'
       verbosity: presentationData.verbosity || 'standard',
       template: presentationData.template || 'default'
     };

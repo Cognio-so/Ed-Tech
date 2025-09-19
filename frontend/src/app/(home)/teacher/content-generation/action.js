@@ -46,7 +46,7 @@ export async function generateSlidesFromContent(contentData) {
       content: contentData.content,
       topic: contentData.topic,
       slideCount: contentData.slideCount || 10,
-      language: contentData.language?.toLowerCase() === "arabic" ? "ARABIC" : "ENGLISH",
+      language: contentData.language,
       template: contentData.template || "default"
     };
 
