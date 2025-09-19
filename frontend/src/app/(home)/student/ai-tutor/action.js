@@ -290,6 +290,7 @@ export async function sendAITutorMessage(formData) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let fullResponse = '';
+    let buffer = '';
 
     try {
       while (true) {
@@ -297,12 +298,37 @@ export async function sendAITutorMessage(formData) {
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-
+        buffer += chunk;
+        
+        // Split by lines and process each complete line
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6));
+              const jsonStr = line.slice(6);
+              
+              // Check if this is an image response
+              if (jsonStr.includes('__IMAGE_RESPONSE__')) {
+                const imageContent = jsonStr.replace('__IMAGE_RESPONSE__', '');
+                
+                try {
+                  const data = JSON.parse(imageContent);
+                  if (data.content) {
+                    fullResponse = data.content;
+                  } else {
+                    fullResponse = imageContent;
+                  }
+                } catch (parseError) {
+                  fullResponse = imageContent;
+                }
+                continue;
+              }
+              
+              // Handle regular text chunks
+              const data = JSON.parse(jsonStr);
+              
               if (data.type === 'text_chunk') {
                 fullResponse += data.content;
               } else if (data.type === 'done') {
@@ -310,9 +336,9 @@ export async function sendAITutorMessage(formData) {
               } else if (data.type === 'error') {
                 throw new Error(data.message);
               }
-            } catch (e) {
-              // Skip invalid JSON lines
-              continue;
+            } catch (parseError) {
+              console.error('Error parsing SSE data:', parseError);
+              console.error('Problematic line:', line);
             }
           }
         }

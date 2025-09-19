@@ -43,10 +43,6 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
-import rehypeSanitize from 'rehype-sanitize';
-import { MarkdownStyles } from '@/components/Markdown';
-import PythonApi from '@/lib/PythonApi';
 import { toast } from 'sonner';
 import { 
     sendVoiceCoachMessage, 
@@ -68,6 +64,9 @@ import {
 // Add import for real student data
 import { getStudents } from '../app/(home)/teacher/class-grouping/action';
 
+// Import RealtimeOpenAIService from the separate file
+import { RealtimeOpenAIService } from '@/lib/realtimeOpenAI';
+
 const VoiceCoach = () => {
     const [messages, setMessages] = useState([
         {
@@ -86,19 +85,15 @@ const VoiceCoach = () => {
     const messagesEndRef = useRef(null);
     const scrollAreaRef = useRef(null);
     
-    // WebSocket voice state
-    const [isVoiceActive, setIsVoiceActive] = useState(false);
-    const [voiceWebSocket, setVoiceWebSocket] = useState(null);
-    const [isListening, setIsListening] = useState(false);
-    const [transcription, setTranscription] = useState('');
-    
-    // Audio context for WebSocket audio playback and recording
-    const [audioContext, setAudioContext] = useState(null);
-    const [mediaRecorder, setMediaRecorder] = useState(null);
-    const [audioStream, setAudioStream] = useState(null);
-    const audioQueueRef = useRef([]);
-    const isPlayingRef = useRef(false);
-    const isRecordingRef = useRef(false);
+    // Voice state using RealtimeOpenAIService - Updated to match reference
+    const [lipSyncData, setLipSyncData] = useState({ A: 0, E: 0, I: 0, O: 0, U: 0 });
+    const [isConnected, setIsConnected] = useState(false);
+    const [transcript, setTranscript] = useState('');
+    const [error, setError] = useState('');
+    const openAIServiceRef = useRef(null);
+
+    // Get API key from environment or localStorage
+    const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || (typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') : '');
 
     // Teacher data state
     const [user, setUser] = useState(null);
@@ -115,96 +110,56 @@ const VoiceCoach = () => {
     // Add real student data state
     const [students, setStudents] = useState([]);
 
-    // Improved autoscrolling with proper timing
-    const scrollToBottom = () => {
-        setTimeout(() => {
-            if (messagesEndRef.current) {
-                messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-            }
-        }, 100);
-    };
-
-    // Scroll to bottom when messages change or loading state changes
+    // Auto-scroll to bottom when messages change
     useEffect(() => {
-        scrollToBottom();
-    }, [messages, isLoading]);
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [messages]);
 
-    // Initialize audio context for WebSocket audio playback and recording
+    // API key validation and cleanup
     useEffect(() => {
-        const initAudioContext = async () => {
-            try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                setAudioContext(ctx);
-            } catch (error) {
-                console.error('Failed to initialize audio context:', error);
+        if (!apiKey) {
+            setError('❌ OpenAI API key required. Set NEXT_PUBLIC_OPENAI_API_KEY or add to localStorage.');
+        }
+
+        return () => {
+            if (openAIServiceRef.current) {
+                openAIServiceRef.current.disconnect();
             }
         };
-        initAudioContext();
-    }, []);
+    }, [apiKey]);
 
-    // Start microphone recording
-    const startMicrophoneRecording = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: {
-                    sampleRate: 24000,
-                    channelCount: 1,
-                    echoCancellation: true,
-                    noiseSuppression: true
-                } 
-            });
-            
-            setAudioStream(stream);
-            
-            // Create MediaRecorder for audio capture
-            const recorder = new MediaRecorder(stream, {
-                mimeType: 'audio/webm;codecs=opus'
-            });
-            
-            setMediaRecorder(recorder);
-            
-            // Handle audio data chunks
-            recorder.ondataavailable = (event) => {
-                if (event.data.size > 0 && voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
-                    // Convert blob to base64 and send to WebSocket
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        const base64Audio = reader.result.split(',')[1];
-                        voiceWebSocket.send(JSON.stringify({
-                            type: 'audio_input',
-                            audio: base64Audio
-                        }));
+    // Handle transcript updates - automatically add to messages
+    useEffect(() => {
+        if (transcript) {
+            setMessages(prev => {
+                const newMessages = [...prev];
+                const lastMessage = newMessages[newMessages.length - 1];
+                
+                if (lastMessage && lastMessage.type === 'ai' && lastMessage.isLive) {
+                    // Update existing live message
+                    newMessages[newMessages.length - 1] = { 
+                        ...lastMessage, 
+                        content: transcript,
+                        id: lastMessage.id // Keep the same ID
                     };
-                    reader.readAsDataURL(event.data);
+                } else {
+                    // Add new live message
+                    newMessages.push({ 
+                        id: Date.now() + Math.random(),
+                        type: 'ai', 
+                        content: transcript, 
+                        isLive: true,
+                        timestamp: new Date(),
+                        avatar: <GraduationCap className="w-4 h-4 text-blue-500" />
+                    });
                 }
-            };
-            
-            // Start recording with small chunks
-            recorder.start(100); // Record in 100ms chunks
-            isRecordingRef.current = true;
-            
-            console.log('Microphone recording started');
-        } catch (error) {
-            console.error('Error starting microphone recording:', error);
-            toast.error('Failed to access microphone');
+                
+                return newMessages;
+            });
         }
-    };
-
-    // Stop microphone recording
-    const stopMicrophoneRecording = () => {
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            mediaRecorder.stop();
-        }
-        
-        if (audioStream) {
-            audioStream.getTracks().forEach(track => track.stop());
-            setAudioStream(null);
-        }
-        
-        setMediaRecorder(null);
-        isRecordingRef.current = false;
-        console.log('Microphone recording stopped');
-    };
+    }, [transcript]);
 
     // Fetch teacher data and real student data
     useEffect(() => {
@@ -316,32 +271,6 @@ const VoiceCoach = () => {
             initializeSession();
         }
     }, [user, dataLoading, teacherData]);
-
-    // Cleanup function - FIXED
-    useEffect(() => {
-        return () => {
-            // Clean up WebSocket
-            if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
-                try {
-                    voiceWebSocket.close();
-                } catch (error) {
-                    console.error('Error cleaning up WebSocket:', error);
-                }
-            }
-            
-            // Clean up microphone recording
-            stopMicrophoneRecording();
-            
-            // FIXED: Check if audio context is not already closed before closing
-            if (audioContext && audioContext.state !== 'closed') {
-                try {
-                    audioContext.close();
-                } catch (error) {
-                    console.error('Error closing audio context:', error);
-                }
-            }
-        };
-    }, [voiceWebSocket, audioContext]);
 
     // Save conversation to history
     const saveConversationToHistory = async (allMessages, sessionType) => {
@@ -513,7 +442,7 @@ const VoiceCoach = () => {
 
                 setTimeout(() => {
                     const allMessages = [...messages, userMessage, aiMessage];
-                    saveConversationToHistory(allMessages, isVoiceActive ? 'mixed' : 'text');
+                    saveConversationToHistory(allMessages, isConnected ? 'mixed' : 'text');
                 }, 500);
             } else {
                 throw new Error(response.error || 'Failed to get response');
@@ -534,7 +463,7 @@ const VoiceCoach = () => {
 
             setTimeout(() => {
                 const allMessages = [...messages, userMessage, errorMessage];
-                saveConversationToHistory(allMessages, isVoiceActive ? 'mixed' : 'text');
+                saveConversationToHistory(allMessages, isConnected ? 'mixed' : 'text');
             }, 500);
         } finally {
             setIsLoading(false);
@@ -561,210 +490,206 @@ const VoiceCoach = () => {
         setMessages([clearMessage]);
     };
 
-    // WebSocket audio playback function - FIXED
-    const playAudioFromBase64 = async (base64Audio) => {
-        if (!audioContext || isPlayingRef.current) return;
-
-        try {
-            isPlayingRef.current = true;
-            
-            // FIXED: The audio data from OpenAI is already in the correct format
-            // We don't need to decode it as base64, it's already PCM data
-            const audioData = atob(base64Audio);
-            const audioBuffer = new ArrayBuffer(audioData.length);
-            const view = new Uint8Array(audioBuffer);
-            
-            for (let i = 0; i < audioData.length; i++) {
-                view[i] = audioData.charCodeAt(i);
-            }
-
-            // FIXED: Create audio buffer directly from PCM data
-            const decodedBuffer = await audioContext.decodeAudioData(audioBuffer);
-            const source = audioContext.createBufferSource();
-            source.buffer = decodedBuffer;
-            source.connect(audioContext.destination);
-            
-            source.onended = () => {
-                isPlayingRef.current = false;
-            };
-            
-            source.start();
-        } catch (error) {
-            console.error('Error playing audio:', error);
-            isPlayingRef.current = false;
-            
-            // FIXED: Try alternative audio playback method
-            try {
-                // Create a simple audio element for fallback
-                const audio = new Audio();
-                audio.src = `data:audio/wav;base64,${base64Audio}`;
-                audio.play().catch(e => console.error('Fallback audio play failed:', e));
-                isPlayingRef.current = false;
-            } catch (fallbackError) {
-                console.error('Fallback audio playback failed:', fallbackError);
-                isPlayingRef.current = false;
-            }
-        }
-    };
-
-    // Start voice session handler - WebSocket based with audio input
-    const startVoiceSessionHandler = async () => {
-        if (isVoiceActive) {
-            // Stop voice session
-            try {
-                stopMicrophoneRecording();
-                if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
-                    voiceWebSocket.close();
-                }
-        } catch (error) {
-                console.error('Error closing WebSocket:', error);
-            }
-            setVoiceWebSocket(null);
-            setIsVoiceActive(false);
-        setIsListening(false);
+    // Updated handleStart function
+    const handleStart = async () => {
+        if (!apiKey) {
+            setError('❌ OpenAI API key required');
             return;
         }
         
+        if (isLoading) return;
+        
+        setIsLoading(true);
+        setError('');
+        
         try {
-            setIsLoading(true);
+            openAIServiceRef.current = new RealtimeOpenAIService(apiKey);
             
-            // Get comprehensive teacher data
-            const teacherDataResult = await getCurrentTeacherData();
-            const studentsResult = await getStudentsForTeacher();
-            const progressResult = await getTeacherProgressData();
-            const achievementsResult = await getTeacherAchievementsData();
-            const insightsResult = await getTeacherLearningInsights();
-            
-            if (!teacherDataResult.success || !studentsResult.success) {
-                throw new Error("Failed to load teacher data");
-            }
-
-            const user = teacherDataResult.data;
-            const teacherData = {
-                progress: progressResult.success ? progressResult.data : [],
-                achievements: achievementsResult.success ? achievementsResult.data : [],
-                learningStats: insightsResult.success ? insightsResult.insights : {},
-                students: studentsResult.data || [],
-                resources: [],
-                lessons: [],
-                userProgress: insightsResult.success ? insightsResult.insights : {}
+            // Set up callbacks
+            openAIServiceRef.current.onLipSyncData = (data) => {
+                setLipSyncData(data);
             };
 
-            // Prepare teacher context for voice session
-            const teacherContext = {
-                id: user._id,
-                email: user.email,
-                name: user.name || user.email,
-                grades: user.grades || [],
-                subjects: user.subjects || [],
-                role: 'teacher',
-                recentActivities: teacherData.progress.slice(0, 5),
-                teachingExperience: 'intermediate',
-                topicInterests: user.subjects || [],
-                teacherName: user.name || user.email,
-                students: studentsResult.data || [],
-                studentPerformance: progressResult.success ? progressResult.data : [],
-                studentOverview: progressResult.success ? {
-                    totalStudents: studentsResult.data?.length || 0,
-                    averageProgress: progressResult.data.length > 0 ? 
-                        progressResult.data.reduce((sum, p) => sum + (p.progress?.percentage || 0), 0) / progressResult.data.length : 0
-                } : {},
-                topPerformers: achievementsResult.success ? achievementsResult.data.slice(0, 5) : [],
-                subjectPerformance: insightsResult.success ? insightsResult.insights : [],
-                content: [],
-                assessments: [],
-                mediaToolkit: {},
-                learningAnalytics: insightsResult.success ? insightsResult.insights : {}
+            // Handle AI response transcripts
+            openAIServiceRef.current.onTranscript = (delta) => {
+                setTranscript(prev => prev + delta);
             };
 
-            // Connect to WebSocket endpoint
-            const backendUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:8000';
-            const wsUrl = backendUrl.startsWith('https://') 
-              ? backendUrl.replace('https://', 'wss://')
-              : backendUrl.replace('http://', 'ws://');
-            const ws = new WebSocket(`${wsUrl}/ws/teacher-voice`);
-            
-            ws.onopen = () => {
-                console.log('Teacher voice WebSocket connected');
-                setVoiceWebSocket(ws);
-                setIsVoiceActive(true);
-                setIsListening(true);
+            // Handle user input transcripts
+            openAIServiceRef.current.onUserTranscript = (userTranscript) => {
+                console.log('🎤 User said:', userTranscript);
                 
-                // Send teacher data to WebSocket
-                ws.send(JSON.stringify(teacherContext));
+                // Add user message to chat
+                const userMessage = {
+                    id: Date.now() + Math.random(),
+                    type: 'user',
+                    content: userTranscript,
+                    timestamp: new Date(),
+                    avatar: <User className="w-4 h-4 text-blue-500" />
+                };
                 
-                // Start microphone recording
-                startMicrophoneRecording();
+                setMessages(prev => [...prev, userMessage]);
             };
-            
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                
-        switch (data.type) {
-                    case 'session_created':
-                        console.log('Voice session created');
-                break;
-                    case 'audio_delta':
-                        // Handle audio output - play the audio from WebSocket
-                        if (data.audio) {
-                            playAudioFromBase64(data.audio);
+
+            // Prepare teacher data for the AI
+            const teacherDataForAI = {
+                teacherName: user?.name || 'Teacher',
+                students: students.map(student => ({
+                    student_name: student.name,
+                    student_id: student._id,
+                    email: student.email,
+                    grades: student.grades || [],
+                    subjects: student.subjects || [],
+                    performance: student.performance || {
+                        overall: 75,
+                        assignments: 80,
+                        quizzes: 70,
+                        participation: 85
+                    },
+                    lastActive: student.lastActive || new Date().toISOString(),
+                    group: student.group || 'Default',
+                    notes: student.notes || '',
+                    reports: [
+                        {
+                            subject: "Overall Performance",
+                            score: student.performance?.overall || 75,
+                            comments: `Performance: ${student.performance?.overall || 75}%`
+                        }
+                    ]
+                })),
+                studentPerformance: {
+                    totalStudents: students.length,
+                    averagePerformance: students.length > 0 ? 
+                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0,
+                    topPerformers: students
+                        .sort((a, b) => (b.performance?.overall || 75) - (a.performance?.overall || 75))
+                        .slice(0, 3)
+                        .map(s => ({ name: s.name, score: s.performance?.overall || 75 })),
+                    strugglingStudents: students
+                        .filter(s => (s.performance?.overall || 75) < 70)
+                        .map(s => ({ name: s.name, score: s.performance?.overall || 75, subjects: s.subjects }))
+                },
+                studentOverview: {
+                    totalStudents: students.length,
+                    gradeDistribution: students.reduce((acc, s) => {
+                        s.grades.forEach(grade => {
+                            acc[grade] = (acc[grade] || 0) + 1;
+                        });
+                        return acc;
+                    }, {}),
+                    subjectDistribution: students.reduce((acc, s) => {
+                        s.subjects.forEach(subject => {
+                            acc[subject] = (acc[subject] || 0) + 1;
+                        });
+                        return acc;
+                    }, {})
+                },
+                topPerformers: students
+                    .sort((a, b) => (b.performance?.overall || 75) - (a.performance?.overall || 75))
+                    .slice(0, 5)
+                    .map(s => ({
+                        name: s.name,
+                        performance: s.performance?.overall || 75,
+                        strengths: s.subjects,
+                        group: s.group || 'Default'
+                    })),
+                subjectPerformance: students.reduce((acc, s) => {
+                    s.subjects.forEach(subject => {
+                        if (!acc[subject]) {
+                            acc[subject] = { total: 0, count: 0, students: [] };
+                        }
+                        acc[subject].total += s.performance?.overall || 75;
+                        acc[subject].count += 1;
+                        acc[subject].students.push({
+                            name: s.name,
+                            score: s.performance?.overall || 75
+                        });
+                    });
+                    return acc;
+                }, {}),
+                content: teacherData.lessons || [],
+                assessments: teacherData.assessments || [],
+                mediaToolkit: {
+                    comics: teacherData.comics || [],
+                    images: teacherData.images || [],
+                    slides: teacherData.slides || [],
+                    videos: teacherData.videos || []
+                },
+                learningAnalytics: {
+                    totalLessons: teacherData.lessons?.length || 0,
+                    totalAssessments: teacherData.assessments?.length || 0,
+                    averageStudentPerformance: students.length > 0 ? 
+                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0
                 }
-                break;
-                    case 'response_completed':
-                        console.log('Response completed');
-                break;
-                    case 'session_terminated':
-                        console.log('Session terminated');
-                        setIsVoiceActive(false);
-                        setIsListening(false);
-                        setVoiceWebSocket(null);
-                        stopMicrophoneRecording();
-                break;
-                    case 'error':
-                        console.error('Voice session error:', data.message);
-                break;
-                }
             };
+
+            console.log('📊 Teacher data prepared for AI:', {
+                teacherName: teacherDataForAI.teacherName,
+                studentsCount: teacherDataForAI.students.length,
+                hasStudentData: teacherDataForAI.students.length > 0,
+                hasContent: teacherDataForAI.content.length > 0
+            });
+
+            // Connect to OpenAI with teacher data
+            await openAIServiceRef.current.connect(teacherDataForAI);
             
-            ws.onerror = (error) => {
-                console.error('Voice WebSocket error:', error);
-            };
-            
-            ws.onclose = (event) => {
-                console.log('Voice WebSocket closed', event.code, event.reason);
-                setIsVoiceActive(false);
-                setIsListening(false);
-                setVoiceWebSocket(null);
-                stopMicrophoneRecording();
-            };
+            setIsConnected(true);
+            setMessages(prev => [...prev, { 
+                id: Date.now() + Math.random(),
+                type: 'system', 
+                content: `start speaking with AI Assistant` 
+            }]);
             
         } catch (error) {
-            console.error('Error starting voice session:', error);
+            console.error('Connection failed:', error);
+            setError(`Failed to connect: ${error.message}`);
+            setMessages(prev => [...prev, { 
+                id: Date.now() + Math.random(),
+                type: 'error', 
+                content: `❌ Connection failed: ${error.message}` 
+            }]);
         } finally {
             setIsLoading(false);
         }
     };
 
-    // Stop voice session handler
-    const stopVoiceSessionHandler = async () => {
+    // Add the handleVoiceToggle function after handleDisconnect
+    const handleVoiceToggle = async () => {
+        if (isConnected) {
+            handleDisconnect();
+        } else {
+            await handleStart();
+        }
+    };
+
+    // Improve the handleDisconnect function
+    const handleDisconnect = () => {
         try {
-            console.log('Stopping voice session...');
+            console.log(' Starting disconnect process...');
             
-            stopMicrophoneRecording();
-            
-            if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
-                    voiceWebSocket.close();
+            if (openAIServiceRef.current) {
+                console.log(' Disconnecting from OpenAI...');
+                openAIServiceRef.current.disconnect();
+                openAIServiceRef.current = null;
             }
             
-            setIsVoiceActive(false);
-            setIsListening(false);
-            setVoiceWebSocket(null);
-            setTranscription('');
+            // Reset all voice-related state
+            setIsConnected(false);
+            setTranscript('');
+            setLipSyncData({ A: 0, E: 0, I: 0, O: 0, U: 0 });
+            setError('');
+            setIsLoading(false);
             
-            toast.success('Voice session stopped');
+            setMessages(prev => [...prev, { 
+                id: Date.now() + Math.random(),
+                type: 'system', 
+                content: 'Its a pleasure to help you today' 
+            }]);
+            
+            console.log('✅ Successfully disconnected from OpenAI');
         } catch (error) {
-            console.error('Error stopping voice session:', error);
-            toast.error('Error stopping voice session');
+            console.error('❌ Error during disconnect:', error);
+            setError(`Disconnect error: ${error.message}`);
         }
     };
 
@@ -794,7 +719,7 @@ const VoiceCoach = () => {
                 toast.success(`Uploaded ${files.length} file(s) successfully`);
                 
                 const uploadMessage = {
-                    id: Date.now(),
+                    id: Date.now() + Math.random(), // Add unique ID
                     type: 'ai',
                     content: `I've received ${files.length} file(s). I can now help you analyze and discuss the content. What would you like to know about these documents?`,
                     timestamp: new Date(),
@@ -818,7 +743,7 @@ const VoiceCoach = () => {
         toast.info('Cleared uploaded documents');
         
         const clearMessage = {
-            id: Date.now(),
+            id: Date.now() + Math.random(), // Add unique ID
             type: 'ai',
             content: "🗑️ Cleared all uploaded documents. You can upload new ones anytime!",
             timestamp: new Date(),
@@ -851,7 +776,7 @@ const VoiceCoach = () => {
                     setUploadedFiles(prev => [...prev, ...files]);
                     
                     const uploadMessage = {
-                        id: Date.now(),
+                        id: Date.now() + Math.random(), // Add unique ID
                         type: 'ai',
                         content: `✅ Successfully uploaded ${files.length} document(s)! I can now help you with questions about these files.`,
                         timestamp: new Date(),
@@ -868,8 +793,8 @@ const VoiceCoach = () => {
                 toast.error('Failed to upload documents. Please try again.');
                 
                 const errorMessage = {
-                    id: Date.now(),
-                    type: 'ai',
+                    id: Date.now() + Math.random(), // Add unique ID
+                    type: 'error',
                     content: "❌ Failed to upload your documents. Please try again or contact support if the problem persists.",
                     timestamp: new Date(),
                     avatar: <GraduationCap className="w-4 h-4 text-blue-500" />
@@ -994,7 +919,6 @@ const VoiceCoach = () => {
         return (
             <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900 flex items-center justify-center">
                 <div className="text-center">
-                    <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                     <p className="text-lg text-gray-600 dark:text-gray-400">Loading your teaching data...</p>
                 </div>
             </div>
@@ -1002,7 +926,7 @@ const VoiceCoach = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900">
+        <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100 dark:from-purple-900/20 dark:via-blue-900/20 dark:to-indigo-900/20">
             {/* Header */}
             <motion.div
                 initial={{ opacity: 0, y: -20 }}
@@ -1075,6 +999,10 @@ const VoiceCoach = () => {
                                                             </Avatar>
                                                             <div className={`rounded-2xl px-3 py-2 ${message.type === 'user'
                                                                     ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+                                                                    : message.type === 'system'
+                                                                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                                                                    : message.type === 'error'
+                                                                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                                                                     : 'text-black dark:text-white'
                                                                 }`}>
                                                                 {renderMessageContent(message)}
@@ -1149,17 +1077,19 @@ const VoiceCoach = () => {
                                         )}
                                         
                                         <Button 
-                                        onClick={startVoiceSessionHandler}
+                                        onClick={handleVoiceToggle}
                                         disabled={isLoading || isUploading}
                                         size="icon" 
                                         className={`rounded-2xl px-6 py-3 ${
-                                            isVoiceActive 
+                                            isConnected 
                                                 ? 'bg-red-500 hover:bg-red-600' 
                                                 : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
                                         } text-white dark:text-white`}
-                                        title={isVoiceActive ? 'Stop voice session' : 'Start real-time voice session'}
+                                        title={isConnected ? 'Disconnect from OpenAI' : 'Connect to OpenAI Realtime API'}
                                     >
-                                        {isVoiceActive ? (
+                                        {isLoading ? (
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        ) : isConnected ? (
                                             <div className="w-4 h-4 bg-white rounded-full animate-pulse" />
                                         ) : (
                                             <AudioLines className="w-4 h-4" />
@@ -1180,7 +1110,6 @@ const VoiceCoach = () => {
                     </div>
                 </div>
             </div>
-            {/* REMOVED: Voice actions UI/UX at the bottom */}
         </div>
     );
 };

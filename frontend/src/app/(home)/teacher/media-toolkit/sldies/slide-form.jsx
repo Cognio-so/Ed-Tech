@@ -221,7 +221,7 @@ const SlideForm = ({ onPresentationGenerated }) => {
             {/* Custom Instructions */}
             <div className="space-y-2">
               <Label htmlFor="instructions" className="text-sm font-medium">
-                Custom Instructions (Optional)
+                Custom Instructions
               </Label>
               <Textarea
                 id="instructions"

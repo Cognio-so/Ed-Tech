@@ -1139,9 +1139,9 @@ async def teacher_voice_websocket(websocket: WebSocket):
         teacher_data = await websocket.receive_json()
         print(f"Received teacher data: {teacher_data}")
         
-        # Use the Teacher_Voice_agent_realtime.py WebSocket function
-        from Teacher_Voice_agent_realtime import run_teacher_voice_websocket
-        await run_teacher_voice_websocket(websocket, teacher_data)
+        # Use the Render-compatible teacher voice agent
+        from Teacher_Voice_agent_realtime import teacher_voice_agent
+        await teacher_voice_agent(websocket, teacher_data)
         
     except WebSocketDisconnect:
         print("Teacher voice WebSocket disconnected")
