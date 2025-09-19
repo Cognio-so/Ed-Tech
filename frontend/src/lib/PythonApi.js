@@ -146,7 +146,7 @@ class PythonApiClient {
       plain_text: contentData.content,
       custom_user_instructions: `Generate presentation slides based on this content for ${contentData.topic}`,
       length: parseInt(contentData.slideCount) || 10,
-      language: contentData.language === 'Arabic' ? 'ARABIC' : 'ENGLISH',
+      language: contentData.language === "arabic" ? "ARABIC" : "ENGLISH",
       fetch_images: true,
       verbosity: 'standard',
       template: contentData.template || 'default'

@@ -84,7 +84,7 @@ const ImageForm = ({ onImageGenerated }) => {
         }
 
         setIsGenerating(true);
-
+        const loadingToast = toast.loading("Generating image...");
 
         try {
             const imageData = {

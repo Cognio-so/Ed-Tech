@@ -3,9 +3,17 @@ import asyncio
 import json
 import base64
 import aiohttp
-import sounddevice as sd
 import numpy as np
 from dotenv import load_dotenv
+
+# Conditional import for sounddevice
+try:
+    import sounddevice as sd
+    SOUNDDEVICE_AVAILABLE = True
+except ImportError:
+    print("Warning: sounddevice not available. Voice functionality will be disabled.")
+    SOUNDDEVICE_AVAILABLE = False
+    sd = None
 
 load_dotenv()
 
@@ -35,6 +43,10 @@ def audio_callback(indata, frames, time, status):
 
 async def microphone_stream():
     """Continuously streams audio from the microphone into the queue."""
+    if not SOUNDDEVICE_AVAILABLE:
+        print("Microphone stream disabled: sounddevice not available")
+        return
+        
     try:
         with sd.InputStream(
             samplerate=SAMPLE_RATE,
