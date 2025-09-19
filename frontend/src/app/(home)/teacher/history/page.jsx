@@ -20,7 +20,10 @@ import {
   Eye,
   Filter,
   Download,
-  Bug
+  Bug,
+  X,
+  Bot,
+  User
 } from "lucide-react";
 import { 
   DropdownMenu, 
@@ -60,7 +63,6 @@ export default function TeacherHistoryPage() {
       
       if (result.success) {
         toast.success("Debug completed - check console for details");
-        // Show debug info in a toast or alert
         const debugSummary = `
 Session: ${result.debug.session.hasSession ? '✓' : '✗'}
 User ID: ${result.debug.session.userId || 'None'}
@@ -213,11 +215,11 @@ Your Conversations: ${result.debug.conversations.forThisTeacher}
   const getSessionTypeIcon = (sessionType) => {
     switch (sessionType) {
       case "voice":
-        return <Mic className="w-4 h-4" />;
+        return <Mic className="size-4" />;
       case "text":
-        return <MessageSquare className="w-4 h-4" />;
+        return <MessageSquare className="size-4" />;
       default:
-        return <MessageSquare className="w-4 h-4" />;
+        return <MessageSquare className="size-4" />;
     }
   };
 
@@ -251,232 +253,270 @@ Your Conversations: ${result.debug.conversations.forThisTeacher}
     return `${hours}h ${remainingMinutes}m`;
   };
 
+  // Close conversation preview
+  const closePreview = () => {
+    setSelectedConversation(null);
+  };
+
   useEffect(() => {
     loadConversations();
   }, []);
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Voice Coach History</h1>
-          <p className="text-muted-foreground">
-            View and manage your Voice Coach conversation history
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-gray-900 dark:via-blue-900 dark:to-indigo-900">
+      <div className="container mx-auto p-4 sm:p-6 space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold">Voice Coach History</h1>
+            <p className="text-muted-foreground text-sm sm:text-base">
+              View and manage your Voice Coach conversation history
+            </p>
+          </div>
         </div>
-      </div>
 
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input
-                placeholder="Search conversations..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Tabs value={selectedSessionType} onValueChange={(value) => {
-              setSelectedSessionType(value);
-              loadConversations(1, value);
-            }}>
-              <TabsList>
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="text">Text</TabsTrigger>
-                <TabsTrigger value="voice">Voice</TabsTrigger>
-                <TabsTrigger value="mixed">Mixed</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Conversations List */}
-      <div className="grid gap-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        ) : filteredConversations.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <MessageSquare className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No conversations found</h3>
-              <p className="text-muted-foreground mb-4">
-                {searchTerm ? "No conversations match your search." : "Start a conversation with Voice Coach to see your history here."}
-              </p>
-              <div className="flex justify-center gap-2">
-                <Button variant="outline" size="sm" onClick={handleComprehensiveDebug}>
-                  <Bug className="w-4 h-4 mr-2" />
-                  Debug Issue
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleMigration}>
-                  Try Migration
-                </Button>
+        {/* Search and Filter */}
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground size-4" />
+                <Input
+                  placeholder="Search conversations..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          filteredConversations.map((conversation) => (
-            <Card key={conversation._id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      {getSessionTypeIcon(conversation.sessionType)}
-                      <h3 className="font-semibold truncate">
-                        {conversation.title?.replace(/^Conversation \d+/, 'Conversation') || 'Untitled Conversation'}
-                      </h3>
-                      <Badge variant={getSessionTypeBadge(conversation.sessionType)}>
-                        {conversation.sessionType}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
-                      {conversation.lastMessage}
-                    </p>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <MessageSquare className="w-3 h-3" />
-                        {conversation.messageCount} messages
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Conversations List */}
+        <div className="space-y-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full size-8 border-b-2 border-primary"></div>
+            </div>
+          ) : filteredConversations.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <MessageSquare className="size-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No conversations found</h3>
+                <p className="text-muted-foreground mb-4">
+                  {searchTerm ? "No conversations match your search." : "Start a conversation with Voice Coach to see your history here."}
+                </p>
+                <div className="flex flex-col sm:flex-row justify-center gap-2">
+                  <Button variant="outline" size="sm" onClick={handleComprehensiveDebug}>
+                    <Bug className="size-4 mr-2" />
+                    Debug Issue
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleMigration}>
+                    Try Migration
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            filteredConversations.map((conversation) => (
+              <Card key={conversation._id} className="hover:shadow-md transition-shadow">
+                <CardContent className="p-4">
+                  <div className="flex flex-col gap-4">
+                    {/* Header Row */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {getSessionTypeIcon(conversation.sessionType)}
+                        <h3 className="font-semibold truncate text-sm sm:text-base">
+                          {conversation.title?.replace(/^Conversation \d+/, 'Conversation') || 'Untitled Conversation'}
+                        </h3>
+                        <Badge variant={getSessionTypeBadge(conversation.sessionType)} className="shrink-0">
+                          {conversation.sessionType}
+                        </Badge>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatDuration(conversation.conversationStats?.totalDuration || 0)}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {formatDate(conversation.lastMessageAt)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 ml-4">
-                    <Dialog>
-                      <DialogTrigger asChild>
+                      <div className="flex items-center gap-2 shrink-0">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => loadConversationDetails(conversation._id)}
+                          className="flex items-center gap-2"
                         >
-                          <Eye className="w-4 h-4" />
+                          <Eye className="size-4" />
+                          <span className="hidden sm:inline">View</span>
                         </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                        <DialogHeader>
-                          <DialogTitle className="flex items-center gap-2">
-                            {getSessionTypeIcon(conversation.sessionType)}
-                            {selectedConversation?.title?.replace(/^Conversation \d+/, 'Conversation') || conversation.title?.replace(/^Conversation \d+/, 'Conversation') || 'Untitled Conversation'}
-                          </DialogTitle>
-                          <DialogDescription>
-                            Conversation from {formatDate(conversation.lastMessageAt)}
-                          </DialogDescription>
-                        </DialogHeader>
-                        {selectedConversation && (
-                          <div className="space-y-4">
-                            {/* Messages */}
-                            <div className="space-y-4">
-                              {selectedConversation.messages?.map((message, index) => (
-                                <div
-                                  key={message.id || index}
-                                  className={`w-full ${
-                                    message.role === 'user' ? 'flex justify-end' : 'flex justify-start'
-                                  }`}
-                                >
-                                  <div
-                                    className={`max-w-[80%] rounded-lg p-3 ${
-                                      message.role === 'user'
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'bg-muted'
-                                    }`}
-                                  >
-                                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                                    <p className="text-xs opacity-70 mt-1">
-                                      {formatDate(message.timestamp)}
-                                    </p>
-                                  </div>
-                                </div>
-                              )) || <p className="text-muted-foreground">No messages found</p>}
-                            </div>
-                          </div>
-                        )}
-                      </DialogContent>
-                    </Dialog>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setEditingTitle(conversation.title?.replace(/^Conversation \d+/, 'Conversation') || 'Untitled Conversation');
-                            setIsEditing(true);
-                          }}
-                        >
-                          <Edit className="w-4 h-4 mr-2" />
-                          Edit Title
-                        </DropdownMenuItem>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <MoreVertical className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setEditingTitle(conversation.title?.replace(/^Conversation \d+/, 'Conversation') || 'Untitled Conversation');
+                                setIsEditing(true);
+                              }}
+                            >
+                              <Edit className="size-4 mr-2" />
+                              Edit Title
                             </DropdownMenuItem>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Conversation</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to delete this conversation? This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteConversation(conversation._id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                  <Trash2 className="size-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete Conversation</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to delete this conversation? This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDeleteConversation(conversation._id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+
+                    {/* Message Preview */}
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground line-clamp-2 break-words">
+                        {conversation.lastMessage}
+                      </p>
+                    </div>
+
+                    {/* Metadata Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1 min-w-0">
+                        <MessageSquare className="size-3 shrink-0" />
+                        <span className="truncate">{conversation.messageCount} messages</span>
+                      </div>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <Clock className="size-3 shrink-0" />
+                        <span className="truncate">{formatDuration(conversation.conversationStats?.totalDuration || 0)}</span>
+                      </div>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <Calendar className="size-3 shrink-0" />
+                        <span className="truncate">
+                          {new Date(conversation.lastMessageAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <User className="size-3 shrink-0" />
+                        <span className="truncate">ID: {conversation.userId?.substring(0, 6)}...</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadConversations(currentPage - 1, selectedSessionType)}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadConversations(currentPage + 1, selectedSessionType)}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </Button>
+          </div>
         )}
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => loadConversations(currentPage - 1, selectedSessionType)}
-            disabled={currentPage === 1}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => loadConversations(currentPage + 1, selectedSessionType)}
-            disabled={currentPage === totalPages}
-          >
-            Next
-          </Button>
-        </div>
+      {/* Conversation Preview Modal */}
+      {selectedConversation && (
+        <Dialog open={!!selectedConversation} onOpenChange={() => setSelectedConversation(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {getSessionTypeIcon(selectedConversation.sessionType)}
+                {selectedConversation?.title?.replace(/^Conversation \d+/, 'Conversation') || 'Untitled Conversation'}
+              </DialogTitle>
+              <DialogDescription>
+                Conversation details and metadata
+              </DialogDescription>
+            </DialogHeader>
+            
+            {/* Metadata Section */}
+            <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground border-b pb-4">
+              <div className="flex items-center gap-1">
+                <Calendar className="size-4" />
+                {formatDate(selectedConversation.lastMessageAt)}
+              </div>
+              <Badge 
+                variant="secondary" 
+                className={getSessionTypeBadge(selectedConversation.sessionType)}
+              >
+                {getSessionTypeIcon(selectedConversation.sessionType)}
+                <span className="ml-1 capitalize">{selectedConversation.sessionType}</span>
+              </Badge>
+              <div className="flex items-center gap-1">
+                <MessageSquare className="size-4" />
+                {selectedConversation.messageCount} messages
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto space-y-4 mt-4">
+              {selectedConversation.messages?.map((message, index) => (
+                <div
+                  key={message.id || index}
+                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div className={`flex items-start gap-3 max-w-[85%] ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className="size-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                      {message.role === 'user' ? (
+                        <User className="size-4 text-muted-foreground" />
+                      ) : (
+                        <Bot className="size-4 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className={`rounded-lg px-4 py-3 min-w-0 ${message.role === 'user'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted'
+                    }`}>
+                      <div className="text-sm whitespace-pre-wrap break-words">
+                        {message.content}
+                      </div>
+                      <div className={`text-xs mt-2 ${message.role === 'user' 
+                        ? 'text-primary-foreground/70' 
+                        : 'text-muted-foreground'
+                      }`}>
+                        {formatDate(message.timestamp)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )) || <p className="text-muted-foreground">No messages found</p>}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Edit Title Dialog */}

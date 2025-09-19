@@ -250,39 +250,6 @@ const StudentHistory = () => {
                                             />
                                         </div>
                                     </div>
-                                    <div className="flex gap-2">
-                                        <Button
-                                            variant={filterType === 'all' ? 'default' : 'outline'}
-                                            size="sm"
-                                            onClick={() => setFilterType('all')}
-                                        >
-                                            All
-                                        </Button>
-                                        <Button
-                                            variant={filterType === 'text' ? 'default' : 'outline'}
-                                            size="sm"
-                                            onClick={() => setFilterType('text')}
-                                        >
-                                            <MessageCircle className="w-4 h-4 mr-2" />
-                                            Text
-                                        </Button>
-                                        <Button
-                                            variant={filterType === 'voice' ? 'default' : 'outline'}
-                                            size="sm"
-                                            onClick={() => setFilterType('voice')}
-                                        >
-                                            <Mic className="w-4 h-4 mr-2" />
-                                            Voice
-                                        </Button>
-                                        <Button
-                                            variant={filterType === 'mixed' ? 'default' : 'outline'}
-                                            size="sm"
-                                            onClick={() => setFilterType('mixed')}
-                                        >
-                                            <MicOff className="w-4 h-4 mr-2" />
-                                            Mixed
-                                        </Button>
-                                    </div>
                                 </div>
                             </CardContent>
                         </Card>
