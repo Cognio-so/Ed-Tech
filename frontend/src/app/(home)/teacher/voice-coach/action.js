@@ -340,6 +340,9 @@ export async function sendVoiceCoachMessage(formData) {
     const message = formData.get("message");
     const sessionId = formData.get("sessionId");
     const studentData = JSON.parse(formData.get("studentData") || "{}");
+    // FIXED: Read history and uploadedFiles from formData
+    const history = JSON.parse(formData.get("history") || "[]");
+    const uploadedFiles = JSON.parse(formData.get("uploadedFiles") || "[]");
 
     if (!message || !sessionId) {
       return {
@@ -405,8 +408,14 @@ export async function sendVoiceCoachMessage(formData) {
       }
     });
 
-    // OPTIMIZED: Direct call to Python API without heavy processing
-    const response = await PythonApi.startTeacherChat(comprehensiveTeacherData, sessionId, message);
+    // FIXED: Pass history and uploadedFiles to the API call
+    const response = await PythonApi.startTeacherChat(
+      comprehensiveTeacherData, 
+      sessionId, 
+      message, 
+      history, 
+      uploadedFiles
+    );
 
     if (response.ok) {
       const reader = response.body.getReader();
@@ -514,10 +523,11 @@ export async function uploadDocumentsToVoiceCoach(formData) {
     const response = await PythonApi.uploadDocumentsForTeacherChatbot(sessionId, files);
 
     if (response.success) {
+      // FIXED: Return the list of filenames from the response
       return {
         success: true,
         message: response.message || "Documents uploaded successfully",
-        uploadedFiles: response.files_processed || []
+        uploadedFileNames: response.filenames || []
       };
     } else {
       return {

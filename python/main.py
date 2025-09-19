@@ -93,6 +93,9 @@ try:
     # Initialize Tutor Sessions Dictionary
     tutor_sessions: Dict[str, AsyncRAGTutor] = {}
     teacher_sessions: Dict[str, TeacherAsyncRAGTutor] = {} # New: Dictionary to store teacher sessions
+    # Add teacher tutor sessions
+    teacher_tutor_sessions: Dict[str, Any] = {}
+
 
     # Initialize other components
     slide_generator = SlideSpeakGenerator()
@@ -338,18 +341,21 @@ async def teacher_upload_document_endpoint(session_id: str = Form(...), files: L
             raise HTTPException(status_code=400, detail="No files provided")
 
         # Get or create a TEACHER tutor instance for the session
-        if session_id not in teacher_sessions:
+        # FIXED: Use the correct session dictionary for teachers
+        if session_id not in teacher_tutor_sessions:
             logger.info(f"Creating new Teacher AI Tutor session for document upload: {session_id}")
             teacher_config = TeacherRAGTutorConfig.from_env()
             teacher_config.web_search_enabled = True  # Always enable web search
-            teacher_sessions[session_id] = TeacherAsyncRAGTutor(storage_manager=storage_manager, config=teacher_config)
+            teacher_tutor_sessions[session_id] = TeacherAsyncRAGTutor(storage_manager=storage_manager, config=teacher_config)
 
-        tutor = teacher_sessions[session_id]
+        tutor = teacher_tutor_sessions[session_id]
 
         # Save files and get storage keys
         storage_keys = []
+        original_filenames = []
         for file in files:
             if file.filename:
+                original_filenames.append(file.filename)
                 file_bytes = await file.read()
                 safe_filename = f"{uuid.uuid4()}_{file.filename}"
 
@@ -366,10 +372,12 @@ async def teacher_upload_document_endpoint(session_id: str = Form(...), files: L
             # Ingest documents into the teacher's tutor's knowledge base
             success = await tutor.ingest_async(storage_keys)
             if success:
+                # FIXED: Return the original filenames for context
                 return {
                     "success": True,
                     "message": f"Successfully uploaded and processed {len(storage_keys)} document(s) for the teacher's session",
-                    "files_processed": len(storage_keys)
+                    "files_processed": len(storage_keys),
+                    "filenames": original_filenames
                 }
             else:
                 raise HTTPException(status_code=500, detail="Failed to process uploaded documents for the teacher's session")
@@ -853,8 +861,7 @@ async def teacher_bulk_data_endpoint(schema: TeacherBulkDataSchema):
         logger.error(f"Error in teacher bulk data endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-# Add teacher tutor sessions
-teacher_tutor_sessions: Dict[str, Any] = {}
+
 
 # ==============================
 # 10. VIDEO PRESENTATION ENDPOINT

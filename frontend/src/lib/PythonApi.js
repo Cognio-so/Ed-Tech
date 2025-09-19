@@ -276,6 +276,7 @@ class PythonApiClient {
       });
     }
 
+    // FIXED: Return the full response to get filenames
     return this.makeRequest('/teacher_upload_document_endpoint', {
       method: 'POST',
       body: formData,
@@ -474,7 +475,7 @@ class PythonApiClient {
   }
 
   // Teacher voice chat endpoint for text-based chatbot
-  async startTeacherVoiceChat(teacherData, sessionId, query = '') {
+  async startTeacherVoiceChat(teacherData, sessionId, query = '', history = [], files = [], webSearchEnabled = true) {
     const url = `${this.baseUrl}/teacher_chat_endpoint`;  // FIXED: Use correct endpoint
     
     // Transform teacher data to match backend schema - only use actual data
@@ -507,13 +508,15 @@ class PythonApiClient {
       learning_analytics: teacherData.learningAnalytics || {}
     };
 
+    const uploadedFileNames = files.map(file => file.name);
+
     const payload = {
       session_id: sessionId,
       query: query,
-      history: [],
+      history: history,
       teacher_data: transformedTeacherData,
       web_search_enabled: true,
-      uploaded_files: []
+      uploaded_files: uploadedFileNames
     };
 
     console.log('Starting teacher voice chat with comprehensive payload:', payload);
