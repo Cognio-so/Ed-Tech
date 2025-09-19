@@ -97,6 +97,9 @@ export default function ContentForm() {
     },
   });
 
+  // Add this state variable near the other state declarations (around line 60)
+  const [selectedLanguage, setSelectedLanguage] = useState("english");
+
   // Fetch user's assigned grades and subjects
   useEffect(() => {
     const fetchUserData = async () => {
@@ -247,6 +250,7 @@ export default function ContentForm() {
 
   const handleGenerateSlidesClick = (content) => {
     setSelectedContentForSlides(content);
+    setSelectedLanguage(content.language || "english"); // Set language from content
     setShowSlideDialog(true);
   };
 
@@ -264,7 +268,7 @@ export default function ContentForm() {
         content: selectedContentForSlides.generatedContent,
         topic: selectedContentForSlides.topic,
         slideCount: slideCount,
-        language: selectedContentForSlides.language,
+        language: selectedLanguage, // Use selected language instead of content language
         template: selectedTemplate
       });
 
@@ -277,7 +281,8 @@ export default function ContentForm() {
             ...result.presentation,
             title: selectedContentForSlides.topic,
             slideCount: slideCount,
-            template: selectedTemplate
+            template: selectedTemplate,
+            language: selectedLanguage // Add language to presentation data
           });
           setShowPresentationModal(true);
         }
@@ -1000,6 +1005,23 @@ export default function ContentForm() {
                 className="col-span-3"
               />
             </div>
+            
+            {/* Add Language Selection */}
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="language" className="text-right">
+                Language
+              </Label>
+              <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select language" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="english">English</SelectItem>
+                  <SelectItem value="arabic">Arabic</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="template" className="text-right">
                 Template
