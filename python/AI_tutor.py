@@ -452,7 +452,7 @@ class TeacherAsyncRAGTutor:
             search_query = query
             logger.info(f"Performing curriculum vector search with query: '{search_query}'")
             
-            found_docs = await vector_store.asimilarity_search(query=search_query, k=10)
+            found_docs = await vector_store.asimilarity_search(query=search_query, k=20)
             
             if found_docs:
                 logger.info(f"Found {len(found_docs)} relevant documents in the curriculum.")
