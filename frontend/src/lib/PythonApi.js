@@ -127,7 +127,7 @@ class PythonApiClient {
       plain_text: presentationData.topic,
       custom_user_instructions: presentationData.instructions || '',
       length: parseInt(presentationData.slideCount),
-      language: presentationData.language === 'Arabic' ? 'ARABIC' : 'ENGLISH',
+      language: presentationData.language === 'Arabic' ? 'ARABIC' : 'ENGLISH', // ✅ This is correct for slide form
       fetch_images: presentationData.includeImages !== false,
       verbosity: presentationData.verbosity || 'standard',
       template: presentationData.template || 'default'
@@ -146,7 +146,7 @@ class PythonApiClient {
       plain_text: contentData.content,
       custom_user_instructions: `Generate presentation slides based on this content for ${contentData.topic}`,
       length: parseInt(contentData.slideCount) || 10,
-      language: contentData.language === "arabic" ? "ARABIC" : "ENGLISH",
+      language: contentData.language === "arabic" ? "ARABIC" : "ENGLISH", // ✅ This is correct for content form
       fetch_images: true,
       verbosity: 'standard',
       template: contentData.template || 'default'
