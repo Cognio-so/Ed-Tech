@@ -9,9 +9,138 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { FileText, Download, Copy, Check, Edit, Save, X, ExternalLink } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FileText, Download, Copy, Check, Edit, Save, X, ExternalLink, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import remarkGfm from "remark-gfm";
+
+// Dynamic imports for PDF and DOC generation
+const generatePDF = async (content, filename) => {
+  const { jsPDF } = await import('jspdf');
+  
+  const doc = new jsPDF();
+  const pageHeight = doc.internal.pageSize.height;
+  const pageWidth = doc.internal.pageSize.width;
+  const margin = 20;
+  const lineHeight = 7;
+  const maxLineWidth = pageWidth - (margin * 2);
+  
+  // Convert markdown to plain text for PDF
+  const plainText = content
+    .replace(/#{1,6}\s/g, '') // Remove headers
+    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
+    .replace(/\*(.*?)\*/g, '$1') // Remove italic
+    .replace(/`(.*?)`/g, '$1') // Remove code
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links
+    .replace(/^\s*[-*+]\s/gm, '• '); // Convert lists to bullets
+  
+  const lines = doc.splitTextToSize(plainText, maxLineWidth);
+  let currentY = margin;
+  
+  doc.setFontSize(12);
+  
+  for (let i = 0; i < lines.length; i++) {
+    if (currentY + lineHeight > pageHeight - margin) {
+      doc.addPage();
+      currentY = margin;
+    }
+    
+    doc.text(lines[i], margin, currentY);
+    currentY += lineHeight;
+  }
+  
+  doc.save(`${filename}.pdf`);
+};
+
+const generateDOCX = async (content, filename) => {
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import('docx');
+  
+  // Parse markdown content into structured elements
+  const lines = content.split('\n');
+  const docElements = [];
+  
+  for (const line of lines) {
+    if (!line.trim()) {
+      docElements.push(new Paragraph({ text: "" }));
+      continue;
+    }
+    
+    // Handle headers
+    if (line.startsWith('# ')) {
+      docElements.push(new Paragraph({
+        text: line.replace('# ', ''),
+        heading: HeadingLevel.HEADING_1
+      }));
+    } else if (line.startsWith('## ')) {
+      docElements.push(new Paragraph({
+        text: line.replace('## ', ''),
+        heading: HeadingLevel.HEADING_2
+      }));
+    } else if (line.startsWith('### ')) {
+      docElements.push(new Paragraph({
+        text: line.replace('### ', ''),
+        heading: HeadingLevel.HEADING_3
+      }));
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      // Handle bullet points
+      docElements.push(new Paragraph({
+        text: line.replace(/^[-*]\s/, ''),
+        bullet: { level: 0 }
+      }));
+    } else {
+      // Handle regular text with basic formatting
+      const textRuns = [];
+      let currentText = line;
+      
+      // Handle bold text
+      currentText = currentText.replace(/\*\*(.*?)\*\*/g, (match, text) => {
+        textRuns.push(new TextRun({ text, bold: true }));
+        return '\u0000'; // Placeholder
+      });
+      
+      // Handle italic text
+      currentText = currentText.replace(/\*(.*?)\*/g, (match, text) => {
+        textRuns.push(new TextRun({ text, italics: true }));
+        return '\u0000'; // Placeholder
+      });
+      
+      // Split by placeholders and add regular text
+      const parts = currentText.split('\u0000');
+      const finalRuns = [];
+      
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i]) {
+          finalRuns.push(new TextRun({ text: parts[i] }));
+        }
+        if (i < textRuns.length) {
+          finalRuns.push(textRuns[i]);
+        }
+      }
+      
+      docElements.push(new Paragraph({
+        children: finalRuns.length > 0 ? finalRuns : [new TextRun({ text: line })]
+      }));
+    }
+  }
+  
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: docElements
+    }]
+  });
+  
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filename}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 export default function ContentPreview({
   content,
@@ -25,6 +154,9 @@ export default function ContentPreview({
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(content);
+  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
+  const [downloadFormat, setDownloadFormat] = useState('pdf');
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Handle different content structures
   const getContentData = () => {
@@ -61,17 +193,49 @@ export default function ContentPreview({
     }
   };
 
-  const handleDownloadContent = () => {
-    const blob = new Blob([contentData.content], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${contentData.topic || 'content'}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("Content downloaded!");
+  const handleDownloadContent = async () => {
+    if (!downloadFormat) {
+      toast.error("Please select a download format");
+      return;
+    }
+
+    setIsDownloading(true);
+    const filename = contentData.topic || 'content';
+
+    try {
+      switch (downloadFormat) {
+        case 'md':
+          const blob = new Blob([contentData.content], { type: 'text/markdown' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${filename}.md`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          break;
+          
+        case 'pdf':
+          await generatePDF(contentData.content, filename);
+          break;
+          
+        case 'docx':
+          await generateDOCX(contentData.content, filename);
+          break;
+          
+        default:
+          throw new Error('Unsupported format');
+      }
+      
+      toast.success(`Content downloaded as ${downloadFormat.toUpperCase()}!`);
+      setShowDownloadDialog(false);
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error(`Failed to download as ${downloadFormat.toUpperCase()}`);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleStartEdit = () => {
@@ -146,135 +310,182 @@ export default function ContentPreview({
   };
 
   return (
-    <Card className="w-full dark:bg-secondary">
-      <CardHeader>
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              {contentType === 'web-search' ? (
-                <ExternalLink className="h-5 w-5" />
-              ) : (
-                <FileText className="h-5 w-5" />
-              )}
-              {contentType === 'web-search' ? 'Web Search Results' : 'Generated Content'}
-            </CardTitle>
-            <div className="flex flex-wrap gap-2 mt-2">
-              <Badge variant="outline">{contentData.contentType}</Badge>
-              <Badge variant="secondary">{contentData.language}</Badge>
-              {contentData.metadata.instructionDepth && (
-                <Badge variant="outline">{contentData.metadata.instructionDepth}</Badge>
-              )}
-              {contentData.metadata.contentVersion && (
-                <Badge variant="outline">{contentData.metadata.contentVersion}</Badge>
-              )}
+    <>
+      <Card className="w-full dark:bg-secondary">
+        <CardHeader>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                {contentType === 'web-search' ? (
+                  <ExternalLink className="h-5 w-5" />
+                ) : (
+                  <FileText className="h-5 w-5" />
+                )}
+                {contentType === 'web-search' ? 'Web Search Results' : 'Generated Content'}
+              </CardTitle>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <Badge variant="outline">{contentData.contentType}</Badge>
+                <Badge variant="secondary">{contentData.language}</Badge>
+                {contentData.metadata.instructionDepth && (
+                  <Badge variant="outline">{contentData.metadata.instructionDepth}</Badge>
+                )}
+                {contentData.metadata.contentVersion && (
+                  <Badge variant="outline">{contentData.metadata.contentVersion}</Badge>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex gap-2">
-            {isEditing ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCancelEdit}
-                  className="text-red-600 hover:text-red-700"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={handleSaveEdit}
-                >
-                  <Save className="h-4 w-4" />
-                </Button>
-              </>
-            ) : (
-              <>
-                {isEditable && contentType !== 'web-search' && (
+            <div className="flex gap-2">
+              {isEditing ? (
+                <>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={handleStartEdit}
-                    title="Edit Content"
+                    onClick={handleCancelEdit}
+                    className="text-red-600 hover:text-red-700"
                   >
-                    <Edit className="h-4 w-4" />
+                    <X className="h-4 w-4" />
                   </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyContent}
-                  disabled={copied}
-                >
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownloadContent}
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-                {contentData.metadata.contentType === "presentation" && (
                   <Button
                     variant="default"
                     size="sm"
-                    onClick={() => onGenerateSlides(contentData.metadata)}
-                    disabled={isGeneratingSlides}
+                    onClick={handleSaveEdit}
                   >
-                    {isGeneratingSlides ? "Generating..." : "Generate Slides"}
+                    <Save className="h-4 w-4" />
                   </Button>
-                )}
-              </>
-            )}
+                </>
+              ) : (
+                <>
+                  {isEditable && contentType !== 'web-search' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleStartEdit}
+                      title="Edit Content"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyContent}
+                    disabled={copied}
+                  >
+                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDownloadDialog(true)}
+                    className="flex items-center gap-1"
+                  >
+                    <Download className="h-4 w-4" />
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                  {contentData.metadata.contentType === "presentation" && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => onGenerateSlides(contentData.metadata)}
+                      disabled={isGeneratingSlides}
+                    >
+                      {isGeneratingSlides ? "Generating..." : "Generate Slides"}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {contentType === 'web-search' ? (
-          renderWebSearchContent()
-        ) : isEditing ? (
-          <div className="space-y-4">
+        </CardHeader>
+        <CardContent>
+          {contentType === 'web-search' ? (
+            renderWebSearchContent()
+          ) : isEditing ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="contentEditor">Edit Content</Label>
+                <Textarea
+                  id="contentEditor"
+                  value={editedContent}
+                  onChange={(e) => setEditedContent(e.target.value)}
+                  rows={20}
+                  className="font-mono text-sm"
+                  placeholder="Edit your content here..."
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleCancelEdit}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveEdit}
+                  className="min-w-[100px]"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Changes
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <ScrollArea className="h-[600px] w-full">
+              <div className="prose prose-gray max-w-none markdown-content">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={MarkdownStyles}
+                >
+                  {contentData.content}
+                </ReactMarkdown>
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Download Format Selection Dialog */}
+      <Dialog open={showDownloadDialog} onOpenChange={setShowDownloadDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Download Content</DialogTitle>
+            <DialogDescription>
+              Choose the format for downloading your content.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="contentEditor">Edit Content</Label>
-              <Textarea
-                id="contentEditor"
-                value={editedContent}
-                onChange={(e) => setEditedContent(e.target.value)}
-                rows={20}
-                className="font-mono text-sm"
-                placeholder="Edit your content here..."
-              />
+              <Label htmlFor="format">Download Format</Label>
+              <Select value={downloadFormat} onValueChange={setDownloadFormat}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select format" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="md">Markdown (.md)</SelectItem>
+                  <SelectItem value="pdf">PDF (.pdf)</SelectItem>
+                  <SelectItem value="docx">Word Document (.docx)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={handleCancelEdit}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSaveEdit}
-                className="min-w-[100px]"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Save Changes
-              </Button>
+            <div className="text-sm text-muted-foreground">
+              <p><strong>Markdown:</strong> Plain text with formatting markers</p>
+              <p><strong>PDF:</strong> Formatted document, good for printing</p>
+              <p><strong>Word:</strong> Editable document with formatting</p>
             </div>
           </div>
-        ) : (
-          <ScrollArea className="h-[600px] w-full">
-            <div className="prose prose-gray max-w-none markdown-content">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={MarkdownStyles}
-              >
-                {contentData.content}
-              </ReactMarkdown>
-            </div>
-          </ScrollArea>
-        )}
-      </CardContent>
-    </Card>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDownloadDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleDownloadContent} 
+              disabled={isDownloading || !downloadFormat}
+            >
+              {isDownloading ? "Downloading..." : "Download"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

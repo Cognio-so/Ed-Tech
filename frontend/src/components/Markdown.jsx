@@ -95,7 +95,7 @@ export const MarkdownStyles = {
     const yt = getYouTubeEmbed(href);
     if (yt) {
       return (
-        <div className="my-4 aspect-video w-full overflow-hidden rounded-lg border">
+        <span className="block my-4 aspect-video w-full overflow-hidden rounded-lg border">
           <iframe
             src={yt}
             className="h-full w-full"
@@ -103,13 +103,13 @@ export const MarkdownStyles = {
             allowFullScreen
             title="YouTube embed"
           />
-        </div>
+        </span>
       );
     }
     const vimeo = getVimeoEmbed(href);
     if (vimeo) {
       return (
-        <div className="my-4 aspect-video w-full overflow-hidden rounded-lg border">
+        <span className="block my-4 aspect-video w-full overflow-hidden rounded-lg border">
           <iframe
             src={vimeo}
             className="h-full w-full"
@@ -117,16 +117,16 @@ export const MarkdownStyles = {
             allowFullScreen
             title="Vimeo embed"
           />
-        </div>
+        </span>
       );
     }
     if (isDirectVideo(href)) {
       return (
-        <div className="my-4 w-full overflow-hidden rounded-lg border">
+        <span className="block my-4 w-full overflow-hidden rounded-lg border">
           <video controls className="w-full h-auto">
             <source src={href} />
           </video>
-        </div>
+        </span>
       );
     }
     return (

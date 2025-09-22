@@ -1149,15 +1149,6 @@ export default function ContentForm() {
                 rows={3}
               />
             </div>
-            
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="isPublic"
-                checked={lessonFormData.isPublic}
-                onCheckedChange={(checked) => setLessonFormData(prev => ({ ...prev, isPublic: checked }))}
-              />
-              <Label htmlFor="isPublic">Make lesson public</Label>
-            </div>
           </div>
           
           <DialogFooter>

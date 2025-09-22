@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   FileText, 
   Presentation, 
@@ -24,14 +25,141 @@ import {
   Trash2,
   Search as SearchIcon,
   BookmarkPlus,
-  Loader2
+  Loader2,
+  ChevronDown
 } from "lucide-react";
 import { toast } from "sonner";
 import { getAllLibraryContent, deleteLibraryContent, addContentToLesson } from "./action";
 import { authClient } from "@/lib/auth-client";
 import LibraryDialog from "@/components/ui/library-dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import LibraryLoading from "./loading";
+
+// Dynamic imports for PDF and DOC generation
+const generatePDF = async (content, filename) => {
+  const { jsPDF } = await import('jspdf');
+  
+  const doc = new jsPDF();
+  const pageHeight = doc.internal.pageSize.height;
+  const pageWidth = doc.internal.pageSize.width;
+  const margin = 20;
+  const lineHeight = 7;
+  const maxLineWidth = pageWidth - (margin * 2);
+  
+  // Convert markdown to plain text for PDF
+  const plainText = content
+    .replace(/#{1,6}\s/g, '') // Remove headers
+    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
+    .replace(/\*(.*?)\*/g, '$1') // Remove italic
+    .replace(/`(.*?)`/g, '$1') // Remove code
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links
+    .replace(/^\s*[-*+]\s/gm, '• '); // Convert lists to bullets
+  
+  const lines = doc.splitTextToSize(plainText, maxLineWidth);
+  let currentY = margin;
+  
+  doc.setFontSize(12);
+  
+  for (let i = 0; i < lines.length; i++) {
+    if (currentY + lineHeight > pageHeight - margin) {
+      doc.addPage();
+      currentY = margin;
+    }
+    
+    doc.text(lines[i], margin, currentY);
+    currentY += lineHeight;
+  }
+  
+  doc.save(`${filename}.pdf`);
+};
+
+const generateDOCX = async (content, filename) => {
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import('docx');
+  
+  // Parse markdown content into structured elements
+  const lines = content.split('\n');
+  const docElements = [];
+  
+  for (const line of lines) {
+    if (!line.trim()) {
+      docElements.push(new Paragraph({ text: "" }));
+      continue;
+    }
+    
+    // Handle headers
+    if (line.startsWith('# ')) {
+      docElements.push(new Paragraph({
+        text: line.replace('# ', ''),
+        heading: HeadingLevel.HEADING_1
+      }));
+    } else if (line.startsWith('## ')) {
+      docElements.push(new Paragraph({
+        text: line.replace('## ', ''),
+        heading: HeadingLevel.HEADING_2
+      }));
+    } else if (line.startsWith('### ')) {
+      docElements.push(new Paragraph({
+        text: line.replace('### ', ''),
+        heading: HeadingLevel.HEADING_3
+      }));
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      // Handle bullet points
+      docElements.push(new Paragraph({
+        text: line.replace(/^[-*]\s/, ''),
+        bullet: { level: 0 }
+      }));
+    } else {
+      // Handle regular text with basic formatting
+      const textRuns = [];
+      let currentText = line;
+      
+      // Handle bold text
+      currentText = currentText.replace(/\*\*(.*?)\*\*/g, (match, text) => {
+        textRuns.push(new TextRun({ text, bold: true }));
+        return '\u0000'; // Placeholder
+      });
+      
+      // Handle italic text
+      currentText = currentText.replace(/\*(.*?)\*/g, (match, text) => {
+        textRuns.push(new TextRun({ text, italics: true }));
+        return '\u0000'; // Placeholder
+      });
+      
+      // Split by placeholders and add regular text
+      const parts = currentText.split('\u0000');
+      const finalRuns = [];
+      
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i]) {
+          finalRuns.push(new TextRun({ text: parts[i] }));
+        }
+        if (i < textRuns.length) {
+          finalRuns.push(textRuns[i]);
+        }
+      }
+      
+      docElements.push(new Paragraph({
+        children: finalRuns.length > 0 ? finalRuns : [new TextRun({ text: line })]
+      }));
+    }
+  }
+  
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: docElements
+    }]
+  });
+  
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filename}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 // Content type configurations with placeholder images
 const contentTypes = {
@@ -106,6 +234,11 @@ export default function LibraryPage() {
     grade: '',
     isPublic: false
   });
+
+  // Download dialog state
+  const [downloadDialog, setDownloadDialog] = useState({ open: false, item: null });
+  const [downloadFormat, setDownloadFormat] = useState('pdf');
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Get user session
   useEffect(() => {
@@ -185,13 +318,399 @@ export default function LibraryPage() {
     }
   };
 
-  const handleDownload = (item) => {
-    // Implement download functionality based on content type
-    toast.info("Download functionality coming soon!");
+  const handleDownload = async (item, format = 'pdf') => {
+    if (!format) {
+      toast.error("Please select a download format");
+      return;
+    }
+
+    setIsDownloading(true);
+    const filename = item.title || item.instruction || 'content';
+
+    try {
+      switch (item.type) {
+        case 'comic':
+          await handleComicDownload(item, format, filename);
+          break;
+        case 'image':
+          await handleImageDownload(item, format, filename);
+          break;
+        case 'content':
+        case 'assessment':
+          await handleTextDownload(item, format, filename);
+          break;
+        case 'slides':
+          await handleSlidesDownload(item, format, filename);
+          break;
+        default:
+          toast.info("Download functionality coming soon for this content type!");
+      }
+      
+      toast.success(`Content downloaded as ${format.toUpperCase()}!`);
+      setDownloadDialog({ open: false, item: null });
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error(`Failed to download as ${format.toUpperCase()}`);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleComicDownload = async (comic, format, filename) => {
+    const comicImages = comic.panels?.map(panel => panel.imageUrl || panel.imageBase64) || 
+                       comic.imageUrls || 
+                       comic.images || [];
+
+    if (comicImages.length === 0) {
+      throw new Error('No comic images available for download');
+    }
+
+    switch (format) {
+      case 'pdf':
+        await downloadComicAsPDF(comicImages, filename);
+        break;
+      case 'doc':
+        await downloadComicAsDOCX(comicImages, comic, filename);
+        break;
+      case 'pptx':
+        await downloadComicAsPPTX(comicImages, comic, filename);
+        break;
+      case 'image':
+        await downloadComicAsImages(comicImages, filename);
+        break;
+      default:
+        throw new Error('Unsupported format for comics');
+    }
+  };
+
+  const handleImageDownload = async (image, format, filename) => {
+    const imageUrl = image.imageUrl || (image.imageBase64 ? `data:image/png;base64,${image.imageBase64}` : null);
+    
+    if (!imageUrl) {
+      throw new Error('No image available for download');
+    }
+
+    switch (format) {
+      case 'pdf':
+        await downloadImageAsPDF(imageUrl, filename);
+        break;
+      case 'doc':
+        await downloadImageAsDOCX(imageUrl, image, filename);
+        break;
+      case 'pptx':
+        await downloadImageAsPPTX(imageUrl, image, filename);
+        break;
+      case 'image':
+        await downloadImageAsImage(imageUrl, filename);
+        break;
+      default:
+        throw new Error('Unsupported format for images');
+    }
+  };
+
+  const handleTextDownload = async (item, format, filename) => {
+    const content = item.generatedContent || item.content || item.description || '';
+    
+    if (!content) {
+      throw new Error('No content available for download');
+    }
+
+    switch (format) {
+      case 'pdf':
+        await generatePDF(content, filename);
+        break;
+      case 'doc':
+        await generateDOCX(content, filename);
+        break;
+      case 'md':
+        const blob = new Blob([content], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${filename}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        break;
+      default:
+        throw new Error('Unsupported format for text content');
+    }
+  };
+
+  const handleSlidesDownload = async (slides, format, filename) => {
+    switch (format) {
+      case 'pptx':
+        // Try multiple possible URL fields for slides
+        const downloadUrl = slides.downloadUrl || slides.presentationUrl || slides.url;
+        if (downloadUrl) {
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          a.download = `${filename}.pptx`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
+          throw new Error('No PPTX download URL available');
+        }
+        break;
+      default:
+        throw new Error('Only PPTX format is supported for slides');
+    }
+  };
+
+  // Helper functions for different download types
+  const downloadComicAsPDF = async (images, filename) => {
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF();
+    
+    for (let i = 0; i < images.length; i++) {
+      if (i > 0) doc.addPage();
+      
+      try {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const imgWidth = doc.internal.pageSize.getWidth();
+          const imgHeight = (img.height * imgWidth) / img.width;
+          const pageHeight = doc.internal.pageSize.getHeight();
+          
+          if (imgHeight > pageHeight) {
+            const ratio = pageHeight / imgHeight;
+            const newWidth = imgWidth * ratio;
+            const newHeight = pageHeight;
+            doc.addImage(img, 'JPEG', (imgWidth - newWidth) / 2, 0, newWidth, newHeight);
+          } else {
+            doc.addImage(img, 'JPEG', 0, (pageHeight - imgHeight) / 2, imgWidth, imgHeight);
+          }
+          
+          if (i === images.length - 1) {
+            doc.save(`${filename}.pdf`);
+          }
+        };
+        img.src = images[i];
+      } catch (error) {
+        console.error(`Error loading image ${i}:`, error);
+      }
+    }
+  };
+
+  const downloadComicAsDOCX = async (images, comic, filename) => {
+    const { Document, Packer, Paragraph, TextRun } = await import('docx');
+    
+    const docElements = [
+      new Paragraph({
+        children: [new TextRun({ text: comic.title || 'Comic', bold: true, size: 32 })]
+      }),
+      new Paragraph({ text: "" }),
+      new Paragraph({
+        children: [new TextRun({ text: `Topic: ${comic.topic || 'N/A'}` })]
+      }),
+      new Paragraph({ text: "" })
+    ];
+
+    // Note: Adding images to DOCX is complex and requires base64 conversion
+    // For now, we'll add image URLs as text
+    images.forEach((imageUrl, index) => {
+      docElements.push(
+        new Paragraph({
+          children: [new TextRun({ text: `Panel ${index + 1}: ${imageUrl}` })]
+        })
+      );
+    });
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: docElements
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadComicAsPPTX = async (images, comic, filename) => {
+    const { Document, Packer, Paragraph, TextRun, Slide, SlideLayout, SlideMaster } = await import('docx');
+    
+    // Create a simple presentation with comic panels
+    const slides = images.map((imageUrl, index) => {
+      return new Slide({
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: `Panel ${index + 1}`, bold: true, size: 24 })]
+          }),
+          new Paragraph({
+            children: [new TextRun({ text: `Image URL: ${imageUrl}` })]
+          })
+        ]
+      });
+    });
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: slides
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.pptx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadComicAsImages = async (images, filename) => {
+    for (let i = 0; i < images.length; i++) {
+      try {
+        const response = await fetch(images[i]);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${filename}_panel_${i + 1}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error(`Error downloading image ${i}:`, error);
+      }
+    }
+  };
+
+  const downloadImageAsPDF = async (imageUrl, filename) => {
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF();
+    
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const imgWidth = doc.internal.pageSize.getWidth();
+      const imgHeight = (img.height * imgWidth) / img.width;
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      if (imgHeight > pageHeight) {
+        const ratio = pageHeight / imgHeight;
+        const newWidth = imgWidth * ratio;
+        const newHeight = pageHeight;
+        doc.addImage(img, 'JPEG', (imgWidth - newWidth) / 2, 0, newWidth, newHeight);
+      } else {
+        doc.addImage(img, 'JPEG', 0, (pageHeight - imgHeight) / 2, imgWidth, imgHeight);
+      }
+      
+      doc.save(`${filename}.pdf`);
+    };
+    img.src = imageUrl;
+  };
+
+  const downloadImageAsDOCX = async (imageUrl, image, filename) => {
+    const { Document, Packer, Paragraph, TextRun } = await import('docx');
+    
+    const docElements = [
+      new Paragraph({
+        children: [new TextRun({ text: image.title || 'Image', bold: true, size: 32 })]
+      }),
+      new Paragraph({ text: "" }),
+      new Paragraph({
+        children: [new TextRun({ text: `Topic: ${image.topic || 'N/A'}` })]
+      }),
+      new Paragraph({
+        children: [new TextRun({ text: `Instructions: ${image.instructions || 'N/A'}` })]
+      }),
+      new Paragraph({ text: "" }),
+      new Paragraph({
+        children: [new TextRun({ text: `Image URL: ${imageUrl}` })]
+      })
+    ];
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: docElements
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadImageAsPPTX = async (imageUrl, image, filename) => {
+    const { Document, Packer, Paragraph, TextRun } = await import('docx');
+    
+    const docElements = [
+      new Paragraph({
+        children: [new TextRun({ text: image.title || 'Image', bold: true, size: 32 })]
+      }),
+      new Paragraph({ text: "" }),
+      new Paragraph({
+        children: [new TextRun({ text: `Topic: ${image.topic || 'N/A'}` })]
+      }),
+      new Paragraph({
+        children: [new TextRun({ text: `Instructions: ${image.instructions || 'N/A'}` })]
+      }),
+      new Paragraph({ text: "" }),
+      new Paragraph({
+        children: [new TextRun({ text: `Image URL: ${imageUrl}` })]
+      })
+    ];
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: docElements
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.pptx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadImageAsImage = async (imageUrl, filename) => {
+    const response = await fetch(imageUrl);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handlePreview = (item) => {
     setPreviewDialog({ open: true, item });
+  };
+
+  const handleDownloadClick = (item) => {
+    setDownloadDialog({ open: true, item });
   };
 
   // Add lesson handlers
@@ -329,6 +848,41 @@ export default function LibraryPage() {
       
       default:
         return contentTypes.all.placeholderImage;
+    }
+  };
+
+  // Get available download formats for each content type
+  const getAvailableFormats = (contentType) => {
+    switch (contentType) {
+      case 'comic':
+        return [
+          { value: 'pdf', label: 'PDF (.pdf)', description: 'All panels in a single PDF' },
+          { value: 'doc', label: 'Word Document (.docx)', description: 'Document with panel information' },
+          { value: 'pptx', label: 'PowerPoint (.pptx)', description: 'Presentation with panels' },
+          { value: 'image', label: 'Individual Images (.jpg)', description: 'Download each panel separately' }
+        ];
+      case 'image':
+        return [
+          { value: 'pdf', label: 'PDF (.pdf)', description: 'Image in PDF format' },
+          { value: 'doc', label: 'Word Document (.docx)', description: 'Document with image information' },
+          { value: 'pptx', label: 'PowerPoint (.pptx)', description: 'Presentation with image' },
+          { value: 'image', label: 'Image (.jpg)', description: 'Original image file' }
+        ];
+      case 'slides':
+        return [
+          { value: 'pptx', label: 'PowerPoint (.pptx)', description: 'Original presentation file' }
+        ];
+      case 'content':
+      case 'assessment':
+        return [
+          { value: 'pdf', label: 'PDF (.pdf)', description: 'Formatted document' },
+          { value: 'doc', label: 'Word Document (.docx)', description: 'Editable document' },
+          { value: 'md', label: 'Markdown (.md)', description: 'Plain text with formatting' }
+        ];
+      default:
+        return [
+          { value: 'pdf', label: 'PDF (.pdf)', description: 'Document format' }
+        ];
     }
   };
 
@@ -474,10 +1028,11 @@ export default function LibraryPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDownload(item)}
-                          className="text-xs h-7 px-2"
+                          onClick={() => handleDownloadClick(item)}
+                          className="text-xs h-7 px-2 flex items-center gap-1"
                         >
                           <Download className="h-3 w-3" />
+                          <ChevronDown className="h-2 w-2" />
                         </Button>
                         <Button
                           variant="outline"
@@ -503,8 +1058,51 @@ export default function LibraryPage() {
         onClose={() => setPreviewDialog({ open: false, item: null })}
         content={previewDialog.item}
         onDelete={handleDelete}
-        onDownload={handleDownload}
+        onDownload={(item, format) => handleDownload(item, format)}
       />
+
+      {/* Download Format Selection Dialog */}
+      <Dialog open={downloadDialog.open} onOpenChange={(open) => setDownloadDialog({ open, item: open ? downloadDialog.item : null })}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Download Content</DialogTitle>
+            <DialogDescription>
+              Choose the format for downloading your {downloadDialog.item?.type || 'content'}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="format">Download Format</Label>
+              <Select value={downloadFormat} onValueChange={setDownloadFormat}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select format" />
+                </SelectTrigger>
+                <SelectContent>
+                  {downloadDialog.item && getAvailableFormats(downloadDialog.item.type).map((format) => (
+                    <SelectItem key={format.value} value={format.value}>
+                      {format.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {downloadDialog.item && getAvailableFormats(downloadDialog.item.type).find(f => f.value === downloadFormat)?.description}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDownloadDialog({ open: false, item: null })}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => handleDownload(downloadDialog.item, downloadFormat)} 
+              disabled={isDownloading || !downloadFormat}
+            >
+              {isDownloading ? "Downloading..." : "Download"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add to Lesson Dialog */}
       <Dialog open={addToLessonDialog} onOpenChange={setAddToLessonDialog}>
@@ -576,15 +1174,6 @@ export default function LibraryPage() {
                 placeholder="What will students achieve?"
                 rows={3}
               />
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="isPublic"
-                checked={lessonFormData.isPublic}
-                onCheckedChange={(checked) => setLessonFormData(prev => ({ ...prev, isPublic: checked }))}
-              />
-              <Label htmlFor="isPublic">Make lesson public</Label>
             </div>
           </div>
           

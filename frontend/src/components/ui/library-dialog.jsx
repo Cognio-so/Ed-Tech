@@ -5,6 +5,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { 
   Eye, 
   X, 
   FileText, 
@@ -15,7 +21,11 @@ import {
   Search, 
   FileCheck,
   Download,
-  Trash2
+  Trash2,
+  ChevronDown,
+  FileImage,
+  File,
+  FileText as FileDoc
 } from "lucide-react";
 import ContentPreview from "@/components/ui/content-preview";
 import AssessmentPreview from "@/components/assessment-preview";
@@ -35,6 +45,14 @@ const contentTypes = {
   video: { label: "Videos", icon: Video, color: "bg-red-100" },
   assessment: { label: "Assessments", icon: FileCheck, color: "bg-yellow-100" },
   websearch: { label: "Web Search", icon: Search, color: "bg-indigo-100" }
+};
+
+// Download format configurations
+const downloadFormats = {
+  pdf: { label: "PDF", icon: File, extension: "pdf" },
+  doc: { label: "DOC", icon: FileDoc, extension: "docx" },
+  pptx: { label: "PPTX", icon: Presentation, extension: "pptx" },
+  image: { label: "Image", icon: FileImage, extension: "png" }
 };
 
 export default function LibraryDialog({ 
@@ -61,10 +79,84 @@ export default function LibraryDialog({
     onClose();
   };
 
-  const handleDownload = () => {
+  const handleDownload = (format = 'pdf') => {
     if (onDownload) {
-      onDownload(content);
+      onDownload(content, format);
     }
+  };
+
+  const getAvailableFormats = (contentType) => {
+    switch (contentType) {
+      case 'comic':
+      case 'image':
+        return ['pdf', 'doc', 'pptx', 'image'];
+      case 'content':
+      case 'assessment':
+        return ['pdf', 'doc'];
+      case 'slides':
+        return ['pptx']; // Only PPTX for slides
+      case 'video':
+        return ['pdf']; // Video metadata as PDF
+      case 'websearch':
+        return ['pdf', 'doc'];
+      default:
+        return ['pdf'];
+    }
+  };
+
+  const renderDownloadButton = () => {
+    const availableFormats = getAvailableFormats(content.type);
+    
+    if (availableFormats.length === 1) {
+      const format = availableFormats[0];
+      const formatConfig = downloadFormats[format];
+      const IconComponent = formatConfig.icon;
+      
+      return (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handleDownload(format)}
+          className="h-8 px-3"
+        >
+          <IconComponent className="h-4 w-4 mr-1" />
+          Download {formatConfig.label}
+        </Button>
+      );
+    }
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-3"
+          >
+            <Download className="h-4 w-4 mr-1" />
+            Download
+            <ChevronDown className="h-3 w-3 ml-1" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {availableFormats.map((format) => {
+            const formatConfig = downloadFormats[format];
+            const IconComponent = formatConfig.icon;
+            
+            return (
+              <DropdownMenuItem
+                key={format}
+                onClick={() => handleDownload(format)}
+                className="cursor-pointer"
+              >
+                <IconComponent className="h-4 w-4 mr-2" />
+                Download as {formatConfig.label}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
   };
 
   const renderContentPreview = () => {
@@ -196,16 +288,6 @@ export default function LibraryDialog({
                     <p className="text-sm">No image data available</p>
                   </div>
                 )}
-                <div className="absolute top-2 right-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={handleDownload}
-                    className="h-8 w-8 p-0"
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </div>
               </div>
             </div>
             {content.instructions && (
@@ -297,15 +379,7 @@ export default function LibraryDialog({
                 </Badge>
               </div>
               <div className="flex items-center gap-2 mr-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownload}
-                  className="h-8 px-3"
-                >
-                  <Download className="h-4 w-4 mr-1" />
-                  Download
-                </Button>
+                {renderDownloadButton()}
                 <Button
                   variant="outline"
                   size="sm"
@@ -315,7 +389,6 @@ export default function LibraryDialog({
                   <Trash2 className="h-4 w-4 mr-1" />
                   Delete
                 </Button>
-                
               </div>
             </DialogTitle>
           </DialogHeader>
