@@ -74,7 +74,13 @@ class PerplexityWebSearchTool:
             self.search_tool = StructuredTool.from_function(
                 func=self._search_func,
                 name="perplexity_search",
-                description="Search the web using Perplexity AI's API to find current and factual information",
+                description=(
+        "A powerful web search tool that can answer complex, multi-part questions in a single search. "
+        "Use this to find current and factual information. You should pass the user's full, "
+        "comprehensive question to this tool, especially if it contains multiple topics. "
+        "Do not break the query into smaller parts; the tool is optimized to handle detailed, combined queries."
+        "provide up-to-date information from the web, and must include relevant educational videos and images."
+    ),
                 args_schema=self._get_args_schema(),
             )
             
@@ -120,13 +126,14 @@ class PerplexityWebSearchTool:
         Returns:
             Formatted search prompt
         """
-        link_instruction = "Include source URLs for each piece of information." if self.include_links else ""
+        link_instruction = "Include source URLs for videos and images for each piece of information." if self.include_links else ""
         
         prompt = (
             f"Please provide comprehensive search results for: '{query}'\n\n"
             f"Return up to {self.max_results} relevant results. {link_instruction}\n"
-            f"Format each result with main information, a brief summary, and the source URL (if available).\n"
-            f"Make your response detailed and factual, with up-to-date information from the web."
+            f"Format each result with main information, a brief summary, and the source URLs.\n"
+            f"Make your response detailed and factual, with up-to-date information from the web.\n"
+            f"For each result, you MUST provide links to relevant educational youtube videos URLs and images URLs."
         )
         
         return prompt

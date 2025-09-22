@@ -38,3 +38,5 @@ python-dotenv
 nest-asyncio
 boto3
 python-pptx
+arabic_reshaper 
+python-bidi
