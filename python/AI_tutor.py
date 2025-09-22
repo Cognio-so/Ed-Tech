@@ -197,7 +197,8 @@ class VectorStoreManager:
             logging.info(f"VectorStoreManager: Creating QdrantClient with url={self.config.qdrant_url}")
             self.qdrant_client = QdrantClient(
                 url=self.config.qdrant_url, 
-                api_key=self.config.qdrant_api_key
+                api_key=self.config.qdrant_api_key,
+                timeout=120
             )
             logging.info("VectorStoreManager: QdrantClient created successfully")
         else:
@@ -434,7 +435,8 @@ class TeacherAsyncRAGTutor:
             # Initialize components for the search
             client = QdrantClient(
                 url=self.config.qdrant_url, 
-                api_key=self.config.qdrant_api_key
+                api_key=self.config.qdrant_api_key,
+                timeout=120
             )
             
             embeddings = OpenAIEmbeddings(

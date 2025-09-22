@@ -135,7 +135,8 @@ export default function ComicPage() {
             const evt = JSON.parse(json);
             
             if (evt.type === 'panel_image' && evt.url) {
-              const dataUrl = `data:image/png;base64,${evt.url}`;
+              // FIX: The backend now sends the full data URL. No need to add the prefix again.
+              const dataUrl = evt.url;
               
               setComicImages(prev => {
                 const existingIndex = prev.findIndex(p => p.index === evt.index);

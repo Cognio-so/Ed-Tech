@@ -42,7 +42,12 @@ from teaching_content_generation import run_generation_pipeline_async as generat
 # Media toolkit imports
 from media_toolkit.slides_generation import SlideSpeakGenerator
 from media_toolkit.image_generation_model import ImageGenerator
-from media_toolkit.comics_generation import create_comical_story_prompt, generate_comic_image
+from media_toolkit.comics_generation import (
+    create_comical_story_prompt, 
+    generate_comic_image, 
+    parse_story_panels,
+    add_footer_text_to_image
+)
 from media_toolkit.video_presentation_heygen import PPTXToHeyGenVideo
 
 # Import Tavily for web search in voice
@@ -715,96 +720,199 @@ class ComicsSchema(BaseModel):
     num_panels: int = Field(..., description="Number of panels to generate", ge=1, le=20)
     language: str = Field("English", description="Language for comic text (e.g., English, Arabic)")
 
-def _parse_panel_prompts(story_text: str):
-    lines = story_text.strip().split("\n")
+def _parse_enhanced_story_panels(story_text: str):
+    """
+    Enhanced parsing function that matches the comics_generation.py parse_story_panels function.
+    """
+    print("Parsing story panels for FastAPI...")
     panels = []
-    for line in lines:
+    
+    if not story_text:
+        print("No story text to parse")
+        return panels
+    
+    lines = [line.strip() for line in story_text.strip().split('\n') if line.strip()]
+    print(f"Processing {len(lines)} lines...")
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        
         if "Panel_Prompt:" in line:
-            try:
-                prompt = line.split("Panel_Prompt:")[1].strip()
-                if prompt:
-                    panels.append(prompt)
-            except Exception:
-                continue
+            # Extract panel prompt
+            panel_prompt = line.split("Panel_Prompt:", 1)[1].strip()
+            footer_text = ""
+            
+            # Look for the corresponding Footer_Text on next line or nearby lines
+            j = i + 1
+            while j < len(lines) and j < i + 5:  # Look within next 5 lines
+                if "Footer_Text:" in lines[j]:
+                    footer_text = lines[j].split("Footer_Text:", 1)[1].strip()
+                    break
+                j += 1
+            
+            if panel_prompt:
+                panel_data = {
+                    'prompt': panel_prompt,
+                    'footer_text': footer_text
+                }
+                panels.append(panel_data)
+                print(f"Panel {len(panels)} parsed - Prompt: {panel_prompt[:50]}...")
+                if footer_text:
+                    print(f"  Footer: {footer_text[:50]}...")
+                else:
+                    print("  No footer text found")
+        
+        i += 1
+    
+    print(f"Successfully parsed {len(panels)} panels")
     return panels
 
+# Enhanced Comics Streaming Endpoint
 @app.post("/comics_stream_endpoint")
 async def comics_stream_endpoint(schema: ComicsSchema, request: Request):
     async def event_stream():
         import json
         async def send(obj: dict):
-            # SSE event
             yield f"data: {json.dumps(obj)}\n\n"
 
         try:
-            # 1) Generate story/panel prompts
+            logger.info(f"Starting enhanced comics generation - Topic: {schema.instructions}")
+            logger.info(f"Grade: {schema.grade_level}, Panels: {schema.num_panels}, Language: {schema.language}")
+            
+            # 1) Generate enhanced story/panel prompts
             story_prompts = await run_in_threadpool(
                 create_comical_story_prompt,
                 schema.instructions,
                 schema.grade_level,
                 schema.num_panels,
-                schema.language  # Pass language parameter
+                schema.language
             )
+            
             if not story_prompts:
-                async for chunk in send({"type": "error", "message": "Failed to generate story prompts."}):
+                error_msg = "Failed to generate story prompts"
+                logger.error(error_msg)
+                async for chunk in send({"type": "error", "message": error_msg}):
                     yield chunk
                 return
 
+            logger.info("Story prompts generated successfully")
+            
             # Send the full story text first
             async for chunk in send({"type": "story_prompts", "content": story_prompts}):
                 yield chunk
 
-            # 2) Parse and send each panel prompt, then image URL per panel
-            panel_prompts = _parse_panel_prompts(story_prompts)
-            if not panel_prompts:
-                async for chunk in send({"type": "error", "message": "No panel prompts parsed."}):
+            # 2) Parse enhanced story prompts to get panel/footer pairs
+            panels = _parse_enhanced_story_panels(story_prompts)
+            if not panels:
+                error_msg = "No panel prompts could be parsed from the generated story"
+                logger.error(error_msg)
+                logger.error(f"Story content was: {story_prompts[:500]}...")
+                async for chunk in send({"type": "error", "message": error_msg}):
                     yield chunk
                 return
 
-            for i, prompt in enumerate(panel_prompts[:schema.num_panels]):
-                # FIX: Check if the client has disconnected before starting work for the next panel
+            logger.info(f"Parsed {len(panels)} panels successfully")
+            
+            # Send panel count info
+            async for chunk in send({
+                "type": "panels_info", 
+                "total_panels": len(panels),
+                "panels_preview": [{"index": i+1, "has_footer": bool(p['footer_text'])} for i, p in enumerate(panels)]
+            }):
+                yield chunk
+
+            # 3) Generate images with footer text for each panel
+            for i, panel_data in enumerate(panels[:schema.num_panels]):
+                # Check if client disconnected
                 if await request.is_disconnected():
-                    logger.info("Client disconnected, stopping comic generation stream.")
+                    logger.info("Client disconnected, stopping comics generation")
                     break
                 
                 panel_index = i + 1
-                # Emit the panel prompt
-                async for chunk in send({"type": "panel_prompt", "index": panel_index, "prompt": prompt}):
-                    yield chunk
-
-                # Generate panel image synchronously via threadpool to avoid blocking
-                image_url = await run_in_threadpool(generate_comic_image, prompt, panel_index)
+                logger.info(f"Processing panel {panel_index}/{len(panels)}")
                 
-                # FIX: Check for disconnection again before sending the result
-                if await request.is_disconnected():
-                    logger.info("Client disconnected after image generation, stopping.")
-                    break
-                
+                # Emit the panel information
                 async for chunk in send({
-                    "type": "panel_image",
+                    "type": "panel_info",
                     "index": panel_index,
-                    "url": image_url or ""
+                    "prompt": panel_data['prompt'],
+                    "footer_text": panel_data['footer_text'],
+                    "has_footer": bool(panel_data['footer_text'])
                 }):
                     yield chunk
 
-            # Done (only send if not disconnected)
+                try:
+                    # Generate panel image with footer text using enhanced function
+                    logger.info(f"Generating image for panel {panel_index}...")
+                    enhanced_image_b64 = await run_in_threadpool(
+                        generate_comic_image, 
+                        panel_data['prompt'], 
+                        panel_index,
+                        panel_data['footer_text'],  # Include footer text
+                        schema.language  # Include language parameter
+                    )
+                    
+                    # Check for disconnection again
+                    if await request.is_disconnected():
+                        logger.info("Client disconnected after image generation")
+                        break
+                    
+                    if enhanced_image_b64:
+                        # Create data URL for the image
+                        image_data_url = f"data:image/png;base64,{enhanced_image_b64}"
+                        
+                        # Send the enhanced image with footer text
+                        async for chunk in send({
+                            "type": "panel_image",
+                            "index": panel_index,
+                            "url": image_data_url,
+                            "has_footer": bool(panel_data['footer_text']),
+                            "footer_text": panel_data['footer_text'],
+                            "prompt_used": panel_data['prompt'][:100] + "..." if len(panel_data['prompt']) > 100 else panel_data['prompt']
+                        }):
+                            yield chunk
+                            
+                        logger.info(f"Panel {panel_index} completed successfully with footer text")
+                    else:
+                        error_msg = f"Failed to generate image for panel {panel_index}"
+                        logger.error(error_msg)
+                        async for chunk in send({
+                            "type": "panel_error",
+                            "index": panel_index,
+                            "message": error_msg
+                        }):
+                            yield chunk
+                            
+                except Exception as panel_error:
+                    error_msg = f"Error generating panel {panel_index}: {str(panel_error)}"
+                    logger.error(error_msg, exc_info=True)
+                    async for chunk in send({
+                        "type": "panel_error",
+                        "index": panel_index,
+                        "message": error_msg
+                    }):
+                        yield chunk
+
+            # Send completion signal (only if not disconnected)
             if not await request.is_disconnected():
-                async for chunk in send({"type": "done"}):
+                logger.info("Comics generation completed successfully")
+                async for chunk in send({"type": "done", "message": "Comic generation completed!"}):
                     yield chunk
 
         except Exception as e:
-            logger.error(f"Error in comics stream: {e}", exc_info=True)
-            async for chunk in send({"type": "error", "message": str(e)}):
+            error_msg = f"Error in enhanced comics stream: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            async for chunk in send({"type": "error", "message": error_msg}):
                 yield chunk
 
     headers = {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
         "Content-Type": "text/event-stream",
-        "X-Accel-Buffering": "no",  # for some proxies
+        "X-Accel-Buffering": "no",
     }
     return StreamingResponse(event_stream(), headers=headers, media_type="text/event-stream")
-
 # ==============================
 # 9. TEACHER BULK DATA ENDPOINT
 # ==============================
