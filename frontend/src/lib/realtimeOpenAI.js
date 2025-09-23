@@ -9,6 +9,8 @@ export class RealtimeOpenAIService {
     this.onLipSyncData = null;
     this.onTranscript = null;
     this.onUserTranscript = null;
+    this.onResponseStart = null; // Reset transcript when new response starts
+    this.onResponseComplete = null; // Mark response as complete
     this.isAnalyzing = false;
     this.currentLipSyncData = { A: 0, E: 0, I: 0, O: 0, U: 0 };
     
@@ -500,6 +502,10 @@ Core Instructions:
         break;
       case 'response.audio_transcript.done':
         console.log('📝 AI transcript complete');
+        // Mark current response as complete
+        if (this.onResponseComplete) {
+          this.onResponseComplete();
+        }
         break;
       case 'conversation.item.created':
         console.log('💬 Conversation item created');
@@ -509,6 +515,10 @@ Core Instructions:
         break;
       case 'conversation.item.output_created':
         console.log('🤖 AI output created');
+        // Reset transcript when new AI response starts
+        if (this.onResponseStart) {
+          this.onResponseStart();
+        }
         break;
       case 'error':
         console.error('❌ OpenAI error:', message.error);

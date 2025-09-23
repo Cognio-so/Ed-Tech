@@ -58,11 +58,9 @@ import {
     getTeacherAchievementsData,
     getTeacherLearningStats,
     getCurrentTeacherData,
-    getStudentsForTeacher
+    getStudentsForTeacher,
+    debugDatabaseCollections
 } from '../app/(home)/teacher/voice-coach/action';
-
-// Add import for real student data
-import { getStudents } from '../app/(home)/teacher/class-grouping/action';
 
 // Import RealtimeOpenAIService from the separate file
 import { RealtimeOpenAIService } from '@/lib/realtimeOpenAI';
@@ -85,8 +83,7 @@ const VoiceCoach = () => {
     const messagesEndRef = useRef(null);
     const scrollAreaRef = useRef(null);
     
-    // Voice state using RealtimeOpenAIService - Updated to match reference
-    const [lipSyncData, setLipSyncData] = useState({ A: 0, E: 0, I: 0, O: 0, U: 0 });
+    // Voice state using RealtimeOpenAIService
     const [isConnected, setIsConnected] = useState(false);
     const [transcript, setTranscript] = useState('');
     const [error, setError] = useState('');
@@ -132,19 +129,13 @@ const VoiceCoach = () => {
 
     // Handle transcript updates - automatically add to messages
     useEffect(() => {
-        if (transcript) {
+        if (transcript !== undefined && transcript !== '') {
             setMessages(prev => {
                 const newMessages = [...prev];
                 const lastMessage = newMessages[newMessages.length - 1];
                 
-                if (lastMessage && lastMessage.type === 'ai' && lastMessage.isLive) {
-                    // Update existing live message
-                    newMessages[newMessages.length - 1] = { 
-                        ...lastMessage, 
-                        content: transcript,
-                        id: lastMessage.id // Keep the same ID
-                    };
-                } else {
+                // Only create new message if there's no existing live AI message
+                if (!lastMessage || lastMessage.type !== 'ai' || !lastMessage.isLive) {
                     // Add new live message
                     newMessages.push({ 
                         id: Date.now() + Math.random(),
@@ -154,6 +145,13 @@ const VoiceCoach = () => {
                         timestamp: new Date(),
                         avatar: <GraduationCap className="w-4 h-4 text-blue-500" />
                     });
+                } else {
+                    // Update existing live message
+                    newMessages[newMessages.length - 1] = { 
+                        ...lastMessage, 
+                        content: transcript,
+                        id: lastMessage.id // Keep the same ID
+                    };
                 }
                 
                 return newMessages;
@@ -166,7 +164,8 @@ const VoiceCoach = () => {
         const fetchTeacherData = async () => {
             setDataLoading(true);
             try {
-                // Fetch all teacher data and real student data in parallel
+                const debugResult = await debugDatabaseCollections();
+
                 const [userResult, progressResult, achievementsResult, statsResult, studentsResult] = await Promise.all([
                     getCurrentTeacherData(),
                     getTeacherProgressData(),
@@ -175,7 +174,6 @@ const VoiceCoach = () => {
                     getStudentsForTeacher()
                 ]);
 
-                // Set user data from the API response
                 if (userResult.success) {
                     setUser({
                         _id: userResult.data._id,
@@ -185,7 +183,6 @@ const VoiceCoach = () => {
                         subjects: userResult.data.subjects || ['Mathematics', 'Science', 'English']
                     });
                 } else {
-                    // Fallback user data
                     setUser({
                         _id: 'fallback_teacher_id',
                         email: 'teacher@example.com',
@@ -195,12 +192,10 @@ const VoiceCoach = () => {
                     });
                 }
 
-                // Set real student data
                 if (studentsResult.success) {
                     setStudents(studentsResult.data);
                 }
 
-                // Set teacher data from API responses
                 setTeacherData({
                     lessons: progressResult.success ? progressResult.data.filter(item => item.contentType === 'lesson') : [],
                     resources: progressResult.success ? progressResult.data : [],
@@ -210,19 +205,13 @@ const VoiceCoach = () => {
                     userProgress: progressResult.success ? progressResult.data : []
                 });
 
-                console.log('Teacher data loaded:', {
-                    user: userResult.success ? userResult.data.name : 'fallback',
-                    students: studentsResult.success ? studentsResult.data.length : 0,
-                    progress: progressResult.success ? progressResult.data.length : 0,
-                    achievements: achievementsResult.success ? achievementsResult.data.length : 0,
-                    stats: statsResult.success ? statsResult.data : {}
-                });
+                if (debugResult.success) {
+                    toast.info(`Database: ${debugResult.data.userCounts.students} students, ${debugResult.data.teacherContentCounts.contents} contents`);
+                }
 
             } catch (error) {
-                console.error('Failed to fetch teacher data:', error);
                 toast.error('Failed to load your teaching data');
                 
-                // Set fallback data
                 setUser({
                     _id: 'fallback_teacher_id',
                     email: 'teacher@example.com',
@@ -243,7 +232,6 @@ const VoiceCoach = () => {
         if (user && !dataLoading) {
             const initializeSession = async () => {
                 try {
-                    // Create session using action
                     const sessionFormData = new FormData();
                     sessionFormData.append('userId', user._id);
                     sessionFormData.append('teacherData', JSON.stringify({
@@ -257,13 +245,10 @@ const VoiceCoach = () => {
                     
                     if (sessionResult.success) {
                         setSessionId(sessionResult.sessionId);
-                        console.log('Voice Coach session initialized:', sessionResult.sessionId);
                     } else {
-                        console.error('Failed to create session:', sessionResult.error);
                         toast.error('Failed to initialize session');
                     }
                 } catch (error) {
-                    console.error('Error initializing session:', error);
                     toast.error('Failed to initialize session');
                 }
             };
@@ -314,16 +299,13 @@ const VoiceCoach = () => {
             formData.append('message', inputValue);
             formData.append('sessionId', sessionId);
             
-            // OPTIMIZED: Use pre-processed student data from state instead of recalculating
             const optimizedStudentData = {
-                // Teacher basic info
                 teacher_name: user.name,
                 teacher_id: user._id,
                 teacherName: user.name,
                 teacherId: user._id,
                 
-                // Use existing student data from state (already processed)
-                students: students.map(student => ({
+                student_details_with_reports: students.map(student => ({
                     student_name: student.name,
                     student_id: student._id,
                     email: student.email,
@@ -347,8 +329,7 @@ const VoiceCoach = () => {
                     ]
                 })),
                 
-                // Simplified performance metrics
-                studentPerformance: {
+                student_performance: {
                     totalStudents: students.length,
                     averagePerformance: students.length > 0 ? 
                         students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0,
@@ -361,8 +342,7 @@ const VoiceCoach = () => {
                         .map(s => ({ name: s.name, score: s.performance?.overall || 75, subjects: s.subjects }))
                 },
                 
-                // Simplified overview
-                studentOverview: {
+                student_overview: {
                     totalStudents: students.length,
                     gradeDistribution: students.reduce((acc, s) => {
                         s.grades.forEach(grade => {
@@ -378,8 +358,7 @@ const VoiceCoach = () => {
                     }, {})
                 },
                 
-                // Simplified top performers
-                topPerformers: students
+                top_performers: students
                     .sort((a, b) => (b.performance?.overall || 75) - (a.performance?.overall || 75))
                     .slice(0, 5)
                     .map(s => ({
@@ -389,8 +368,7 @@ const VoiceCoach = () => {
                         group: s.group || 'Default'
                     })),
                 
-                // Simplified subject performance
-                subjectPerformance: students.reduce((acc, s) => {
+                subject_performance: students.reduce((acc, s) => {
                     s.subjects.forEach(subject => {
                         if (!acc[subject]) {
                             acc[subject] = { total: 0, count: 0, students: [] };
@@ -405,11 +383,31 @@ const VoiceCoach = () => {
                     return acc;
                 }, {}),
                 
-                // Teacher context
-                role: 'teacher',
-                recentActivities: teacherData.progress.slice(0, 3), // Reduced from 5 to 3
-                teachingExperience: 'intermediate',
-                topicInterests: user.subjects || []
+                generated_content_details: teacherData.lessons || [],
+                assessment_details: teacherData.progress?.filter(item => item.contentType === 'assessment') || [],
+                
+                media_toolkit: {
+                    comics: teacherData.progress?.filter(item => item.contentType === 'comic') || [],
+                    images: teacherData.progress?.filter(item => item.contentType === 'image') || [],
+                    slides: teacherData.progress?.filter(item => item.contentType === 'presentation') || [],
+                    videos: teacherData.progress?.filter(item => item.contentType === 'video') || []
+                },
+                
+                media_counts: {
+                    comics: teacherData.learningStats?.totalComics || 0,
+                    images: teacherData.learningStats?.totalImages || 0,
+                    slides: teacherData.learningStats?.totalPresentations || 0,
+                    videos: teacherData.learningStats?.totalVideos || 0,
+                    webSearch: teacherData.learningStats?.totalWebSearches || 0
+                },
+                
+                learning_analytics: {
+                    totalLessons: teacherData.lessons?.length || 0,
+                    totalAssessments: teacherData.assessments?.length || 0,
+                    averageStudentPerformance: students.length > 0 ? 
+                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0,
+                    totalContent: teacherData.learningStats?.totalContent || 0
+                }
             };
 
             formData.append('studentData', JSON.stringify(optimizedStudentData));
@@ -448,7 +446,6 @@ const VoiceCoach = () => {
                 throw new Error(response.error || 'Failed to get response');
             }
         } catch (error) {
-            console.error('Error sending message:', error);
             toast.error('Failed to send message. Please try again.');
 
             const errorMessage = {
@@ -504,22 +501,45 @@ const VoiceCoach = () => {
         
         try {
             openAIServiceRef.current = new RealtimeOpenAIService(apiKey);
-            
-            // Set up callbacks
-            openAIServiceRef.current.onLipSyncData = (data) => {
-                setLipSyncData(data);
+
+            // Add callback for when new response starts
+            openAIServiceRef.current.onResponseStart = () => {
+                setTranscript(''); // Reset transcript for new response
+                // Mark the last live message as complete
+                setMessages(prev => {
+                    const newMessages = [...prev];
+                    const lastMessage = newMessages[newMessages.length - 1];
+                    if (lastMessage && lastMessage.type === 'ai' && lastMessage.isLive) {
+                        newMessages[newMessages.length - 1] = {
+                            ...lastMessage,
+                            isLive: false // Mark as complete
+                        };
+                    }
+                    return newMessages;
+                });
             };
 
-            // Handle AI response transcripts
+            // Add callback for when response is complete
+            openAIServiceRef.current.onResponseComplete = () => {
+                // Mark the current live message as complete
+                setMessages(prev => {
+                    const newMessages = [...prev];
+                    const lastMessage = newMessages[newMessages.length - 1];
+                    if (lastMessage && lastMessage.type === 'ai' && lastMessage.isLive) {
+                        newMessages[newMessages.length - 1] = {
+                            ...lastMessage,
+                            isLive: false // Mark as complete
+                        };
+                    }
+                    return newMessages;
+                });
+            };
+
             openAIServiceRef.current.onTranscript = (delta) => {
                 setTranscript(prev => prev + delta);
             };
 
-            // Handle user input transcripts
             openAIServiceRef.current.onUserTranscript = (userTranscript) => {
-                console.log('🎤 User said:', userTranscript);
-                
-                // Add user message to chat
                 const userMessage = {
                     id: Date.now() + Math.random(),
                     type: 'user',
@@ -531,7 +551,6 @@ const VoiceCoach = () => {
                 setMessages(prev => [...prev, userMessage]);
             };
 
-            // Prepare teacher data for the AI
             const teacherDataForAI = {
                 teacherName: user?.name || 'Teacher',
                 students: students.map(student => ({
@@ -623,14 +642,6 @@ const VoiceCoach = () => {
                 }
             };
 
-            console.log('📊 Teacher data prepared for AI:', {
-                teacherName: teacherDataForAI.teacherName,
-                studentsCount: teacherDataForAI.students.length,
-                hasStudentData: teacherDataForAI.students.length > 0,
-                hasContent: teacherDataForAI.content.length > 0
-            });
-
-            // Connect to OpenAI with teacher data
             await openAIServiceRef.current.connect(teacherDataForAI);
             
             setIsConnected(true);
@@ -641,7 +652,6 @@ const VoiceCoach = () => {
             }]);
             
         } catch (error) {
-            console.error('Connection failed:', error);
             setError(`Failed to connect: ${error.message}`);
             setMessages(prev => [...prev, { 
                 id: Date.now() + Math.random(),
@@ -665,18 +675,13 @@ const VoiceCoach = () => {
     // Improve the handleDisconnect function
     const handleDisconnect = () => {
         try {
-            console.log(' Starting disconnect process...');
-            
             if (openAIServiceRef.current) {
-                console.log(' Disconnecting from OpenAI...');
                 openAIServiceRef.current.disconnect();
                 openAIServiceRef.current = null;
             }
             
-            // Reset all voice-related state
             setIsConnected(false);
             setTranscript('');
-            setLipSyncData({ A: 0, E: 0, I: 0, O: 0, U: 0 });
             setError('');
             setIsLoading(false);
             
@@ -686,9 +691,7 @@ const VoiceCoach = () => {
                 content: 'Its a pleasure to help you today' 
             }]);
             
-            console.log('✅ Successfully disconnected from OpenAI');
         } catch (error) {
-            console.error('❌ Error during disconnect:', error);
             setError(`Disconnect error: ${error.message}`);
         }
     };
@@ -719,7 +722,7 @@ const VoiceCoach = () => {
                 toast.success(`Uploaded ${files.length} file(s) successfully`);
                 
                 const uploadMessage = {
-                    id: Date.now() + Math.random(), // Add unique ID
+                    id: Date.now() + Math.random(),
                     type: 'ai',
                     content: `I've received ${files.length} file(s). I can now help you analyze and discuss the content. What would you like to know about these documents?`,
                     timestamp: new Date(),
@@ -730,7 +733,6 @@ const VoiceCoach = () => {
                 throw new Error(response.error || 'Upload failed');
             }
         } catch (error) {
-            console.error('Error uploading files:', error);
             toast.error('Failed to upload files. Please try again.');
         } finally {
             setIsUploading(false);
@@ -743,7 +745,7 @@ const VoiceCoach = () => {
         toast.info('Cleared uploaded documents');
         
         const clearMessage = {
-            id: Date.now() + Math.random(), // Add unique ID
+            id: Date.now() + Math.random(),
             type: 'ai',
             content: "🗑️ Cleared all uploaded documents. You can upload new ones anytime!",
             timestamp: new Date(),
@@ -776,7 +778,7 @@ const VoiceCoach = () => {
                     setUploadedFiles(prev => [...prev, ...files]);
                     
                     const uploadMessage = {
-                        id: Date.now() + Math.random(), // Add unique ID
+                        id: Date.now() + Math.random(),
                         type: 'ai',
                         content: `✅ Successfully uploaded ${files.length} document(s)! I can now help you with questions about these files.`,
                         timestamp: new Date(),
@@ -789,11 +791,10 @@ const VoiceCoach = () => {
                     throw new Error(uploadResult.error);
                 }
             } catch (error) {
-                console.error('Upload error:', error);
                 toast.error('Failed to upload documents. Please try again.');
                 
                 const errorMessage = {
-                    id: Date.now() + Math.random(), // Add unique ID
+                    id: Date.now() + Math.random(),
                     type: 'error',
                     content: "❌ Failed to upload your documents. Please try again or contact support if the problem persists.",
                     timestamp: new Date(),
@@ -970,12 +971,14 @@ const VoiceCoach = () => {
 
             <div className="w-full px-4 py-6">
                 <div className="w-full">
-                    {/* Main Chat Area */}
+                    {/* Main Content Area - Full Width Chat */}
                     <div className="w-full">
+                        {/* Chat Section */}
                         <motion.div
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: 0.1 }}
+                            className="w-full"
                         >
                             <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg h-[610px] flex flex-col">
                                 {/* Messages Area */}

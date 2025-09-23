@@ -16,7 +16,6 @@ class PythonApiClient {
     };
 
     try {
-      console.log(`Making request to: ${url}`, config);
       const response = await fetch(url, config);
       
       if (!response.ok) {
@@ -35,7 +34,6 @@ class PythonApiClient {
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
         const data = await response.json();
-        console.log(`Python API response:`, data);
         return data;
       }
       
@@ -43,7 +41,6 @@ class PythonApiClient {
       return response.text();
 
     } catch (error) {
-      console.error(`Python API Error (${endpoint}):`, error);
       throw error;
     }
   }
@@ -77,7 +74,6 @@ class PythonApiClient {
       language: assessmentData.language || 'English',
     };
 
-    console.log('Sending assessment request:', pythonSchema);
     return this.makeRequest('/assessment_endpoint', {
       method: 'POST',
       body: JSON.stringify(pythonSchema)
@@ -113,7 +109,6 @@ class PythonApiClient {
       session_duration: contentData.sessionDuration || '45 minutes',
     };
 
-    console.log('Sending content request:', pythonSchema);
     return this.makeRequest('/teaching_content_endpoint', {
       method: 'POST',
       body: JSON.stringify(pythonSchema)
@@ -133,7 +128,6 @@ class PythonApiClient {
       template: presentationData.template || 'default'
     };
 
-    console.log('Sending presentation request:', pythonSchema);
     return this.makeRequest('/presentation_endpoint', {
       method: 'POST',
       body: JSON.stringify(pythonSchema)
@@ -152,7 +146,6 @@ class PythonApiClient {
       template: contentData.template || 'default'
     };
 
-    console.log('Sending slides from content request:', pythonSchema);
     return this.makeRequest('/presentation_endpoint', {
       method: 'POST',
       body: JSON.stringify(pythonSchema)
@@ -181,7 +174,6 @@ class PythonApiClient {
       }
     };
 
-    console.log('Sending chatbot request with student data:', pythonSchema);
     return this.makeRequest('/chatbot_endpoint', {
       method: 'POST',
       body: JSON.stringify(pythonSchema)
@@ -221,9 +213,6 @@ class PythonApiClient {
       uploaded_files: uploadedFileNames  // NEW: Pass uploaded file names for context
     };
 
-    console.log('Starting chatbot stream with payload:', payload);
-    console.log('Making request to:', url);
-    
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -231,18 +220,13 @@ class PythonApiClient {
         body: JSON.stringify(payload),
       });
       
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
-      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Error response:', errorText);
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
       
       return response;
     } catch (error) {
-      console.error('Fetch error:', error);
       throw error;
     }
   }
@@ -389,7 +373,6 @@ class PythonApiClient {
       language: imageData.language || 'English',
     };
 
-    console.log('Sending image generation request:', pythonSchema);
     return this.makeRequest('/image_generation_endpoint', {
       method: 'POST',
       body: JSON.stringify(pythonSchema),
@@ -408,7 +391,6 @@ class PythonApiClient {
       max_results: parseInt(searchData.maxResults),
     };
 
-    console.log('Sending web search request:', pythonSchema);
     return this.makeRequest('/web_search_endpoint', {
       method: 'POST',
       body: JSON.stringify(pythonSchema),
@@ -443,14 +425,11 @@ class PythonApiClient {
   // NEW: Teacher Voice functionality methods
   async startTeacherVoiceSession(teacherData) {
     const url = `${this.baseUrl.replace('http', 'ws')}/ws/teacher-voice`;
-    console.log('Connecting to teacher voice WebSocket:', url);
-    console.log('Teacher data being sent:', teacherData);
     
     const ws = new WebSocket(url);
     
     // Send teacher data when connection opens
     ws.onopen = () => {
-      console.log('Teacher voice WebSocket connected');
       ws.send(JSON.stringify(teacherData));
     };
     
@@ -467,7 +446,6 @@ class PythonApiClient {
       learning_analytics: teacherData.analytics
     };
 
-    console.log('Sending teacher bulk data:', pythonSchema);
     return this.makeRequest('/teacher_bulk_data_endpoint', {
       method: 'POST',
       body: JSON.stringify(pythonSchema)
@@ -476,36 +454,25 @@ class PythonApiClient {
 
   // Teacher voice chat endpoint for text-based chatbot
   async startTeacherVoiceChat(teacherData, sessionId, query = '', history = [], files = [], webSearchEnabled = true) {
-    const url = `${this.baseUrl}/teacher_chat_endpoint`;  // FIXED: Use correct endpoint
+    const url = `${this.baseUrl}/teacher_chat_endpoint`;
     
-    // Transform teacher data to match backend schema - only use actual data
     const transformedTeacherData = {
-      teacher_name: teacherData.teacherName || teacherData.teacher_name,
-      teacher_id: teacherData.teacherId || teacherData.teacher_id,
-      
-      // Student data - only actual data from database
-      student_details_with_reports: teacherData.students || [],
-      student_performance: teacherData.studentPerformance || {},
-      student_overview: teacherData.studentOverview || {},
-      top_performers: teacherData.topPerformers || [],
-      subject_performance: teacherData.subjectPerformance || [],
-      behavior_analysis: teacherData.behaviorAnalysis || {},
-      attendance_data: teacherData.attendanceData || {},
-      
-      // Content and assessments - only actual data from database
-      generated_content_details: teacherData.content || [],
-      assessment_details: teacherData.assessments || [],
-      
-      // Media toolkit - only actual counts from database
-      media_toolkit: teacherData.mediaToolkit || {},
-      media_counts: teacherData.mediaCount || {},
-      
-      // Progress and feedback - only actual data from database
-      progress_data: teacherData.progress || {},
-      feedback_data: teacherData.feedback || [],
-      
-      // Learning analytics - only actual data from database
-      learning_analytics: teacherData.learningAnalytics || {}
+      teacher_name: teacherData.teacher_name || teacherData.teacherName,
+      teacher_id: teacherData.teacher_id || teacherData.teacherId,
+      student_details_with_reports: teacherData.student_details_with_reports || [],
+      student_performance: teacherData.student_performance || {},
+      student_overview: teacherData.student_overview || {},
+      top_performers: teacherData.top_performers || [],
+      subject_performance: teacherData.subject_performance || {},
+      behavior_analysis: teacherData.behavior_analysis || {},
+      attendance_data: teacherData.attendance_data || {},
+      generated_content_details: teacherData.generated_content_details || [],
+      assessment_details: teacherData.assessment_details || [],
+      media_toolkit: teacherData.media_toolkit || {},
+      media_counts: teacherData.media_counts || {},
+      progress_data: teacherData.progress_data || {},
+      feedback_data: teacherData.feedback_data || [],
+      learning_analytics: teacherData.learning_analytics || {}
     };
 
     const uploadedFileNames = files.map(file => file.name);
@@ -518,8 +485,6 @@ class PythonApiClient {
       web_search_enabled: true,
       uploaded_files: uploadedFileNames
     };
-
-    console.log('Starting teacher voice chat with comprehensive payload:', payload);
     
     try {
       const response = await fetch(url, {
@@ -535,7 +500,6 @@ class PythonApiClient {
       
       return response;
     } catch (error) {
-      console.error('Teacher voice chat error:', error);
       throw error;
     }
   }
@@ -583,7 +547,6 @@ class PythonApiClient {
       uploaded_files: uploadedFiles
     };
 
-    console.log('Starting teacher chat with comprehensive payload:', payload);
     
     try {
       const response = await fetch(url, {
@@ -599,7 +562,6 @@ class PythonApiClient {
       
       return response;
     } catch (error) {
-      console.error('Teacher chat error:', error);
       throw error;
     }
   }
@@ -622,7 +584,6 @@ class PythonApiClient {
       
       return await response.json();
     } catch (error) {
-      console.error('Teacher voice initialization error:', error);
       throw error;
     }
   }
@@ -634,13 +595,6 @@ class PythonApiClient {
     formData.append('voice_id', videoData.voice_id);
     formData.append('talking_photo_id', videoData.talking_photo_id);
     formData.append('title', videoData.title);
-
-    console.log('Sending video presentation request:', {
-      voice_id: videoData.voice_id,
-      talking_photo_id: videoData.talking_photo_id,
-      title: videoData.title,
-      file_name: videoData.pptx_file.name
-    });
 
     return this.makeRequest('/video_presentation_endpoint', {
       method: 'POST',
@@ -661,7 +615,6 @@ class PythonApiClient {
       max_results: parseInt(searchData.maxResults) || 5,
     };
 
-    console.log('Sending web search request:', pythonSchema);
     return this.makeRequest('/web_search_endpoint', {
       method: 'POST',
       body: JSON.stringify(pythonSchema),
@@ -688,14 +641,11 @@ class PythonApiClient {
   // NEW: Student voice session initialization (WebSocket)
   async startStudentVoiceSession(studentData) {
     const url = `${this.baseUrl.replace('http', 'ws')}/ws/student-voice`;
-    console.log('Connecting to student voice WebSocket:', url);
-    console.log('Student data being sent:', studentData);
     
     const ws = new WebSocket(url);
     
     // Send student data when connection opens
     ws.onopen = () => {
-      console.log('Student voice WebSocket connected');
       ws.send(JSON.stringify(studentData));
     };
     
@@ -727,7 +677,6 @@ class PythonApiClient {
       
       return response;
     } catch (error) {
-      console.error('Error starting student chat:', error);
       throw error;
     }
   }
