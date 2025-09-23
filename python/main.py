@@ -936,7 +936,7 @@ class TeacherBulkDataSchema(BaseModel):
     assessment_details: List[Dict[str, Any]] = Field([], description="Assessment details")
     
     # Media toolkit - match frontend field names exactly
-    media_toolkit: Dict[str, Any] = Field({}, description="Media toolkit data")
+    # media_toolkit: Dict[str, Any] = Field({}, description="Media toolkit data")
     media_counts: Dict[str, Any] = Field({}, description="Media counts")
     
     # Progress and feedback - match frontend field names exactly
@@ -1066,6 +1066,7 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
     try:
         # Get comprehensive teacher data from the schema - use actual data only
         teacher_data = request.teacher_data.model_dump()
+        # print(f"Received teacher data: {teacher_data}")
         teacher_name = teacher_data.get('teacher_name', 'Teacher')
         teacher_id = teacher_data.get('teacher_id', 'Unknown')
             
@@ -1081,7 +1082,7 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
         generated_content = teacher_data.get('generated_content_details', [])
         assessment_details = teacher_data.get('assessment_details', [])
             
-        media_toolkit = teacher_data.get('media_toolkit', {})
+        # media_toolkit = teacher_data.get('media_toolkit', {})
         media_counts = teacher_data.get('media_counts', {})
             
         progress_data = teacher_data.get('progress_data', {})
@@ -1091,7 +1092,7 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
         logger.info(f"Teacher chat endpoint called with session_id: {request.session_id}")
         logger.info(f"Query: {request.query}")
         logger.info(f"Teacher: {teacher_name} (ID: {teacher_id})")
-        logger.info(f"Students: {len(student_reports)}, Content: {len(generated_content)}, Feedback: {len(feedback_data)}")
+        # logger.info(f"Students: {len(student_reports)}, Content: {len(generated_content)}, Feedback: {len(feedback_data)}")
 
         session_id = request.session_id
         
@@ -1133,14 +1134,15 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
         TEACHING CONTENT:
         - Generated Content: {len(generated_content)} items
         - Assessments: {len(assessment_details)} assessments
-        - Content Details: {json.dumps([c.get('title', 'Untitled') for c in generated_content[:5]], indent=2) if generated_content else 'No content'}
-
+        - Content Details: {json.dumps([c.get('title', 'Untitled') for c in generated_content[:]], indent=2) if generated_content else 'No content'}
+    
         MEDIA TOOLKIT:
         - Comics: {media_counts.get('comics', 0)} items
         - Images: {media_counts.get('images', 0)} items  
         - Slides: {media_counts.get('slides', 0)} items
         - Videos: {media_counts.get('video', 0)} items
         - Web Search: {media_counts.get('webSearch', 0)} items
+
 
         PROGRESS & FEEDBACK:
         - Progress Data: {json.dumps(progress_data, indent=2) if progress_data else 'No progress data'}
