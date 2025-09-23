@@ -811,7 +811,32 @@ class TeacherAsyncRAGTutor:
                     if value and value != [] and value != {}:
                         filtered_teaching_data[key] = value
                 
-                teaching_data_str = json.dumps(filtered_teaching_data, indent=2)
+                # Format the teaching data for better readability
+                formatted_teaching_data = {
+                    "teacher_info": {
+                        "name": filtered_teaching_data.get("teacher_name", "Unknown"),
+                        "id": filtered_teaching_data.get("teacher_id", "Unknown")
+                    },
+                    "student_data": {
+                        "total_students": len(filtered_teaching_data.get("student_details_with_reports", [])),
+                        "student_reports": filtered_teaching_data.get("student_details_with_reports", []),
+                        "performance_overview": filtered_teaching_data.get("student_performance", {}),
+                        "top_performers": filtered_teaching_data.get("top_performers", []),
+                        "subject_performance": filtered_teaching_data.get("subject_performance", {})
+                    },
+                    "content_data": {
+                        "generated_content": filtered_teaching_data.get("generated_content_details", []),
+                        "assessments": filtered_teaching_data.get("assessment_details", []),
+                        "media_toolkit": filtered_teaching_data.get("media_toolkit", {})
+                    },
+                    "analytics": {
+                        "learning_analytics": filtered_teaching_data.get("learning_analytics", {}),
+                        "progress_data": filtered_teaching_data.get("progress_data", {}),
+                        "feedback_data": filtered_teaching_data.get("feedback_data", [])
+                    }
+                }
+                
+                teaching_data_str = json.dumps(formatted_teaching_data, indent=2)
             except TypeError:
                 teaching_data_str = str(teaching_data)
 

@@ -917,12 +917,34 @@ async def comics_stream_endpoint(schema: ComicsSchema, request: Request):
 # 9. TEACHER BULK DATA ENDPOINT
 # ==============================
 
+# Update the TeacherBulkDataSchema to match the frontend data structure
 class TeacherBulkDataSchema(BaseModel):
     teacher_name: str = Field(..., description="Teacher's name")
-    student_details_with_reports: List[Dict[str, Any]] = Field(..., description="Bulk student data with reports")
-    generated_content_details: List[Dict[str, Any]] = Field(..., description="Generated content details")
-    feedback_data: List[Dict[str, Any]] = Field([], description="Student feedback data")
-    learning_analytics: Optional[Dict[str, Any]] = Field({}, description="Learning analytics data")
+    teacher_id: str = Field(..., description="Teacher's ID")
+    
+    # Student data - match frontend field names exactly
+    student_details_with_reports: List[Dict[str, Any]] = Field([], description="Student details with reports")
+    student_performance: Dict[str, Any] = Field({}, description="Student performance overview")
+    student_overview: Dict[str, Any] = Field({}, description="Student overview data")
+    top_performers: List[Dict[str, Any]] = Field([], description="Top performing students")
+    subject_performance: Dict[str, Any] = Field({}, description="Subject performance data")
+    behavior_analysis: Dict[str, Any] = Field({}, description="Behavior analysis data")
+    attendance_data: Dict[str, Any] = Field({}, description="Attendance data")
+    
+    # Content and assessments - match frontend field names exactly
+    generated_content_details: List[Dict[str, Any]] = Field([], description="Generated content details")
+    assessment_details: List[Dict[str, Any]] = Field([], description="Assessment details")
+    
+    # Media toolkit - match frontend field names exactly
+    media_toolkit: Dict[str, Any] = Field({}, description="Media toolkit data")
+    media_counts: Dict[str, Any] = Field({}, description="Media counts")
+    
+    # Progress and feedback - match frontend field names exactly
+    progress_data: Dict[str, Any] = Field({}, description="Progress data")
+    feedback_data: List[Dict[str, Any]] = Field([], description="Feedback data")
+    
+    # Learning analytics - match frontend field names exactly
+    learning_analytics: Dict[str, Any] = Field({}, description="Learning analytics data")
 
 class TeacherChatbotRequest(BaseModel):
     session_id: str = Field(..., description="A unique identifier for the chat session. This maintains the context and knowledge base for the user.")
@@ -1052,7 +1074,7 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
         student_performance = teacher_data.get('student_performance', {})
         student_overview = teacher_data.get('student_overview', {})
         top_performers = teacher_data.get('top_performers', [])
-        subject_performance = teacher_data.get('subject_performance', [])
+        subject_performance = teacher_data.get('subject_performance', {})
         behavior_analysis = teacher_data.get('behavior_analysis', {})
         attendance_data = teacher_data.get('attendance_data', {})
             
@@ -1102,7 +1124,7 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
 
         STUDENT DATA:
         - Total Students: {len(student_reports)} students
-        - Performance Overview: {json.dumps(student_overview, indent=2) if student_overview else 'No overview data'}
+        - Performance Overview: {json.dumps(student_performance, indent=2) if student_performance else 'No overview data'}
         - Top Performers: {json.dumps(top_performers, indent=2) if top_performers else 'No top performers data'}
         - Subject Performance: {json.dumps(subject_performance, indent=2) if subject_performance else 'No subject data'}
         - Behavior Analysis: {json.dumps(behavior_analysis, indent=2) if behavior_analysis else 'No behavior data'}
