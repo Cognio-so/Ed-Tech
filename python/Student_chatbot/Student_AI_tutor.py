@@ -1116,7 +1116,7 @@ class AsyncRAGTutor:
             chat_history_str = ""
             if uploaded_files:
                 files_str = "', '".join(uploaded_files)
-                chat_history_str = f"System Note: The user has just uploaded the following file(s): '{files_str}'. The follow-up question likely refers to these files.\n\n"
+                chat_history_str += f"System Note: The user has just uploaded the following file(s): '{files_str}'. The follow-up question likely refers to these files.\n\n"
 
             student_details_str = ""
             if student_details:
@@ -1128,7 +1128,7 @@ class AsyncRAGTutor:
                 content = msg.get("content", "")
                 history_str_parts.append(f"{role}: {content}")
 
-            chat_history_str = "\n".join(history_str_parts)
+            chat_history_str += "\n".join(history_str_parts)
 
             # The context passed to the chain will now include student details
             rephrased = await self.rephrase_chain.ainvoke({

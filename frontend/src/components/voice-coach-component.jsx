@@ -411,6 +411,10 @@ const VoiceCoach = () => {
             };
 
             formData.append('studentData', JSON.stringify(optimizedStudentData));
+            
+            // FIX: Pass the names of the uploaded files to the server action.
+            const fileNames = uploadedFiles.map(file => file.name);
+            formData.append('uploadedFiles', JSON.stringify(fileNames));
 
             const response = await sendVoiceCoachMessage(formData);
 
