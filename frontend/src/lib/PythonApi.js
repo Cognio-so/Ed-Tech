@@ -117,15 +117,12 @@ class PythonApiClient {
 
   // NEW: Presentation generation endpoint
   async generatePresentation(presentationData) {
-    // Transform frontend data to match Python backend schema
+    // The data mapping from form names (e.g., topic) to API names (e.g., plain_text)
+    // is now handled in action.js. This function receives the correctly structured object.
+    // It only needs to perform final transformations, like casing for the language field.
     const pythonSchema = {
-      plain_text: presentationData.topic,
-      custom_user_instructions: presentationData.instructions || '',
-      length: parseInt(presentationData.slideCount),
-      language: presentationData.language === 'Arabic' ? 'ARABIC' : 'ENGLISH', // ✅ This is correct for slide form
-      fetch_images: presentationData.includeImages !== false,
-      verbosity: presentationData.verbosity || 'standard',
-      template: presentationData.template || 'default'
+      ...presentationData, // Pass all properties from the already-transformed object
+      language: presentationData.language === 'Arabic' ? 'ARABIC' : 'ENGLISH',
     };
 
     return this.makeRequest('/presentation_endpoint', {
