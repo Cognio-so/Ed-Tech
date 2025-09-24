@@ -472,7 +472,7 @@ class PythonApiClient {
       learning_analytics: teacherData.learning_analytics || {}
     };
 
-    const uploadedFileNames = files.map(file => file.name);
+
 
     const payload = {
       session_id: sessionId,
@@ -480,7 +480,7 @@ class PythonApiClient {
       history: history,
       teacher_data: transformedTeacherData,
       web_search_enabled: true,
-      uploaded_files: uploadedFileNames
+      uploaded_files: files // Use the 'files' array directly
     };
     
     try {
@@ -650,20 +650,22 @@ class PythonApiClient {
   }
 
   // NEW: Student chat endpoint for text-based chatbot
-  async startStudentChat(studentData, sessionId, query = '') {
+  async startStudentChat(studentData, sessionId, query = '', files = [], history = [], webSearchEnabled = true) {
     const url = `${this.baseUrl}/chatbot_endpoint`;
     
     try {
+      const uploadedFileNames = files.map(file => file.name);
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionId,
           query: query,
-          history: [],
-          web_search_enabled: true,
+          history: history,
+          web_search_enabled: webSearchEnabled,
           student_data: studentData,
-          uploaded_files: []
+          uploaded_files: uploadedFileNames
         }),
       });
       

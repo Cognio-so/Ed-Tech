@@ -319,13 +319,17 @@ export async function sendVoiceCoachMessage(formData) {
     const sessionId = formData.get('sessionId');
     const studentData = JSON.parse(formData.get('studentData'));
 
+    // FIX: Read and parse the uploaded file names from the formData.
+    const uploadedFilesStr = formData.get('uploadedFiles');
+    const uploadedFiles = uploadedFilesStr ? JSON.parse(uploadedFilesStr) : [];
+
     // Use PythonApiClient to send message
     const response = await PythonApiClient.startTeacherVoiceChat(
       studentData,
       sessionId,
       message,
-      [],
-      [],
+      [], // history is passed empty, manage in state if needed for long-term context
+      uploadedFiles, // Pass the array of filenames here
       true
     );
 

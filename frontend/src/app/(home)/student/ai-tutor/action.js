@@ -280,7 +280,8 @@ export async function sendAITutorMessage(formData) {
     };
 
     const pythonApi = new PythonApi();
-    const response = await pythonApi.startStudentChat(optimizedStudentData, sessionId, message);
+    // FIX: Replaced startStudentChat with startChatbotStream and corrected argument order
+    const response = await pythonApi.startStudentChat(optimizedStudentData, sessionId, message, files, history, webSearchEnabled);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
