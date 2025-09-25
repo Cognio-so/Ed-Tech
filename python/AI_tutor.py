@@ -811,28 +811,50 @@ class TeacherAsyncRAGTutor:
                     if value and value != [] and value != {}:
                         filtered_teaching_data[key] = value
                 
-                # Format the teaching data for better readability
+                # FIXED: Format the teaching data with only counts and summaries to prevent 413 error
+                student_details = filtered_teaching_data.get("student_details_with_reports", [])
+                student_performance = filtered_teaching_data.get("student_performance", {})
+                top_performers = filtered_teaching_data.get("top_performers", [])
+                subject_performance = filtered_teaching_data.get("subject_performance", {})
+                generated_content = filtered_teaching_data.get("generated_content_details", [])
+                assessments = filtered_teaching_data.get("assessment_details", [])
+                media_toolkit = filtered_teaching_data.get("media_toolkit", {})
+                learning_analytics = filtered_teaching_data.get("learning_analytics", {})
+                progress_data = filtered_teaching_data.get("progress_data", {})
+                feedback_data = filtered_teaching_data.get("feedback_data", [])
+                
+                # Create lightweight summaries instead of full data
                 formatted_teaching_data = {
                     "teacher_info": {
                         "name": filtered_teaching_data.get("teacher_name", "Unknown"),
                         "id": filtered_teaching_data.get("teacher_id", "Unknown")
                     },
                     "student_data": {
-                        "total_students": len(filtered_teaching_data.get("student_details_with_reports", [])),
-                        "student_reports": filtered_teaching_data.get("student_details_with_reports", []),
-                        "performance_overview": filtered_teaching_data.get("student_performance", {}),
-                        "top_performers": filtered_teaching_data.get("top_performers", []),
-                        "subject_performance": filtered_teaching_data.get("subject_performance", {})
+                        "total_students": len(student_details),
+                        "average_performance": student_performance.get("averagePerformance", 0) if isinstance(student_performance, dict) else 0,
+                        "top_performers_count": len(top_performers),
+                        "struggling_students_count": len(student_performance.get("strugglingStudents", [])) if isinstance(student_performance, dict) else 0,
+                        "subject_performance_summary": {
+                            subject: {"total_students": data.get("count", 0), "average_score": round(data.get("total", 0) / max(data.get("count", 1), 1))} 
+                            for subject, data in subject_performance.items() 
+                            if isinstance(data, dict) and "count" in data
+                        } if isinstance(subject_performance, dict) else {}
                     },
                     "content_data": {
-                        "generated_content": filtered_teaching_data.get("generated_content_details", []),
-                        "assessments": filtered_teaching_data.get("assessment_details", []),
-                        "media_toolkit": filtered_teaching_data.get("media_toolkit", {})
+                        "total_lessons": len(generated_content),
+                        "total_assessments": len(assessments),
+                        "media_counts": {
+                            "comics": len(media_toolkit.get("comics", [])) if isinstance(media_toolkit, dict) else 0,
+                            "images": len(media_toolkit.get("images", [])) if isinstance(media_toolkit, dict) else 0,
+                            "slides": len(media_toolkit.get("slides", [])) if isinstance(media_toolkit, dict) else 0,
+                            "videos": len(media_toolkit.get("videos", [])) if isinstance(media_toolkit, dict) else 0
+                        }
                     },
                     "analytics": {
-                        "learning_analytics": filtered_teaching_data.get("learning_analytics", {}),
-                        "progress_data": filtered_teaching_data.get("progress_data", {}),
-                        "feedback_data": filtered_teaching_data.get("feedback_data", [])
+                        "total_content_created": learning_analytics.get("totalContent", 0) if isinstance(learning_analytics, dict) else 0,
+                        "total_lessons": learning_analytics.get("totalLessons", 0) if isinstance(learning_analytics, dict) else 0,
+                        "total_assessments": learning_analytics.get("totalAssessments", 0) if isinstance(learning_analytics, dict) else 0,
+                        "feedback_count": len(feedback_data)
                     }
                 }
                 
