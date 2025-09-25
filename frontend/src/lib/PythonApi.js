@@ -544,34 +544,36 @@ class PythonApiClient {
   async startTeacherChat(teacherData, sessionId, query = '', history = [], uploadedFiles = []) {
     const url = `${this.baseUrl}/teacher_chat_endpoint`;
     
-    // Transform teacher data to match backend schema - only use actual data
+    // FIXED: Pass ALL teacher data fields to match backend schema exactly
     const transformedTeacherData = {
-      teacher_name: teacherData.teacherName || teacherData.teacher_name,
-      teacher_id: teacherData.teacherId || teacherData.teacher_id,
+      // Basic teacher info
+      teacher_name: teacherData.teacher_name,
+      teacher_id: teacherData.teacher_id,
+      email: teacherData.email,
+      grades: teacherData.grades || [],
+      subjects: teacherData.subjects || [],
       
-      // Student data - only actual data from database
-      student_details_with_reports: teacherData.students || [],
-      student_performance: teacherData.studentPerformance || {},
-      student_overview: teacherData.studentOverview || {},
-      top_performers: teacherData.topPerformers || [],
-      subject_performance: teacherData.subjectPerformance || [],
-      behavior_analysis: teacherData.behaviorAnalysis || {},
-      attendance_data: teacherData.attendanceData || {},
+      // Student data - pass all fields
+      student_details_with_reports: teacherData.student_details_with_reports || [],
+      student_performance: teacherData.student_performance || {},
+      student_overview: teacherData.student_overview || {},
+      top_performers: teacherData.top_performers || [],
+      subject_performance: teacherData.subject_performance || {},
+      behavior_analysis: teacherData.behavior_analysis || {},
+      attendance_data: teacherData.attendance_data || {},
       
-      // Content and assessments - only actual data from database
-      generated_content_details: teacherData.content || [],
-      assessment_details: teacherData.assessments || [],
+      // Content data - pass all fields
+      generated_content_details: teacherData.generated_content_details || [],
+      assessment_details: teacherData.assessment_details || [],
       
-      // Media toolkit - only actual counts from database
-      media_toolkit: teacherData.mediaToolkit || {},
-      media_counts: teacherData.mediaCount || {},
+      // Media data - pass all fields
+      media_toolkit: teacherData.media_toolkit || {},
+      media_counts: teacherData.media_counts || {},
       
-      // Progress and feedback - only actual data from database
-      progress_data: teacherData.progress || {},
-      feedback_data: teacherData.feedback || [],
-      
-      // Learning analytics - only actual data from database
-      learning_analytics: teacherData.learningAnalytics || {}
+      // Progress and analytics - pass all fields
+      progress_data: teacherData.progress_data || {},
+      feedback_data: teacherData.feedback_data || [],
+      learning_analytics: teacherData.learning_analytics || {}
     };
 
     const payload = {
@@ -583,7 +585,14 @@ class PythonApiClient {
       uploaded_files: uploadedFiles
     };
 
-    console.log('Starting teacher chat with comprehensive payload:', payload);
+    console.log('Starting teacher chat with complete schema payload:', {
+      sessionId,
+      query: query.substring(0, 100) + '...',
+      teacherDataSize: JSON.stringify(transformedTeacherData).length,
+      historyLength: history.length,
+      uploadedFilesLength: uploadedFiles.length,
+      schemaFields: Object.keys(transformedTeacherData)
+    });
     
     try {
       const response = await fetch(url, {
@@ -599,7 +608,7 @@ class PythonApiClient {
       
       return response;
     } catch (error) {
-      console.error('Teacher chat error:', error);
+      console.error('Error starting teacher chat:', error);
       throw error;
     }
   }

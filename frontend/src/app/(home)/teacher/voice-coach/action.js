@@ -331,7 +331,7 @@ export async function getCurrentTeacherData() {
 }
 
 /**
- * Send a chat message to the Voice Coach - OPTIMIZED
+ * Send a chat message to the Voice Coach - OPTIMIZED FOR MINIMAL DATA
  * @param {Object} formData - Form data containing the message and session info
  * @returns {Promise<Object>} - Response from the Voice Coach
  */
@@ -369,48 +369,112 @@ export async function sendVoiceCoachMessage(formData) {
       };
     }
 
-    // OPTIMIZED: Use the student data already provided from frontend instead of fetching
-    const comprehensiveTeacherData = {
+    // FIXED: Create teacher data that matches backend schema exactly
+    const minimalTeacherData = {
+      // Basic teacher info
       teacher_name: teacherDataResult.data.name,
       teacher_id: teacherDataResult.data._id,
-      teacherName: teacherDataResult.data.name,
-      teacherId: teacherDataResult.data._id,
       email: teacherDataResult.data.email,
       grades: teacherDataResult.data.grades || [],
       subjects: teacherDataResult.data.subjects || [],
       
-      // Use the student data from frontend (already processed)
-      students: studentData.students || [],
-      studentPerformance: studentData.studentPerformance || {},
-      studentOverview: studentData.studentOverview || {},
-      topPerformers: studentData.topPerformers || [],
-      subjectPerformance: studentData.subjectPerformance || {},
+      // Student data - exactly as backend expects
+      student_details_with_reports: (studentData.students || []).slice(0, 10).map(student => ({
+        student_name: student.name,
+        student_id: student._id,
+        email: student.email,
+        grades: student.grades || [],
+        subjects: student.subjects || [],
+        performance: {
+          overall: student.performance?.overall || 75
+        }
+      })),
       
-      // Minimal context data
-      role: 'teacher',
-      recentActivities: [],
-      teachingExperience: 'intermediate',
-      topicInterests: teacherDataResult.data.subjects || [],
+      student_performance: {
+        total_students: (studentData.students || []).length,
+        average_performance: studentData.studentOverview?.averageProgress || 75
+      },
       
-      // Empty arrays for non-essential data to speed up response
-      content: [],
-      assessments: [],
-      mediaToolkit: {},
-      learningAnalytics: {}
+      student_overview: {
+        total_students: (studentData.students || []).length,
+        average_progress: studentData.studentOverview?.averageProgress || 75
+      },
+      
+      top_performers: (studentData.students || [])
+        .sort((a, b) => (b.performance?.overall || 75) - (a.performance?.overall || 75))
+        .slice(0, 3)
+        .map(student => ({
+          name: student.name,
+          performance: student.performance?.overall || 75
+        })),
+      
+      subject_performance: (studentData.students || []).reduce((acc, student) => {
+        student.subjects?.forEach(subject => {
+          if (!acc[subject]) {
+            acc[subject] = { total: 0, count: 0 };
+          }
+          acc[subject].total += student.performance?.overall || 75;
+          acc[subject].count += 1;
+        });
+        return acc;
+      }, {}),
+      
+      behavior_analysis: {},
+      attendance_data: {},
+      
+      // Content data
+      generated_content_details: [{
+        title: "Sample Content",
+        total_content: studentData.media_counts?.totalContent || 0,
+        content_types: {
+          comics: studentData.media_counts?.comics || 0,
+          images: studentData.media_counts?.images || 0,
+          slides: studentData.media_counts?.slides || 0,
+          videos: studentData.media_counts?.videos || 0
+        }
+      }],
+      
+      assessment_details: [],
+      
+      // Media data
+      media_toolkit: {
+        comics: studentData.media_counts?.comics || 0,
+        images: studentData.media_counts?.images || 0,
+        slides: studentData.media_counts?.slides || 0,
+        videos: studentData.media_counts?.videos || 0,
+        webSearch: studentData.media_counts?.webSearch || 0
+      },
+      
+      media_counts: {
+        comics: studentData.media_counts?.comics || 0,
+        images: studentData.media_counts?.images || 0,
+        slides: studentData.media_counts?.slides || 0,
+        videos: studentData.media_counts?.videos || 0,
+        webSearch: studentData.media_counts?.webSearch || 0
+      },
+      
+      progress_data: {},
+      feedback_data: [],
+      learning_analytics: {
+        total_lessons: studentData.learning_analytics?.totalLessons || 0,
+        total_assessments: studentData.learning_analytics?.totalAssessments || 0
+      }
     };
 
-    console.log('Sending message to Voice Coach with optimized data:', { 
+    console.log('Sending message to Voice Coach with schema-matched data:', { 
       message, 
       sessionId, 
       teacherData: {
-        teacherName: comprehensiveTeacherData.teacherName,
-        studentCount: comprehensiveTeacherData.students.length
+        teacherName: minimalTeacherData.teacher_name,
+        studentCount: minimalTeacherData.student_details_with_reports.length,
+        dataSize: JSON.stringify(minimalTeacherData).length,
+        schemaFields: Object.keys(minimalTeacherData)
       }
     });
 
     // FIXED: Pass history and uploadedFiles to the API call
     const response = await PythonApi.startTeacherChat(
-      comprehensiveTeacherData, 
+      minimalTeacherData, 
       sessionId, 
       message, 
       history, 
@@ -1399,10 +1463,10 @@ export async function updateVoiceCoachConversationTitle(formData) {
 }
 
 /**
- * Debug function to check all conversations in database
- * @returns {Promise<Object>} - Debug info
+ * Debug function to check database collections and counts
+ * @returns {Promise<Object>} - Debug info about database collections
  */
-export async function debugConversations() {
+export async function debugDatabaseCollections() {
   try {
     const session = await getServerSession();
     if (!session?.user?.id) {
@@ -1414,41 +1478,40 @@ export async function debugConversations() {
 
     const { db } = await connectToDatabase();
     
-    // Get all conversations for this teacher
-    const allConversations = await db.collection('teacherConversations')
-      .find({ teacherId: new ObjectId(session.user.id) })
-      .toArray();
+    // Get counts for different collections
+    const [userCount, contentCount, progressCount, achievementCount] = await Promise.all([
+      db.collection('user').countDocuments(),
+      db.collection('contents').countDocuments(),
+      db.collection('progress').countDocuments(),
+      db.collection('achievements').countDocuments()
+    ]);
 
-    // Get all conversations in the database (for debugging)
-    const allConversationsInDb = await db.collection('teacherConversations')
-      .find({})
-      .toArray();
-
-    console.log('Debug - All conversations for teacher:', allConversations.length);
-    console.log('Debug - All conversations in DB:', allConversationsInDb.length);
-    console.log('Debug - Teacher ID:', session.user.id);
+    // Get user role counts
+    const [studentCount, teacherCount] = await Promise.all([
+      db.collection('user').countDocuments({ role: 'student' }),
+      db.collection('user').countDocuments({ role: 'teacher' })
+    ]);
 
     return {
       success: true,
       data: {
-        teacherConversations: allConversations.length,
-        totalConversations: allConversationsInDb.length,
-        teacherId: session.user.id,
-        conversations: allConversations.map(conv => ({
-          _id: conv._id.toString(),
-          teacherId: conv.teacherId?.toString(),
-          sessionId: conv.sessionId,
-          title: conv.title,
-          sessionType: conv.sessionType,
-          messageCount: conv.messages?.length || 0
-        }))
+        userCounts: {
+          total: userCount,
+          students: studentCount,
+          teachers: teacherCount
+        },
+        teacherContentCounts: {
+          contents: contentCount,
+          progress: progressCount,
+          achievements: achievementCount
+        }
       }
     };
   } catch (error) {
-    console.error("Error in debugConversations:", error);
+    console.error("Error in debugDatabaseCollections:", error);
     return {
       success: false,
-      error: error.message || "Failed to debug conversations"
+      error: error.message || "Failed to get database collections info"
     };
   }
 }

@@ -87,6 +87,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Add request size limit middleware ---
+@app.middleware("http")
+async def increase_request_size_limit(request: Request, call_next):
+    # Increase the maximum request size to 50MB
+    request._max_content_length = 50 * 1024 * 1024  # 50MB
+    response = await call_next(request)
+    return response
+
 # --- Global Objects and Initializations ---
 logger.info("Initializing global components...")
 
@@ -919,8 +927,30 @@ async def comics_stream_endpoint(schema: ComicsSchema, request: Request):
 
 class TeacherBulkDataSchema(BaseModel):
     teacher_name: str = Field(..., description="Teacher's name")
-    student_details_with_reports: List[Dict[str, Any]] = Field(..., description="Bulk student data with reports")
-    generated_content_details: List[Dict[str, Any]] = Field(..., description="Generated content details")
+    teacher_id: Optional[str] = Field(None, description="Teacher's ID")
+    email: Optional[str] = Field(None, description="Teacher's email")
+    grades: Optional[List[str]] = Field([], description="Teacher's grades")
+    subjects: Optional[List[str]] = Field([], description="Teacher's subjects")
+    
+    # Student data
+    student_details_with_reports: List[Dict[str, Any]] = Field([], description="Bulk student data with reports")
+    student_performance: Optional[Dict[str, Any]] = Field({}, description="Student performance summary")
+    student_overview: Optional[Dict[str, Any]] = Field({}, description="Student overview data")
+    top_performers: Optional[List[Dict[str, Any]]] = Field([], description="Top performing students")
+    subject_performance: Optional[Dict[str, Any]] = Field({}, description="Subject performance data")
+    behavior_analysis: Optional[Dict[str, Any]] = Field({}, description="Behavior analysis data")
+    attendance_data: Optional[Dict[str, Any]] = Field({}, description="Attendance data")
+    
+    # Content data
+    generated_content_details: List[Dict[str, Any]] = Field([], description="Generated content details")
+    assessment_details: Optional[List[Dict[str, Any]]] = Field([], description="Assessment details")
+    
+    # Media and toolkit
+    media_toolkit: Optional[Dict[str, Any]] = Field({}, description="Media toolkit data")
+    media_counts: Optional[Dict[str, Any]] = Field({}, description="Media counts")
+    
+    # Progress and analytics
+    progress_data: Optional[Dict[str, Any]] = Field({}, description="Progress data")
     feedback_data: List[Dict[str, Any]] = Field([], description="Student feedback data")
     learning_analytics: Optional[Dict[str, Any]] = Field({}, description="Learning analytics data")
 
@@ -1052,7 +1082,7 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
         student_performance = teacher_data.get('student_performance', {})
         student_overview = teacher_data.get('student_overview', {})
         top_performers = teacher_data.get('top_performers', [])
-        subject_performance = teacher_data.get('subject_performance', [])
+        subject_performance = teacher_data.get('subject_performance', {})  # FIXED: Changed from [] to {}
         behavior_analysis = teacher_data.get('behavior_analysis', {})
         attendance_data = teacher_data.get('attendance_data', {})
             
@@ -1070,6 +1100,14 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
         logger.info(f"Query: {request.query}")
         logger.info(f"Teacher: {teacher_name} (ID: {teacher_id})")
         logger.info(f"Students: {len(student_reports)}, Content: {len(generated_content)}, Feedback: {len(feedback_data)}")
+        
+        # FIXED: Add detailed logging to see what data we're receiving
+        logger.info(f"Student Performance: {student_performance}")
+        logger.info(f"Student Overview: {student_overview}")
+        logger.info(f"Top Performers: {len(top_performers)} items")
+        logger.info(f"Subject Performance: {subject_performance}")
+        logger.info(f"Media Toolkit: {media_toolkit}")
+        logger.info(f"Learning Analytics: {learning_analytics}")
 
         session_id = request.session_id
         
