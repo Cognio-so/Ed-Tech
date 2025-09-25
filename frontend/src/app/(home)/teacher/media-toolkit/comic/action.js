@@ -64,7 +64,7 @@ export async function uploadComicImagesToCloudinaryAndSave(comicData, userId) {
       comicType: comicData.comicType || "educational",
       imageUrls: uploadedImageUrls, // Cloudinary URLs
       cloudinaryPublicIds: cloudinaryPublicIds, // Store Cloudinary public IDs
-      images: comicData.images, // Keep base64 images as backup
+      // REMOVED: images: comicData.images, // Don't store base64 images in database
       metadata: {
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -91,7 +91,7 @@ export async function uploadComicImagesToCloudinaryAndSave(comicData, userId) {
       comicType: comicData.comicType || "educational",
       imageUrls: uploadedImageUrls,
       cloudinaryPublicIds: cloudinaryPublicIds,
-      images: comicData.images,
+      // REMOVED: images: comicData.images, // Don't store base64 images in database
       metadata: {
         createdAt: comicDoc.metadata.createdAt.toISOString(),
         updatedAt: comicDoc.metadata.updatedAt.toISOString(),
@@ -143,7 +143,7 @@ export async function saveComic(comicData) {
       grade: comicData.gradeLevel,
       language: comicData.language || "English",
       numPanels: comicData.numPanels,
-      images: comicData.images || [],
+      // REMOVED: images: comicData.images || [], // Don't store base64 images in database
       metadata: {
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -238,7 +238,7 @@ export async function updateComic(comicId, updateData) {
         grade: updateData.gradeLevel,
         language: updateData.language,
         numPanels: updateData.numPanels,
-        images: updateData.images,
+        // REMOVED: images: updateData.images, // Don't store base64 images in database
         "metadata.updatedAt": new Date(),
         "metadata.tags": [updateData.subject, updateData.gradeLevel, updateData.language]
       }

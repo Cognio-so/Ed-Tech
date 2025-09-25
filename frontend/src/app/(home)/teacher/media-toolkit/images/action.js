@@ -54,7 +54,7 @@ export async function uploadImageToCloudinaryAndSave(imageData) {
       };
     }
 
-    // Save to database with Cloudinary URL
+    // Save to database with Cloudinary URL - OPTIMIZED: Don't store base64 in DB
     const { db } = await connectToDatabase();
     const imagesCollection = db.collection("images");
 
@@ -70,7 +70,7 @@ export async function uploadImageToCloudinaryAndSave(imageData) {
       difficultyFlag: imageData.difficultyFlag || false,
       imageUrl: uploadResult.url, // Cloudinary URL
       cloudinaryPublicId: uploadResult.publicId, // Store Cloudinary public ID for future operations
-      imageBase64: imageData.imageBase64, // Keep base64 for backup
+      // REMOVED: imageBase64: imageData.imageBase64, // Don't store base64 in database
       status: 'completed',
       metadata: {
         createdAt: new Date(),
@@ -120,7 +120,7 @@ export async function saveImageToDatabase(imageData) {
       language: imageData.language,
       difficultyFlag: imageData.difficultyFlag || false,
       imageUrl: imageData.imageUrl,
-      imageBase64: imageData.imageBase64,
+      // REMOVED: imageBase64: imageData.imageBase64, // Don't store base64 in database
       status: imageData.status || "completed",
       metadata: {
         createdAt: new Date(),
