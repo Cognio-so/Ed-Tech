@@ -323,6 +323,14 @@ export async function sendVoiceCoachMessage(formData) {
     const message = formData.get('message');
     const sessionId = formData.get('sessionId');
     const studentData = JSON.parse(formData.get('studentData'));
+    const history = JSON.parse(formData.get('history') || '[]');
+    const uploadedFiles = JSON.parse(formData.get('uploadedFiles') || '[]');
+
+    // Get teacher data
+    const teacherDataResult = await getCurrentTeacherData();
+    if (!teacherDataResult.success) {
+      return { success: false, error: "Failed to get teacher data" };
+    }
 
     // FIXED: Create teacher data that matches backend schema exactly
     const minimalTeacherData = {
@@ -428,7 +436,7 @@ export async function sendVoiceCoachMessage(formData) {
     });
 
     // FIXED: Pass history and uploadedFiles to the API call
-    const response = await PythonApi.startTeacherChat(
+    const response = await PythonApiClient.startTeacherChat(
       minimalTeacherData, 
       sessionId, 
       message, 
@@ -1023,89 +1031,6 @@ export async function migrateConversations() {
   }
 }
 
-// Get real student data for teachers
-export async function getStudentsForTeacher() {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      throw new Error('Unauthorized');
-    }
-
-    const { db } = await connectToDatabase();
-    
-    // Get all students from the database
-    const students = await db.collection('user')
-      .find({ role: 'student' })
-      .toArray();
-
-    // Get student progress data
-    const progressData = await db.collection('progress')
-      .find({})
-      .toArray();
-
-    // Get student achievements
-    const achievementsData = await db.collection('achievements')
-      .find({})
-      .toArray();
-
-    // FIXED: Properly serialize all MongoDB data
-    const serializedProgressData = progressData.map(item => ({
-      ...item,
-      _id: item._id.toString(),
-      studentId: item.studentId.toString(),
-      contentId: item.contentId.toString(),
-      createdAt: safeToISOString(item.createdAt),
-      updatedAt: safeToISOString(item.updatedAt),
-      progress: {
-        ...item.progress,
-        lastAccessedAt: safeToISOString(item.progress?.lastAccessedAt)
-      },
-      completionData: item.completionData ? {
-        ...item.completionData,
-        completedAt: safeToISOString(item.completionData.completedAt)
-      } : null,
-      metadata: {
-        ...item.metadata,
-        createdAt: safeToISOString(item.metadata?.createdAt),
-        updatedAt: safeToISOString(item.metadata?.updatedAt)
-      }
-    }));
-
-    const serializedAchievementsData = achievementsData.map(item => ({
-      ...item,
-      _id: item._id.toString(),
-      studentId: item.studentId.toString(),
-      earnedAt: safeToISOString(item.earnedAt),
-      createdAt: safeToISOString(item.createdAt)
-    }));
-
-    // Combine the data with properly serialized progress and achievements
-    const studentsWithData = students.map(student => {
-      const studentProgress = serializedProgressData.filter(p => p.studentId === student._id.toString());
-      const studentAchievements = serializedAchievementsData.filter(a => a.studentId === student._id.toString());
-      
-      return {
-        _id: student._id.toString(),
-        name: student.name,
-        email: student.email,
-        grades: student.grades || [],
-        subjects: student.subjects || [],
-        role: student.role,
-        progress: studentProgress,
-        achievements: studentAchievements,
-        createdAt: student.createdAt?.toISOString(),
-        updatedAt: student.updatedAt?.toISOString()
-      };
-    });
-
-    return {
-      success: true,
-      message: "Session saved successfully"
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
 
 // Upload documents to voice coach
 export async function uploadDocumentsToVoiceCoach(formData) {
@@ -1227,107 +1152,4 @@ export async function getTeacherLearningInsights() {
   }
 }
 
-// Debug function to check database collections and data
-export async function debugDatabaseCollections() {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      return { success: false, error: "Unauthorized" };
-    }
 
-    const { db } = await connectToDatabase();
-    const userId = new ObjectId(session.user.id);
-
-    // Get all collections
-    const collections = await db.listCollections().toArray();
-
-    // Check user collection
-    const totalUsers = await db.collection('user').countDocuments();
-    const totalStudents = await db.collection('user').countDocuments({ role: 'student' });
-    const totalTeachers = await db.collection('user').countDocuments({ role: 'teacher' });
-
-    // Check content collections
-    const contentCounts = await Promise.all([
-      db.collection('contents').countDocuments(),
-      db.collection('assessments').countDocuments(),
-      db.collection('presentations').countDocuments(),
-      db.collection('comics').countDocuments(),
-      db.collection('images').countDocuments(),
-      db.collection('videos').countDocuments(),
-      db.collection('websearches').countDocuments(),
-      db.collection('progress').countDocuments()
-    ]);
-
-    // Check teacher's content specifically
-    const teacherContentCounts = await Promise.all([
-      db.collection('contents').countDocuments({ userId: userId.toString() }),
-      db.collection('assessments').countDocuments({ userId: userId.toString() }),
-      db.collection('presentations').countDocuments({ userId: userId.toString() }),
-      db.collection('comics').countDocuments({ userId: userId }),
-      db.collection('images').countDocuments({ userId: userId.toString() }),
-      db.collection('videos').countDocuments({ userId: userId.toString() }),
-      db.collection('websearches').countDocuments({ userId: userId.toString() })
-    ]);
-
-    // Helper function to serialize ObjectIds
-    const serializeObjectIds = (obj) => {
-      if (obj === null || obj === undefined) return obj;
-      if (obj instanceof ObjectId) return obj.toString();
-      if (Array.isArray(obj)) return obj.map(serializeObjectIds);
-      if (typeof obj === 'object') {
-        const serialized = {};
-        for (const [key, value] of Object.entries(obj)) {
-          serialized[key] = serializeObjectIds(value);
-        }
-        return serialized;
-      }
-      return obj;
-    };
-
-    // Get sample data and serialize ObjectIds
-    const sampleStudents = await db.collection('user').find({ role: 'student' }).limit(3).toArray();
-    const sampleContents = await db.collection('contents').find({ userId: userId.toString() }).limit(3).toArray();
-
-    const serializedStudents = sampleStudents.map(s => serializeObjectIds({
-      _id: s._id,
-      name: s.name,
-      email: s.email,
-      role: s.role
-    }));
-
-    const serializedContents = sampleContents.map(c => serializeObjectIds({
-      _id: c._id,
-      title: c.title,
-      userId: c.userId
-    }));
-
-    return {
-      success: true,
-      data: {
-        collections: collections.map(c => c.name),
-        userCounts: { total: totalUsers, students: totalStudents, teachers: totalTeachers },
-        contentCounts: {
-          contents: contentCounts[0],
-          assessments: contentCounts[1],
-          presentations: contentCounts[2],
-          comics: contentCounts[3],
-          images: contentCounts[4],
-          videos: contentCounts[5],
-          webSearches: contentCounts[6],
-          progress: contentCounts[7]
-        },
-        teacherContentCounts: {
-          contents: teacherContentCounts[0],
-          assessments: teacherContentCounts[1],
-          presentations: teacherContentCounts[2],
-          comics: teacherContentCounts[3],
-          images: teacherContentCounts[4],
-          videos: teacherContentCounts[5],
-          webSearches: teacherContentCounts[6]
-        }
-      }
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
