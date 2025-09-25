@@ -37,7 +37,6 @@ export class RealtimeOpenAIService {
 
   async connect(userData = null, userType = 'teacher') {
     try {
-      console.log('🔗 Connecting to OpenAI Realtime API...');
       
       // Store user data and type
       this.userData = userData;
@@ -57,7 +56,6 @@ export class RealtimeOpenAIService {
       // Create connection
       await this.establishConnection();
       
-      console.log('✅ Connected to OpenAI Realtime API');
       this.isConnected = true;
       
     } catch (error) {
@@ -77,7 +75,6 @@ export class RealtimeOpenAIService {
       
       // Handle incoming audio from OpenAI
       this.pc.ontrack = (event) => {
-        console.log('🎵 Received audio track from OpenAI');
         const [remoteStream] = event.streams;
         this.handleOpenAIAudio(remoteStream);
       };
@@ -89,7 +86,6 @@ export class RealtimeOpenAIService {
   }
 
   handleOpenAIAudio(stream) {
-    console.log('🎧 Processing OpenAI audio stream for lip sync');
     
     // Resume audio context if needed
     if (this.audioContext.state === 'suspended') {
@@ -102,16 +98,15 @@ export class RealtimeOpenAIService {
     audio.autoplay = true;
     audio.volume = 1.0;
     
-    // Connect to analyser for lip sync
+    // CRITICAL FIX: Connect AI's audio stream to analyser for lip sync
     const source = this.audioContext.createMediaStreamSource(stream);
     source.connect(this.analyser);
     
-    // Start analyzing
+    // Start analyzing AI's audio for lip sync
     this.startLipSyncAnalysis();
     
     // Stop analyzing when track ends
     stream.getAudioTracks()[0].addEventListener('ended', () => {
-      console.log('🔇 OpenAI audio ended');
       this.stopLipSyncAnalysis();
     });
   }
@@ -120,7 +115,6 @@ export class RealtimeOpenAIService {
     if (this.isAnalyzing) return;
     
     this.isAnalyzing = true;
-    console.log('🎭 Starting lip sync analysis...');
     
     const analyze = () => {
       if (!this.isAnalyzing) return;
@@ -161,23 +155,33 @@ export class RealtimeOpenAIService {
 
   generateLipSyncFromAudio(frequencyData, volume) {
     // Analyze different frequency bands for vowel characteristics
-    const lowBass = this.getFrequencyAverage(frequencyData, 0, 10);      // 0-430Hz
-    const bass = this.getFrequencyAverage(frequencyData, 10, 25);        // 430-1075Hz  
-    const midLow = this.getFrequencyAverage(frequencyData, 25, 50);      // 1075-2150Hz
-    const midHigh = this.getFrequencyAverage(frequencyData, 50, 100);    // 2150-4300Hz
-    const treble = this.getFrequencyAverage(frequencyData, 100, 150);    // 4300-6450Hz
+    const lowBass = this.getFrequencyAverage(frequencyData, 0, 10);
+    const bass = this.getFrequencyAverage(frequencyData, 10, 25);
+    const midLow = this.getFrequencyAverage(frequencyData, 25, 50);
+    const midHigh = this.getFrequencyAverage(frequencyData, 50, 100);
+    const treble = this.getFrequencyAverage(frequencyData, 100, 150);
     
-    // Enhanced volume scaling
-    const volumeBoost = Math.min(1, volume * 3);
+    // Enhanced volume scaling for visible lip sync
+    const volumeBoost = Math.min(2.5, volume * 8);
     
-    // Map frequency content to vowel shapes based on formant frequencies
-    return {
-      A: Math.max(0, Math.min(1, (lowBass * 1.5 + bass * 1.2) * volumeBoost)),        // Low formants
-      E: Math.max(0, Math.min(1, (bass * 0.8 + midHigh * 1.4) * volumeBoost)),        // Mixed formants
-      I: Math.max(0, Math.min(1, (midLow * 0.6 + treble * 1.6) * volumeBoost)),       // High formants
-      O: Math.max(0, Math.min(1, (lowBass * 1.3 + bass * 1.1) * volumeBoost)),        // Low-mid formants
-      U: Math.max(0, Math.min(1, (lowBass * 1.4 + midLow * 0.8) * volumeBoost))       // Very low formants
+    // More dramatic lip sync values
+    const lipSyncData = {
+      A: Math.max(0, Math.min(1, (lowBass * 2.0 + bass * 1.8) * volumeBoost)),
+      E: Math.max(0, Math.min(1, (bass * 1.2 + midHigh * 2.0) * volumeBoost)),
+      I: Math.max(0, Math.min(1, (midLow * 1.0 + treble * 2.2) * volumeBoost)),
+      O: Math.max(0, Math.min(1, (lowBass * 1.8 + bass * 1.6) * volumeBoost)),
+      U: Math.max(0, Math.min(1, (lowBass * 2.0 + midLow * 1.2) * volumeBoost))
     };
+    
+    // Add minimum threshold for visible movement
+    const minThreshold = 0.15;
+    Object.keys(lipSyncData).forEach(key => {
+      if (lipSyncData[key] > 0.05) {
+        lipSyncData[key] = Math.max(minThreshold, lipSyncData[key]);
+      }
+    });
+    
+    return lipSyncData;
   }
 
   getFrequencyAverage(dataArray, startIndex, endIndex) {
@@ -192,7 +196,7 @@ export class RealtimeOpenAIService {
     return count > 0 ? (sum / count) / 255 : 0;
   }
 
-  smoothLipSyncData(current, target, smoothing = 0.5) {
+  smoothLipSyncData(current, target, smoothing = 0.3) {
     return {
       A: current.A + (target.A - current.A) * smoothing,
       E: current.E + (target.E - current.E) * smoothing,
@@ -204,7 +208,6 @@ export class RealtimeOpenAIService {
 
   stopLipSyncAnalysis() {
     this.isAnalyzing = false;
-    console.log('🛑 Stopping lip sync analysis');
     
     // Fade to neutral
     const fadeSteps = 20;
@@ -238,7 +241,6 @@ export class RealtimeOpenAIService {
     this.dc = this.pc.createDataChannel('oai-events');
     
     this.dc.addEventListener('open', () => {
-      console.log('📡 Data channel opened');
       this.sendSessionUpdate(this.userData, this.userType);
     });
     
@@ -275,7 +277,6 @@ export class RealtimeOpenAIService {
       const timeout = setTimeout(() => reject(new Error('Connection timeout')), 15000);
       
       this.pc.addEventListener('connectionstatechange', () => {
-        console.log('🔗 Connection state:', this.pc.connectionState);
         
         if (this.pc.connectionState === 'connected') {
           clearTimeout(timeout);
@@ -318,7 +319,6 @@ export class RealtimeOpenAIService {
       };
       
       this.dc.send(JSON.stringify(message));
-      console.log(`⚙️ Session configured with ${userType} data`);
     }
   }
 
@@ -475,19 +475,14 @@ Core Instructions:
   handleMessage(message) {
     switch (message.type) {
       case 'session.created':
-        console.log('✅ Session created');
         break;
       case 'session.updated':
-        console.log('⚙️ Session updated');
         break;
       case 'input_audio_buffer.committed':
-        console.log('🎤 User audio input received');
         break;
       case 'input_audio_buffer.speech_started':
-        console.log('🎤 User started speaking');
         break;
       case 'input_audio_buffer.speech_stopped':
-        console.log('🎤 User stopped speaking');
         break;
       case 'conversation.item.input_audio_transcription.completed':
         // This is the user's speech transcribed
@@ -502,30 +497,47 @@ Core Instructions:
         }
         break;
       case 'response.audio_transcript.done':
-        console.log('📝 AI transcript complete');
         // Mark current response as complete
         if (this.onResponseComplete) {
           this.onResponseComplete();
         }
         break;
       case 'conversation.item.created':
-        console.log('💬 Conversation item created');
         break;
       case 'conversation.item.input_created':
-        console.log('📝 User input created');
         break;
       case 'conversation.item.output_created':
-        console.log('🤖 AI output created');
         // Reset transcript when new AI response starts
         if (this.onResponseStart) {
           this.onResponseStart();
         }
         break;
+      // ADD THESE NEW HANDLERS FOR AI AUDIO OUTPUT
+      case 'response.created':
+        // AI response is starting
+        if (this.onResponseStart) {
+          this.onResponseStart();
+        }
+        break;
+      case 'response.output_item.added':
+        // AI output item added
+        break;
+      case 'response.content_part.added':
+        // AI content part added
+        break;
+      case 'output_audio_buffer.started':
+        // AI audio output started - THIS IS KEY FOR LIP SYNC
+        console.log('🎵 AI audio output started');
+        break;
+      case 'conversation.item.input_audio_transcription.delta':
+        // User speech transcription delta
+        break;
       case 'error':
         console.error('❌ OpenAI error:', message.error);
         break;
       default:
-        console.log('📨 Unhandled message type:', message.type);
+        // Remove the console.log to clean up
+        break;
     }
   }
 
@@ -542,24 +554,20 @@ Core Instructions:
       };
       
       this.dc.send(JSON.stringify(message));
-      console.log('🗣️ Requesting OpenAI speech...');
     } else {
       console.error('❌ Data channel not ready');
     }
   }
 
   disconnect() {
-    console.log('🔌 Disconnecting from OpenAI Realtime API...');
     
     this.isConnected = false;
     this.stopLipSyncAnalysis();
     
     // Stop microphone stream
     if (this.microphoneStream) {
-      console.log(' Stopping microphone stream...');
       this.microphoneStream.getTracks().forEach(track => {
         track.stop();
-        console.log('🔇 Microphone track stopped');
       });
       this.microphoneStream = null;
     }
@@ -579,6 +587,5 @@ Core Instructions:
       this.dc = null;
     }
     
-    console.log('✅ Disconnected from OpenAI Realtime API');
   }
 } 

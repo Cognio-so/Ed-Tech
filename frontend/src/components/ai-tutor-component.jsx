@@ -51,6 +51,21 @@ import {
 import { saveStudentConversation } from '../app/(home)/student/history/action';
 import { RealtimeOpenAIService } from '@/lib/realtimeOpenAI';
 
+// Import the 3D LipSyncTeacher component with SSR disabled
+import dynamic from 'next/dynamic';
+
+const LipSyncTeacher3D = dynamic(() => import('./LipSyncTeacher3D'), { 
+    ssr: false,
+    loading: () => (
+        <div className="w-full h-[500px] flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 rounded-2xl">
+            <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Loading 3D Teacher...</p>
+            </div>
+        </div>
+    )
+});
+
 const AiTutor = () => {
     const [messages, setMessages] = useState([
         {
@@ -74,7 +89,10 @@ const AiTutor = () => {
     const [realtimeService, setRealtimeService] = useState(null);
     const [isListening, setIsListening] = useState(false);
     const [transcription, setTranscription] = useState('');
+    
+    // NEW: Lip sync state - exactly like voice-coach
     const [lipSyncData, setLipSyncData] = useState({ A: 0, E: 0, I: 0, O: 0, U: 0 });
+    const [isSpeaking, setIsSpeaking] = useState(false);
 
     // Real student data state
     const [user, setUser] = useState(null);
@@ -644,6 +662,8 @@ const AiTutor = () => {
             setIsVoiceActive(false);
             setIsListening(false);
             setTranscription(''); // Reset transcription
+            setIsSpeaking(false); // Reset speaking state
+            setLipSyncData({ A: 0, E: 0, I: 0, O: 0, U: 0 }); // Reset lip sync data
             return;
         }
 
@@ -718,6 +738,44 @@ const AiTutor = () => {
             // Set up event handlers - same approach as voice-coach
             service.onLipSyncData = (data) => {
                 setLipSyncData(data);
+                // Determine if currently speaking based on lip sync intensity
+                const totalIntensity = Object.values(data).reduce((sum, val) => sum + val, 0);
+                setIsSpeaking(totalIntensity > 0.1);
+            };
+
+            // Add callback for when new response starts
+            service.onResponseStart = () => {
+                setTranscription(''); // Reset transcript for new response
+                setIsSpeaking(true); // Start speaking animation
+                // Mark the last live message as complete
+                setMessages(prev => {
+                    const newMessages = [...prev];
+                    const lastMessage = newMessages[newMessages.length - 1];
+                    if (lastMessage && lastMessage.type === 'ai' && lastMessage.isLive) {
+                        newMessages[newMessages.length - 1] = {
+                            ...lastMessage,
+                            isLive: false // Mark as complete
+                        };
+                    }
+                    return newMessages;
+                });
+            };
+
+            // Add callback for when response is complete
+            service.onResponseComplete = () => {
+                setIsSpeaking(false); // Stop speaking animation
+                // Mark the current live message as complete
+                setMessages(prev => {
+                    const newMessages = [...prev];
+                    const lastMessage = newMessages[newMessages.length - 1];
+                    if (lastMessage && lastMessage.type === 'ai' && lastMessage.isLive) {
+                        newMessages[newMessages.length - 1] = {
+                            ...lastMessage,
+                            isLive: false // Mark as complete
+                        };
+                    }
+                    return newMessages;
+                });
             };
 
             // Handle AI response transcripts - exactly like voice-coach
@@ -899,141 +957,206 @@ const AiTutor = () => {
     }
 
     return (
-        <div className="flex-1 flex flex-col overflow-hidden px-2 py-1 h-[679px]">
-            <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Main Chat Area */}
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="flex-1 flex flex-col overflow-hidden"
-                    >
-                        <Card className="bg-purple-500/90 dark:bg-purple-800/90 backdrop-blur-sm border-0 shadow-lg flex-1 flex flex-col overflow-hidden">
-                            {/* Messages Area */}
-                            <div className="flex-1 overflow-hidden">
-                                <ScrollArea ref={scrollAreaRef} className="h-full w-full">
-                                    <div className="p-4 space-y-2">
-                                        <AnimatePresence>
-                                            {messages.map((message) => (
+        <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100 dark:from-purple-900/20 dark:via-blue-900/20 dark:to-indigo-900/20">
+            {/* Header */}
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/90 backdrop-blur-md"
+            >
+                <div className="w-full px-2 py-2">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            <div className="relative">
+                                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center">
+                                    <Sparkle className="w-5 h-5 text-white" />
+                                </div>
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                                    AI Tutor
+                                </h1>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                    Your personalized learning companion
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            {uploadedFiles.length > 0 && (
+                                <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                    📎 {uploadedFiles.length} file(s)
+                                </Badge>
+                            )}
+                            <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse" />
+                                Online
+                            </Badge>
+                            <Button variant="ghost" size="icon">
+                                <Settings className="w-5 h-5" />
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </motion.div>
+
+            <div className="w-full px-4 py-6">
+                <div className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* NEW: 3D Teacher Lip Sync Section */}
+                    <div className="lg:col-span-1">
+                        <motion.div
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="w-full"
+                        >
+                            <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg ">
+                                <CardContent className="p-0 m-0">
+                                    <LipSyncTeacher3D 
+                                        lipSyncData={lipSyncData}
+                                        isConnected={isVoiceActive}
+                                        isSpeaking={isSpeaking}
+                                    />
+                                </CardContent>
+                            </Card>
+                        </motion.div>
+                    </div>
+
+                    {/* Chat Section */}
+                    <div className="lg:col-span-2">
+                        <motion.div
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.1 }}
+                            className="w-full"
+                        >
+                            <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg h-[610px] flex flex-col">
+                                {/* Messages Area */}
+                                <div className="flex-1 overflow-hidden">
+                                    <ScrollArea ref={scrollAreaRef} className="h-full w-full">
+                                        <div className="p-4 space-y-2 min-h-full">
+                                            <AnimatePresence>
+                                                {messages.map((message) => (
+                                                    <motion.div
+                                                        key={message.id}
+                                                        initial={{ opacity: 0, y: 20 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        exit={{ opacity: 0, y: -20 }}
+                                                        className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                                                    >
+                                                        <div className={`flex items-start space-x-3 max-w-[80%] ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row space-x-3'}`}>
+                                                            <Avatar className="w-8 h-8 flex-shrink-0">
+                                                                <AvatarFallback className="text-lg">
+                                                                    {message.avatar}
+                                                                </AvatarFallback>
+                                                            </Avatar>
+                                                            <div className={`rounded-2xl px-3 py-2 ${message.type === 'user'
+                                                                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+                                                                    : 'text-black dark:text-white'
+                                                                }`}>
+                                                                {renderMessageContent(message)}
+                                                            </div>
+                                                        </div>
+                                                    </motion.div>
+                                                ))}
+                                            </AnimatePresence>
+
+                                            {isLoading && (
                                                 <motion.div
-                                                    key={message.id}
                                                     initial={{ opacity: 0, y: 20 }}
                                                     animate={{ opacity: 1, y: 0 }}
-                                                    exit={{ opacity: 0, y: -20 }}
-                                                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                                                    className="flex justify-start"
                                                 >
-                                                    <div className={`flex items-start space-x-3 max-w-[80%] ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row space-x-3'}`}>
+                                                    <div className="flex items-start space-x-3">
                                                         <Avatar className="w-8 h-8 flex-shrink-0">
                                                             <AvatarFallback className="text-lg">
-                                                                {message.avatar}
+                                                                <Sparkle className="w-4 h-4 text-yellow-500" />
                                                             </AvatarFallback>
                                                         </Avatar>
-                                                        <div className={`rounded-2xl px-3 py-2 ${message.type === 'user'
-                                                                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
-                                                                : 'text-white dark:text-white'
-                                                            }`}>
-                                                            {renderMessageContent(message)}
+                                                        <div className="text-black dark:text-white text-sm animate-pulse">
+                                                            ⚪
                                                         </div>
                                                     </div>
                                                 </motion.div>
-                                            ))}
-                                        </AnimatePresence>
+                                            )}
+                                        </div>
+                                        <div ref={messagesEndRef} className="h-4" />
+                                    </ScrollArea>
+                                </div>
 
-                                        {isLoading && !messages.some(msg => msg.isStreaming) && (
-                                            <motion.div
-                                                initial={{ opacity: 0, y: 20 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                className="flex justify-start"
-                                            >
-                                                <div className="flex items-start space-x-3">
-                                                    <Avatar className="w-8 h-8 flex-shrink-0">
-                                                        <AvatarFallback className="text-lg">
-                                                            <Sparkle className="w-4 h-4 text-yellow-500" />
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                    <div className="text-black dark:text-white text-sm animate-pulse">
-                                                        ⚪
-                                                    </div>
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </div>
-                                    {/* FIXED: Proper scroll target */}
-                                    <div ref={messagesEndRef} className="h-4" />
-                                </ScrollArea>
-                            </div>
-                            {/* Input Area - FIXED AT BOTTOM */}
-                            <div className="flex-shrink-0 p-2">
-                                <div className="flex items-end space-x-3 w-full border-gray-200 dark:border-gray-700">
-                                    <div className="flex-1">
-                                        <Input
-                                            value={inputValue}
-                                            onChange={(e) => setInputValue(e.target.value)}
-                                            onKeyPress={handleKeyPress}
-                                            placeholder="Ask me anything about your homework..."
-                                            className="border bg-white/80 dark:bg-purple-900 border-purple-500 dark:border-gray-500 rounded-2xl px-6 py-6 w-full text-black dark:text-white"
-                                            disabled={isLoading || isUploading || isVoiceActive}
-                                        />
-                                    </div>
-                                   <div className="flex items-center space-x-2 mb-2">
-                                    <Button 
-                                    onClick={handleUpload}
-                                    disabled={isLoading || isUploading || isVoiceActive}
-                                    size="icon" 
-                                    className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-2xl px-6 py-3 text-white dark:text-white"
-                                    title="Upload documents"
-                                    >
-                                        {isUploading ? (
-                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        ) : (
-                                            <UploadCloud className="w-4 h-4" />
-                                        )}
-                                    </Button>
-                                    
-                                    {/* NEW: Clear files button */}
-                                    {uploadedFiles.length > 0 && (
+                                {/* Input Area */}
+                                <div className="p-2 flex-shrink-0">
+                                    <div className="flex items-end space-x-3 w-full border-gray-200 dark:border-gray-700">
+                                        <div className="flex-1">
+                                            <Input
+                                                value={inputValue}
+                                                onChange={(e) => setInputValue(e.target.value)}
+                                                onKeyPress={handleKeyPress}
+                                                placeholder="Ask me anything about your homework..."
+                                                className="border bg-gray-50 dark:bg-gray-700 border-purple-500 dark:border-purple-500 rounded-2xl px-6 py-6 w-full text-black dark:text-white"
+                                                disabled={isLoading || isUploading || isVoiceActive}
+                                            />
+                                        </div>
+                                       <div className="flex items-center space-x-2">
                                         <Button 
-                                        onClick={handleClearFiles}
+                                        onClick={handleUpload}
                                         disabled={isLoading || isUploading || isVoiceActive}
                                         size="icon" 
-                                        variant="outline"
-                                        className="rounded-2xl px-6 py-3"
-                                        title="Clear uploaded files"
-                                        >
-                                            <File className="w-4 h-4" />
-                                        </Button>
-                                    )}
-                                    
-                                    <Button 
-                                    onClick={startVoiceSessionHandler}
-                                    disabled={isLoading || isUploading}
-                                    size="icon" 
-                                    className={`rounded-2xl px-6 py-3 ${
-                                        isVoiceActive 
-                                            ? 'bg-red-500 hover:bg-red-600' 
-                                            : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
-                                    } text-white dark:text-white`}
-                                    title={isVoiceActive ? 'Stop voice session' : 'Start real-time voice session'}
-                                >
-                                    {isVoiceActive ? (
-                                        <div className="w-4 h-4 bg-white rounded-full animate-pulse" />
-                                    ) : (
-                                        <AudioLines className="w-4 h-4" />
-                                    )}
-                                </Button>
-                                   <Button
-                                        onClick={handleSendMessage}
-                                        disabled={!inputValue.trim() || isLoading || isUploading || isVoiceActive}
                                         className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-2xl px-6 py-3 text-white dark:text-white"
-                                    >
-                                        <Send className="w-4 h-4" />
-                                    </Button>
-                                   </div>
+                                        title="Upload documents"
+                                        >
+                                            {isUploading ? (
+                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            ) : (
+                                                <UploadCloud className="w-4 h-4" />
+                                            )}
+                                        </Button>
+                                        
+                                        {/* Connect Voice Button - Moved here between upload and send */}
+                                        <Button 
+                                            onClick={startVoiceSessionHandler}
+                                            disabled={isLoading || isUploading}
+                                            className={`${
+                                                isVoiceActive 
+                                                    ? 'bg-red-500 hover:bg-red-600' 
+                                                    : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
+                                            } text-white dark:text-white rounded-2xl px-6 py-3`}
+                                            title={isVoiceActive ? 'Disconnect Voice' : 'Connect Voice'}
+                                        >
+                                            {isLoading ? (
+                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                            ) : isVoiceActive ? (
+                                                <MicOff className="w-4 h-4 mr-2" />
+                                            ) : (
+                                                <Mic className="w-4 h-4 mr-2" />
+                                            )}
+                                            {isVoiceActive ? 'Disconnect' : 'Connect Voice'}
+                                        </Button>
+                                        
+                                        {uploadedFiles.length > 0 && (
+                                            <Button 
+                                            onClick={handleClearFiles}
+                                            disabled={isLoading || isUploading || isVoiceActive}
+                                            size="icon" 
+                                            variant="outline"
+                                            className="rounded-2xl px-6 py-3"
+                                            title="Clear uploaded files"
+                                            >
+                                                <File className="w-4 h-4" />
+                                            </Button>
+                                        )}
+                                        
+                                       <Button
+                                            onClick={handleSendMessage}
+                                            disabled={!inputValue.trim() || isLoading || isUploading || isVoiceActive}
+                                            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-2xl px-6 py-3 text-white dark:text-white"
+                                        >
+                                            <Send className="w-4 h-4" />
+                                        </Button>
+                                       </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </Card>
-                    </motion.div>
+                            </Card>
+                        </motion.div>
+                    </div>
                 </div>
             </div>
         </div>
