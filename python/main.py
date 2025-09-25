@@ -939,8 +939,6 @@ class TeacherBulkDataSchema(BaseModel):
     student_overview: Optional[Dict[str, Any]] = Field({}, description="Student overview data")
     top_performers: Optional[List[Dict[str, Any]]] = Field([], description="Top performing students")
     subject_performance: Optional[Dict[str, Any]] = Field({}, description="Subject performance data")
-    behavior_analysis: Optional[Dict[str, Any]] = Field({}, description="Behavior analysis data")
-    attendance_data: Optional[Dict[str, Any]] = Field({}, description="Attendance data")
     
     # Content data
     generated_content_details: List[Dict[str, Any]] = Field([], description="Generated content details")
@@ -1068,125 +1066,64 @@ async def video_presentation_endpoint(
 @app.post("/teacher_chat_endpoint")
 async def teacher_chat_endpoint(request: TeacherChatbotRequest):
     """
-    Handles interactions with the AI tutor for teachers with JSON-only requests.
-    Streaming text responses, no audio files.
-    Enhanced with teacher data for personalized teaching support.
+    OPTIMIZED: Handles interactions with the AI tutor for teachers with minimal data processing.
+    Uses cached data and optimized context building.
     """
     try:
-        # Get comprehensive teacher data from the schema - use actual data only
+        # Get teacher data from the schema - only essential data
         teacher_data = request.teacher_data.model_dump()
-        # print(f"Received teacher data: {teacher_data}")
         teacher_name = teacher_data.get('teacher_name', 'Teacher')
         teacher_id = teacher_data.get('teacher_id', 'Unknown')
-            
-        # Extract all the data with proper structure - only actual data from frontend
+        
+        # Extract only essential data to reduce processing time
         student_reports = teacher_data.get('student_details_with_reports', [])
         student_performance = teacher_data.get('student_performance', {})
-        student_overview = teacher_data.get('student_overview', {})
-        top_performers = teacher_data.get('top_performers', [])
-        subject_performance = teacher_data.get('subject_performance', {})  # FIXED: Changed from [] to {}
-        behavior_analysis = teacher_data.get('behavior_analysis', {})
-        attendance_data = teacher_data.get('attendance_data', {})
-            
         generated_content = teacher_data.get('generated_content_details', [])
-        assessment_details = teacher_data.get('assessment_details', [])
-            
-        # media_toolkit = teacher_data.get('media_toolkit', {})
         media_counts = teacher_data.get('media_counts', {})
-            
-        progress_data = teacher_data.get('progress_data', {})
         feedback_data = teacher_data.get('feedback_data', [])
-        learning_analytics = teacher_data.get('learning_analytics', {})
 
-        logger.info(f"Teacher chat endpoint called with session_id: {request.session_id}")
-        logger.info(f"Query: {request.query}")
-        logger.info(f"Teacher: {teacher_name} (ID: {teacher_id})")
-        logger.info(f"Students: {len(student_reports)}, Content: {len(generated_content)}, Feedback: {len(feedback_data)}")
+        logger.info(f"Teacher chat endpoint called - {teacher_name} with {len(student_reports)} students")
         
-        # FIXED: Add detailed logging to see what data we're receiving
-        logger.info(f"Student Performance: {student_performance}")
-        logger.info(f"Student Overview: {student_overview}")
-        logger.info(f"Top Performers: {len(top_performers)} items")
-        logger.info(f"Subject Performance: {subject_performance}")
-        logger.info(f"Media Toolkit: {media_toolkit}")
-        logger.info(f"Learning Analytics: {learning_analytics}")
-
         session_id = request.session_id
         
         # Get or create a teacher tutor instance for the session
         if session_id not in teacher_tutor_sessions:
             logger.info(f"Creating new Teacher AI Tutor session: {session_id}")
             teacher_config = TeacherRAGTutorConfig.from_env()
-            teacher_config.web_search_enabled = True  # Always enable web search
+            teacher_config.web_search_enabled = True
             teacher_tutor_sessions[session_id] = TeacherAsyncRAGTutor(storage_manager=storage_manager, config=teacher_config)
 
         tutor = teacher_tutor_sessions[session_id]
-
-        # Always enable web search for the tutor
         tutor.update_web_search_status(True)
 
-        # --- Enhanced Query Processing with Teacher Data ---
         if not request.query:
-            logger.error("No query provided in request")
             raise HTTPException(status_code=400, detail="A 'query' is required.")
 
-        # Prepare enhanced context with teacher data - only actual data
-        enhanced_query = request.query
-        enhanced_history = request.history.copy()
-        
-        # Create personalized context based on teacher data - only actual data
-        teacher_personalization_context = f"""
-        TEACHER PROFILE:
-        - Name: {teacher_name}
-        - ID: {teacher_id}
-
-        STUDENT DATA:
-        - Total Students: {len(student_reports)} students
-        - Performance Overview: {json.dumps(student_performance, indent=2) if student_performance else 'No overview data'}
-        - Top Performers: {json.dumps(top_performers, indent=2) if top_performers else 'No top performers data'}
-        - Subject Performance: {json.dumps(subject_performance, indent=2) if subject_performance else 'No subject data'}
-        - Behavior Analysis: {json.dumps(behavior_analysis, indent=2) if behavior_analysis else 'No behavior data'}
-        - Attendance: {json.dumps(attendance_data, indent=2) if attendance_data else 'No attendance data'}
-
-        TEACHING CONTENT:
-        - Generated Content: {len(generated_content)} items
-        - Assessments: {len(assessment_details)} assessments
-        - Content Details: {json.dumps([c.get('title', 'Untitled') for c in generated_content[:]], indent=2) if generated_content else 'No content'}
-    
-        MEDIA TOOLKIT:
-        - Comics: {media_counts.get('comics', 0)} items
-        - Images: {media_counts.get('images', 0)} items  
-        - Slides: {media_counts.get('slides', 0)} items
-        - Videos: {media_counts.get('video', 0)} items
-        - Web Search: {media_counts.get('webSearch', 0)} items
-
-
-        PROGRESS & FEEDBACK:
-        - Progress Data: {json.dumps(progress_data, indent=2) if progress_data else 'No progress data'}
-        - Feedback Entries: {len(feedback_data)} feedback items
-        - Learning Analytics: {json.dumps(learning_analytics, indent=2) if learning_analytics else 'No analytics'}
-            """
-            
-        # Add personalization context to the query
-        enhanced_query = f"""
-        {teacher_personalization_context}
-        You are {teacher_name}'s personalized AI teaching assistant.
-        Teacher Query: {request.query}
-
+        # OPTIMIZED: Create minimal context with only essential data
+        teacher_context = f"""
+        TEACHER: {teacher_name} (ID: {teacher_id})
+        STUDENTS: {len(student_reports)} total
+        CONTENT: {len(generated_content)} items
+        MEDIA: {sum(media_counts.values()) if media_counts else 0} items
+        FEEDBACK: {len(feedback_data)} entries
         """
-            
-        logger.info(f"Enhanced query with teacher data for {teacher_name}")
+        
+        # Add performance summary only if available
+        if student_performance:
+            teacher_context += f"\nPERFORMANCE: {json.dumps(student_performance, indent=2)}"
+        
+        enhanced_query = f"{teacher_context}\n\nTeacher Query: {request.query}"
         
         is_kb_ready = tutor.ensemble_retriever is not None
         
-        # Pass all parameters including uploaded_files to match AI_tutor.py run_agent_async signature
+        # OPTIMIZED: Pass minimal data to reduce processing time
         response_generator = tutor.run_agent_async(
             query=enhanced_query,
-            history=enhanced_history,
-            image_storage_key=None,  # No image upload in this flow
+            history=request.history,
+            image_storage_key=None,
             is_knowledge_base_ready=is_kb_ready,
             uploaded_files=request.uploaded_files,
-            teaching_data=request.teacher_data.model_dump() if request.teacher_data else None
+            teaching_data=teacher_data  # Pass the full data but let the tutor handle it efficiently
         )
 
         async def event_stream():

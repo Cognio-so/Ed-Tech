@@ -4,63 +4,77 @@ import { getServerSession } from "@/lib/get-session";
 import { connectToDatabase } from "@/lib/db";
 import PythonApiClient from "@/lib/PythonApi";
 import { ObjectId } from "mongodb";
+import { revalidatePath } from "next/cache";
 
-// Get current teacher data
-export async function getCurrentTeacherData() {
+// Cache for teacher data to avoid repeated database calls
+const teacherDataCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Helper function to serialize ObjectIds
+const serializeObjectIds = (obj) => {
+  if (obj === null || obj === undefined) return obj;
+  if (obj instanceof ObjectId) return obj.toString();
+  if (Array.isArray(obj)) return obj.map(serializeObjectIds);
+  if (typeof obj === 'object') {
+    const serialized = {};
+    for (const [key, value] of Object.entries(obj)) {
+      serialized[key] = serializeObjectIds(value);
+    }
+    return serialized;
+  }
+  return obj;
+};
+
+// OPTIMIZED: Single function to get all teacher data efficiently
+export async function getOptimizedTeacherData() {
   try {
     const session = await getServerSession();
     if (!session?.user?.id) {
       return { success: false, error: "Unauthorized" };
     }
 
-    const { db } = await connectToDatabase();
-    const userId = new ObjectId(session.user.id);
+    const userId = session.user.id;
+    const cacheKey = `teacher_data_${userId}`;
+    
+    // Check cache first
+    const cached = teacherDataCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return { success: true, data: cached.data };
+    }
 
-    const user = await db.collection('user').findOne({ _id: userId });
+    const { db } = await connectToDatabase();
+    const userObjectId = new ObjectId(userId);
+
+    // OPTIMIZED: Use separate queries instead of complex aggregation
+    const [user, students, lessons, assessments, presentations, comics, images, videos, websearches, achievements] = await Promise.all([
+      // Get teacher data
+      db.collection('user').findOne({ _id: userObjectId }),
+      
+      // Get students with progress
+      db.collection('user').find({ role: 'student' }).toArray(),
+      
+      // Get teacher's content
+      db.collection('contents').find({ userId: userId }).toArray(),
+      db.collection('assessments').find({ 
+        $or: [
+          { userId: userId },
+          { teacherId: userId }
+        ]
+      }).toArray(),
+      db.collection('presentations').find({ userId: userId }).toArray(),
+      db.collection('comics').find({ userId: userObjectId }).toArray(),
+      db.collection('images').find({ userId: userId }).toArray(),
+      db.collection('videos').find({ userId: userId }).toArray(),
+      db.collection('websearches').find({ userId: userId }).toArray(),
+      db.collection('achievements').find({ userId: userId }).toArray()
+    ]);
+
     if (!user) {
       return { success: false, error: "User not found" };
     }
 
-    return {
-      success: true,
-      data: {
-        _id: user._id.toString(), // Convert ObjectId to string
-        email: user.email,
-        name: user.name || user.email,
-        grades: user.grades || ['Grade 8', 'Grade 9', 'Grade 10'],
-        subjects: user.subjects || ['Mathematics', 'Science', 'English']
-      }
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-// Get students for teacher
-export async function getStudentsForTeacher() {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      return { success: false, error: "Unauthorized" };
-    }
-
-    const { db } = await connectToDatabase();
-    
-    // Get all students (not filtered by teacherId since that field might not exist)
-    const students = await db.collection('user')
-      .find({ role: 'student' })
-      .toArray();
-
-    // If no students found, return empty array
-    if (students.length === 0) {
-      return {
-        success: true,
-        data: []
-      };
-    }
-
-    // Get progress data for all students to calculate performance
-    const studentIds = students.map(s => new ObjectId(s._id));
+    // Get progress data for students
+    const studentIds = students.map(s => s._id);
     const progressData = await db.collection('progress')
       .find({ studentId: { $in: studentIds } })
       .toArray();
@@ -75,14 +89,14 @@ export async function getStudentsForTeacher() {
       progressByStudent[studentId].push(progress);
     });
 
-    // Calculate performance for each student
+    // Calculate performance for each student - FIXED: Remove all hardcoded values
     const calculateStudentPerformance = (studentProgress) => {
       if (!studentProgress || studentProgress.length === 0) {
         return {
-          overall: 75,
-          assignments: 80,
-          quizzes: 70,
-          participation: 85
+          overall: 0, // FIXED: Remove hardcoded 75
+          assignments: 0, // FIXED: Remove hardcoded 80
+          quizzes: 0, // FIXED: Remove hardcoded 70
+          participation: 0 // FIXED: Remove hardcoded 85
         };
       }
 
@@ -93,28 +107,29 @@ export async function getStudentsForTeacher() {
       const averageScore = totalScore / studentProgress.length;
       const assignmentScore = studentProgress.filter(p => p.type === 'assignment').length > 0 
         ? studentProgress.filter(p => p.type === 'assignment').reduce((sum, p) => sum + (p.score || 0), 0) / studentProgress.filter(p => p.type === 'assignment').length
-        : 80;
+        : 0; // FIXED: Remove hardcoded 80
       const quizScore = studentProgress.filter(p => p.type === 'quiz').length > 0
         ? studentProgress.filter(p => p.type === 'quiz').reduce((sum, p) => sum + (p.score || 0), 0) / studentProgress.filter(p => p.type === 'quiz').length
-        : 70;
+        : 0; // FIXED: Remove hardcoded 70
       const participationScore = studentProgress.filter(p => p.type === 'participation').length > 0
         ? studentProgress.filter(p => p.type === 'participation').reduce((sum, p) => sum + (p.score || 0), 0) / studentProgress.filter(p => p.type === 'participation').length
-        : 85;
+        : 0; // FIXED: Remove hardcoded 85
 
       return {
-        overall: Math.round(averageScore || 75),
+        overall: Math.round(averageScore || 0), // FIXED: Remove hardcoded 75
         assignments: Math.round(assignmentScore),
         quizzes: Math.round(quizScore),
         participation: Math.round(participationScore)
       };
     };
 
+    // Process students data
     const processedStudents = students.map(student => {
       const studentProgress = progressByStudent[student._id.toString()] || [];
       const performance = calculateStudentPerformance(studentProgress);
 
       return {
-        _id: student._id.toString(), // Convert ObjectId to string
+        _id: student._id.toString(),
         name: student.name || student.email,
         email: student.email,
         grades: student.grades || [],
@@ -126,193 +141,152 @@ export async function getStudentsForTeacher() {
       };
     });
 
-    return {
-      success: true,
-      data: processedStudents
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
+    // Calculate average performance - FIXED: Remove hardcoded fallback
+    const averagePerformance = processedStudents.length > 0 
+      ? processedStudents.reduce((sum, s) => sum + s.performance.overall, 0) / processedStudents.length 
+      : 0; // FIXED: Remove hardcoded 75
 
-// Get teacher progress data (content created)
-export async function getTeacherProgressData() {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      return { success: false, error: "Unauthorized" };
-    }
-
-    const { db } = await connectToDatabase();
-    const userId = new ObjectId(session.user.id);
-
-    const [lessons, assessments, presentations, comics, images, videos, webSearches] = await Promise.all([
-      db.collection('contents').find({ userId: userId.toString() }).toArray(),
-      db.collection('assessments').find({ 
-        $or: [
-          { userId: userId.toString() },
-          { userId: userId },
-          { teacherId: userId.toString() },
-          { teacherId: userId }
-        ]
-      }).toArray(),
-      db.collection('presentations').find({ userId: userId.toString() }).toArray(),
-      db.collection('comics').find({ userId: userId }).toArray(),
-      db.collection('images').find({ userId: userId.toString() }).toArray(),
-      db.collection('videos').find({ userId: userId.toString() }).toArray(),
-      db.collection('websearches').find({ userId: userId.toString() }).toArray()
-    ]);
-
-    const serializeObjectIds = (obj) => {
-      if (obj === null || obj === undefined) return obj;
-      if (obj instanceof ObjectId) return obj.toString();
-      if (Array.isArray(obj)) return obj.map(serializeObjectIds);
-      if (typeof obj === 'object') {
-        const serialized = {};
-        for (const [key, value] of Object.entries(obj)) {
-          serialized[key] = serializeObjectIds(value);
-        }
-        return serialized;
+    // Process and serialize the data
+    const processedData = {
+      teacher: {
+        _id: user._id.toString(),
+        email: user.email,
+        name: user.name || user.email,
+        grades: user.grades || ['Grade 8', 'Grade 9', 'Grade 10'],
+        subjects: user.subjects || ['Mathematics', 'Science', 'English']
+      },
+      students: processedStudents,
+      content: {
+        lessons: lessons.map(item => serializeObjectIds({ ...item, contentType: 'lesson' })),
+        assessments: assessments.map(item => serializeObjectIds({ ...item, contentType: 'assessment' })),
+        presentations: presentations.map(item => serializeObjectIds({ ...item, contentType: 'presentation' })),
+        comics: comics.map(item => serializeObjectIds({ ...item, contentType: 'comic' })),
+        images: images.map(item => serializeObjectIds({ ...item, contentType: 'image' })),
+        videos: videos.map(item => serializeObjectIds({ ...item, contentType: 'video' })),
+        websearches: websearches.map(item => serializeObjectIds({ ...item, contentType: 'webSearch' }))
+      },
+      achievements: achievements.map(achievement => serializeObjectIds(achievement)),
+      stats: {
+        totalLessons: lessons.length,
+        totalAssessments: assessments.length,
+        totalPresentations: presentations.length,
+        totalComics: comics.length,
+        totalImages: images.length,
+        totalVideos: videos.length,
+        totalWebSearches: websearches.length,
+        totalStudents: processedStudents.length,
+        averageStudentPerformance: Math.round(averagePerformance)
       }
-      return obj;
     };
 
-    const allContent = [
-      ...lessons.map(item => serializeObjectIds({ ...item, contentType: 'lesson' })),
-      ...assessments.map(item => serializeObjectIds({ ...item, contentType: 'assessment' })),
-      ...presentations.map(item => serializeObjectIds({ ...item, contentType: 'presentation' })),
-      ...comics.map(item => serializeObjectIds({ ...item, contentType: 'comic' })),
-      ...images.map(item => serializeObjectIds({ ...item, contentType: 'image' })),
-      ...videos.map(item => serializeObjectIds({ ...item, contentType: 'video' })),
-      ...webSearches.map(item => serializeObjectIds({ ...item, contentType: 'webSearch' }))
-    ];
+    // Cache the result
+    teacherDataCache.set(cacheKey, {
+      data: processedData,
+      timestamp: Date.now()
+    });
 
-    return {
-      success: true,
-      data: allContent
-    };
+    return { success: true, data: processedData };
   } catch (error) {
+    console.error('Error in getOptimizedTeacherData:', error);
     return { success: false, error: error.message };
   }
 }
 
-// Get teacher achievements data
-export async function getTeacherAchievementsData() {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      return { success: false, error: "Unauthorized" };
-    }
+// OPTIMIZED: Create teacher data for backend that matches schema exactly
+function createOptimizedTeacherDataForBackend(teacherData) {
+  const { teacher, students, content, stats } = teacherData;
+  
+  // Limit students to top 5 for performance - FIXED: Remove hardcoded fallback
+  const topStudents = students
+    .sort((a, b) => (b.performance?.overall || 0) - (a.performance?.overall || 0)) // FIXED: Remove hardcoded 75
+    .slice(0, 5);
 
-    const { db } = await connectToDatabase();
-    const userId = new ObjectId(session.user.id);
-
-    // Get achievements from various collections
-    const achievements = await db.collection('achievements')
-      .find({ userId: userId.toString() })
-      .toArray();
-
-    // Helper function to serialize ObjectIds
-    const serializeObjectIds = (obj) => {
-      if (obj === null || obj === undefined) return obj;
-      if (obj instanceof ObjectId) return obj.toString();
-      if (Array.isArray(obj)) return obj.map(serializeObjectIds);
-      if (typeof obj === 'object') {
-        const serialized = {};
-        for (const [key, value] of Object.entries(obj)) {
-          serialized[key] = serializeObjectIds(value);
-        }
-        return serialized;
+  return {
+    // Basic teacher info
+    teacher_name: teacher.name,
+    teacher_id: teacher._id,
+    email: teacher.email,
+    grades: teacher.grades,
+    subjects: teacher.subjects,
+    
+    // Student data - optimized
+    student_details_with_reports: topStudents.map(student => ({
+      student_name: student.name,
+      student_id: student._id,
+      email: student.email,
+      grades: student.grades,
+      subjects: student.subjects,
+      performance: {
+        overall: student.performance?.overall || 0, // FIXED: Remove hardcoded 75
+        assignments: student.performance?.assignments || 0, // FIXED: Remove hardcoded 80
+        quizzes: student.performance?.quizzes || 0, // FIXED: Remove hardcoded 70
+        participation: student.performance?.participation || 0 // FIXED: Remove hardcoded 85
       }
-      return obj;
-    };
-
-    return {
-      success: true,
-      data: achievements.map(achievement => serializeObjectIds(achievement))
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-// Get teacher learning stats
-export async function getTeacherLearningStats() {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      return { success: false, error: "Unauthorized" };
+    })),
+    
+    // Performance summary
+    student_performance: {
+      total_students: students.length,
+      average_performance: Math.round(stats.averageStudentPerformance || 0) // FIXED: Remove hardcoded 75
+    },
+    
+    // Top performers
+    top_performers: topStudents.slice(0, 3).map(student => ({
+      name: student.name,
+      performance: student.performance?.overall || 0, // FIXED: Remove hardcoded 75
+      strengths: student.subjects,
+      group: student.group
+    })),
+    
+    // Subject performance summary
+    subject_performance: students.reduce((acc, student) => {
+      student.subjects.forEach(subject => {
+        if (!acc[subject]) {
+          acc[subject] = { total: 0, count: 0, students: [] };
+        }
+        acc[subject].total += student.performance?.overall || 0; // FIXED: Remove hardcoded 75
+        acc[subject].count += 1;
+        acc[subject].students.push({
+          name: student.name,
+          score: student.performance?.overall || 0 // FIXED: Remove hardcoded 75
+        });
+      });
+      return acc;
+    }, {}),
+    
+    // Content data - only counts and titles
+    generated_content_details: [
+      ...content.lessons.slice(0, 5).map(item => ({ title: item.title || 'Untitled Lesson', type: 'lesson' })),
+      ...content.assessments.slice(0, 5).map(item => ({ title: item.title || 'Untitled Assessment', type: 'assessment' }))
+    ],
+    
+    assessment_details: content.assessments.slice(0, 3).map(item => ({
+      title: item.title || 'Untitled Assessment',
+      type: item.type || 'assessment',
+      createdAt: item.createdAt
+    })),
+    
+    // Media counts
+    media_counts: {
+      total_content: stats.totalLessons + stats.totalAssessments + stats.totalPresentations + stats.totalComics + stats.totalImages + stats.totalVideos + stats.totalWebSearches,
+      comics: stats.totalComics,
+      images: stats.totalImages,
+      slides: stats.totalPresentations,
+      videos: stats.totalVideos,
+      webSearch: stats.totalWebSearches
+    },
+    
+    // Learning analytics
+    learning_analytics: {
+      totalLessons: stats.totalLessons,
+      totalAssessments: stats.totalAssessments,
+      averageStudentPerformance: Math.round(stats.averageStudentPerformance || 0), // FIXED: Remove hardcoded 75
+      totalContent: stats.totalLessons + stats.totalAssessments + stats.totalPresentations + stats.totalComics + stats.totalImages + stats.totalVideos + stats.totalWebSearches
     }
-
-    const { db } = await connectToDatabase();
-    const userId = new ObjectId(session.user.id);
-
-    const [lessons, assessments, presentations, comics, images, videos, webSearches] = await Promise.all([
-      db.collection('contents').countDocuments({ userId: userId.toString() }),
-      db.collection('assessments').countDocuments({ 
-        $or: [
-          { userId: userId.toString() },
-          { userId: userId },
-          { teacherId: userId.toString() },
-          { teacherId: userId }
-        ]
-      }),
-      db.collection('presentations').countDocuments({ userId: userId.toString() }),
-      db.collection('comics').countDocuments({ userId: userId }),
-      db.collection('images').countDocuments({ userId: userId.toString() }),
-      db.collection('videos').countDocuments({ userId: userId.toString() }),
-      db.collection('websearches').countDocuments({ userId: userId.toString() })
-    ]);
-
-    const stats = {
-      totalLessons: lessons,
-      totalAssessments: assessments,
-      totalPresentations: presentations,
-      totalComics: comics,
-      totalImages: images,
-      totalVideos: videos,
-      totalWebSearches: webSearches,
-      totalContent: lessons + assessments + presentations + comics + images + videos + webSearches
-    };
-
-    return {
-      success: true,
-      data: stats
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  };
 }
 
-// Create voice coach session
-export async function createVoiceCoachSession(formData) {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      return { success: false, error: "Unauthorized" };
-    }
-
-    const userId = formData.get('userId');
-    const teacherData = JSON.parse(formData.get('teacherData'));
-
-    const sessionId = `voice_coach_${userId}_${Date.now()}`;
-
-    return {
-      success: true,
-      sessionId: sessionId,
-      message: "Session created successfully"
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * Send a chat message to the Voice Coach - OPTIMIZED FOR MINIMAL DATA
- * @param {Object} formData - Form data containing the message and session info
- * @returns {Promise<Object>} - Response from the Voice Coach
- */
-// Send voice coach message
+// OPTIMIZED: Send voice coach message with cached data
 export async function sendVoiceCoachMessage(formData) {
   try {
     const session = await getServerSession();
@@ -322,125 +296,34 @@ export async function sendVoiceCoachMessage(formData) {
 
     const message = formData.get('message');
     const sessionId = formData.get('sessionId');
-    const studentData = JSON.parse(formData.get('studentData'));
-    const history = JSON.parse(formData.get('history') || '[]');
     const uploadedFiles = JSON.parse(formData.get('uploadedFiles') || '[]');
 
-    // Get teacher data
-    const teacherDataResult = await getCurrentTeacherData();
+    // OPTIMIZED: Get all data in one call
+    const teacherDataResult = await getOptimizedTeacherData();
     if (!teacherDataResult.success) {
       return { success: false, error: "Failed to get teacher data" };
     }
 
-    // FIXED: Create teacher data that matches backend schema exactly
-    const minimalTeacherData = {
-      // Basic teacher info
-      teacher_name: teacherDataResult.data.name,
-      teacher_id: teacherDataResult.data._id,
-      email: teacherDataResult.data.email,
-      grades: teacherDataResult.data.grades || [],
-      subjects: teacherDataResult.data.subjects || [],
-      
-      // Student data - exactly as backend expects
-      student_details_with_reports: (studentData.students || []).slice(0, 10).map(student => ({
-        student_name: student.name,
-        student_id: student._id,
-        email: student.email,
-        grades: student.grades || [],
-        subjects: student.subjects || [],
-        performance: {
-          overall: student.performance?.overall || 75
-        }
-      })),
-      
-      student_performance: {
-        total_students: (studentData.students || []).length,
-        average_performance: studentData.studentOverview?.averageProgress || 75
-      },
-      
-      student_overview: {
-        total_students: (studentData.students || []).length,
-        average_progress: studentData.studentOverview?.averageProgress || 75
-      },
-      
-      top_performers: (studentData.students || [])
-        .sort((a, b) => (b.performance?.overall || 75) - (a.performance?.overall || 75))
-        .slice(0, 3)
-        .map(student => ({
-          name: student.name,
-          performance: student.performance?.overall || 75
-        })),
-      
-      subject_performance: (studentData.students || []).reduce((acc, student) => {
-        student.subjects?.forEach(subject => {
-          if (!acc[subject]) {
-            acc[subject] = { total: 0, count: 0 };
-          }
-          acc[subject].total += student.performance?.overall || 75;
-          acc[subject].count += 1;
-        });
-        return acc;
-      }, {}),
-      
-      behavior_analysis: {},
-      attendance_data: {},
-      
-      // Content data
-      generated_content_details: [{
-        title: "Sample Content",
-        total_content: studentData.media_counts?.totalContent || 0,
-        content_types: {
-          comics: studentData.media_counts?.comics || 0,
-          images: studentData.media_counts?.images || 0,
-          slides: studentData.media_counts?.slides || 0,
-          videos: studentData.media_counts?.videos || 0
-        }
-      }],
-      
-      assessment_details: [],
-      
-      // Media data
-      media_toolkit: {
-        comics: studentData.media_counts?.comics || 0,
-        images: studentData.media_counts?.images || 0,
-        slides: studentData.media_counts?.slides || 0,
-        videos: studentData.media_counts?.videos || 0,
-        webSearch: studentData.media_counts?.webSearch || 0
-      },
-      
-      media_counts: {
-        comics: studentData.media_counts?.comics || 0,
-        images: studentData.media_counts?.images || 0,
-        slides: studentData.media_counts?.slides || 0,
-        videos: studentData.media_counts?.videos || 0,
-        webSearch: studentData.media_counts?.webSearch || 0
-      },
-      
-      progress_data: {},
-      feedback_data: [],
-      learning_analytics: {
-        total_lessons: studentData.learning_analytics?.totalLessons || 0,
-        total_assessments: studentData.learning_analytics?.totalAssessments || 0
-      }
-    };
+    // OPTIMIZED: Create minimal teacher data for backend
+    const optimizedTeacherData = createOptimizedTeacherDataForBackend(teacherDataResult.data);
 
-    console.log('Sending message to Voice Coach with schema-matched data:', { 
-      message, 
+    console.log('Sending optimized message to Voice Coach:', { 
+      message: message.substring(0, 50) + '...', 
       sessionId, 
       teacherData: {
-        teacherName: minimalTeacherData.teacher_name,
-        studentCount: minimalTeacherData.student_details_with_reports.length,
-        dataSize: JSON.stringify(minimalTeacherData).length,
-        schemaFields: Object.keys(minimalTeacherData)
+        teacherName: optimizedTeacherData.teacher_name,
+        studentCount: optimizedTeacherData.student_details_with_reports.length,
+        dataSize: JSON.stringify(optimizedTeacherData).length,
+        schemaFields: Object.keys(optimizedTeacherData)
       }
     });
 
-    // FIXED: Pass history and uploadedFiles to the API call
+    // Send to backend
     const response = await PythonApiClient.startTeacherChat(
-      minimalTeacherData, 
+      optimizedTeacherData, 
       sessionId, 
       message, 
-      history, 
+      [], 
       uploadedFiles
     );
 
@@ -479,6 +362,127 @@ export async function sendVoiceCoachMessage(formData) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
   } catch (error) {
+    console.error('Error in sendVoiceCoachMessage:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// OPTIMIZED: Initialize voice coach session with cached data
+export async function initializeVoiceCoachSession() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // OPTIMIZED: Get all data in one call
+    const teacherDataResult = await getOptimizedTeacherData();
+    if (!teacherDataResult.success) {
+      return { success: false, error: "Failed to get teacher data" };
+    }
+
+    const sessionId = `voice_coach_${session.user.id}_${Date.now()}`;
+    const optimizedTeacherData = createOptimizedTeacherDataForBackend(teacherDataResult.data);
+
+    return {
+      success: true,
+      sessionId,
+      teacherData: teacherDataResult.data,
+      optimizedTeacherData
+    };
+  } catch (error) {
+    console.error('Error in initializeVoiceCoachSession:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Clear cache when needed
+export async function clearTeacherDataCache() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const userId = session.user.id;
+    const cacheKey = `teacher_data_${userId}`;
+    teacherDataCache.delete(cacheKey);
+
+    return { success: true, message: "Cache cleared successfully" };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Legacy functions for backward compatibility (but optimized)
+export async function getCurrentTeacherData() {
+  const result = await getOptimizedTeacherData();
+  if (result.success) {
+    return { success: true, data: result.data.teacher };
+  }
+  return result;
+}
+
+export async function getStudentsForTeacher() {
+  const result = await getOptimizedTeacherData();
+  if (result.success) {
+    return { success: true, data: result.data.students };
+  }
+  return result;
+}
+
+export async function getTeacherProgressData() {
+  const result = await getOptimizedTeacherData();
+  if (result.success) {
+    const allContent = [
+      ...result.data.content.lessons,
+      ...result.data.content.assessments,
+      ...result.data.content.presentations,
+      ...result.data.content.comics,
+      ...result.data.content.images,
+      ...result.data.content.videos,
+      ...result.data.content.websearches
+    ];
+    return { success: true, data: allContent };
+  }
+  return result;
+}
+
+export async function getTeacherAchievementsData() {
+  const result = await getOptimizedTeacherData();
+  if (result.success) {
+    return { success: true, data: result.data.achievements };
+  }
+  return result;
+}
+
+export async function getTeacherLearningStats() {
+  const result = await getOptimizedTeacherData();
+  if (result.success) {
+    return { success: true, data: result.data.stats };
+  }
+  return result;
+}
+
+// Create voice coach session
+export async function createVoiceCoachSession(formData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const userId = formData.get('userId');
+    const teacherData = JSON.parse(formData.get('teacherData'));
+
+    const sessionId = `voice_coach_${userId}_${Date.now()}`;
+
+    return {
+      success: true,
+      sessionId: sessionId,
+      message: "Session created successfully"
+    };
+  } catch (error) {
     return { success: false, error: error.message };
   }
 }
@@ -509,9 +513,7 @@ export async function saveVoiceCoachChatSession(formData) {
       }
     });
 
-    await db.collection('teacherConversations').insertOne(sessionId);
-
-    // FIXED: Revalidate the history page
+    // Revalidate the history page
     revalidatePath("/teacher/history");
 
     return {

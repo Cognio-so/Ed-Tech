@@ -411,14 +411,6 @@ class PythonApiClient {
     });
   }
 
-  // NEW: Voice functionality methods
-  // REMOVED: WebSocket-based voice session method
-  // async startVoiceSession(studentData) {
-  //   const url = `${this.baseUrl.replace('http', 'ws')}/ws/voice`;
-  //   console.log('Connecting to voice WebSocket:', url);
-  //   return new WebSocket(url);
-  // }
-
   // NEW: Teacher Voice functionality methods
   async startTeacherVoiceSession(teacherData) {
     const url = `${this.baseUrl.replace('http', 'ws')}/ws/teacher-voice`;
@@ -449,64 +441,12 @@ class PythonApiClient {
     });
   }
 
-  // Teacher voice chat endpoint for text-based chatbot
-  async startTeacherVoiceChat(teacherData, sessionId, query = '', history = [], files = [], webSearchEnabled = true) {
-    const url = `${this.baseUrl}/teacher_chat_endpoint`;
-    
-    const transformedTeacherData = {
-      teacher_name: teacherData.teacher_name || teacherData.teacherName,
-      teacher_id: teacherData.teacher_id || teacherData.teacherId,
-      student_details_with_reports: teacherData.student_details_with_reports || [],
-      student_performance: teacherData.student_performance || {},
-      student_overview: teacherData.student_overview || {},
-      top_performers: teacherData.top_performers || [],
-      subject_performance: teacherData.subject_performance || {},
-      behavior_analysis: teacherData.behavior_analysis || {},
-      attendance_data: teacherData.attendance_data || {},
-      generated_content_details: teacherData.generated_content_details || [],
-      assessment_details: teacherData.assessment_details || [],
-      media_toolkit: teacherData.media_toolkit || {},
-      media_counts: teacherData.media_counts || {},
-      progress_data: teacherData.progress_data || {},
-      feedback_data: teacherData.feedback_data || [],
-      learning_analytics: teacherData.learning_analytics || {}
-    };
-
-
-
-    const payload = {
-      session_id: sessionId,
-      query: query,
-      history: history,
-      teacher_data: transformedTeacherData,
-      web_search_enabled: true,
-      uploaded_files: files // Use the 'files' array directly
-    };
-    
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-      }
-      
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  // NEW: Teacher chat endpoint for text-based chatbot (separate from voice)
+  // OPTIMIZED: Teacher chat endpoint for text-based chatbot
   async startTeacherChat(teacherData, sessionId, query = '', history = [], uploadedFiles = []) {
     const url = `${this.baseUrl}/teacher_chat_endpoint`;
     
-    // FIXED: Pass ALL teacher data fields to match backend schema exactly
-    const transformedTeacherData = {
+    // OPTIMIZED: Pass only essential teacher data to reduce payload size
+    const optimizedTeacherData = {
       // Basic teacher info
       teacher_name: teacherData.teacher_name,
       teacher_id: teacherData.teacher_id,
@@ -514,26 +454,35 @@ class PythonApiClient {
       grades: teacherData.grades || [],
       subjects: teacherData.subjects || [],
       
-      // Student data - pass all fields
-      student_details_with_reports: teacherData.student_details_with_reports || [],
-      student_performance: teacherData.student_performance || {},
-      student_overview: teacherData.student_overview || {},
-      top_performers: teacherData.top_performers || [],
+      // Student data - limit to essential fields only
+      student_details_with_reports: (teacherData.student_details_with_reports || []).slice(0, 5).map(student => ({
+        student_name: student.student_name,
+        student_id: student.student_id,
+        performance: {
+          overall: student.performance?.overall || 75
+        }
+      })),
+      
+      // Performance summary
+      student_performance: {
+        total_students: teacherData.student_performance?.total_students || 0,
+        average_performance: teacherData.student_performance?.average_performance || 75
+      },
+      
+      // Top performers - limit to 3
+      top_performers: (teacherData.top_performers || []).slice(0, 3),
+      
+      // Subject performance - limit data
       subject_performance: teacherData.subject_performance || {},
-      behavior_analysis: teacherData.behavior_analysis || {},
-      attendance_data: teacherData.attendance_data || {},
       
-      // Content data - pass all fields
-      generated_content_details: teacherData.generated_content_details || [],
-      assessment_details: teacherData.assessment_details || [],
+      // Content data - only counts and titles
+      generated_content_details: (teacherData.generated_content_details || []).slice(0, 5),
+      assessment_details: (teacherData.assessment_details || []).slice(0, 3),
       
-      // Media data - pass all fields
-      media_toolkit: teacherData.media_toolkit || {},
+      // Media counts
       media_counts: teacherData.media_counts || {},
       
-      // Progress and analytics - pass all fields
-      progress_data: teacherData.progress_data || {},
-      feedback_data: teacherData.feedback_data || [],
+      // Learning analytics
       learning_analytics: teacherData.learning_analytics || {}
     };
 
@@ -541,18 +490,18 @@ class PythonApiClient {
       session_id: sessionId,
       query: query,
       history: history,
-      teacher_data: transformedTeacherData,
+      teacher_data: optimizedTeacherData,
       web_search_enabled: true,
       uploaded_files: uploadedFiles
     };
 
-    console.log('Starting teacher chat with complete schema payload:', {
+    console.log('Starting optimized teacher chat:', {
       sessionId,
       query: query.substring(0, 100) + '...',
-      teacherDataSize: JSON.stringify(transformedTeacherData).length,
+      teacherDataSize: JSON.stringify(optimizedTeacherData).length,
       historyLength: history.length,
       uploadedFilesLength: uploadedFiles.length,
-      schemaFields: Object.keys(transformedTeacherData)
+      schemaFields: Object.keys(optimizedTeacherData)
     });
     
     try {

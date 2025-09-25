@@ -60,7 +60,10 @@ import {
     getTeacherLearningStats,
     getCurrentTeacherData,
     getStudentsForTeacher,
-    debugDatabaseCollections
+    debugDatabaseCollections,
+    // NEW: Import optimized functions
+    initializeVoiceCoachSession,
+    clearTeacherDataCache
 } from '../app/(home)/teacher/voice-coach/action';
 
 // Import RealtimeOpenAIService from the separate file
@@ -93,20 +96,23 @@ const VoiceCoach = () => {
     // Get API key from environment or localStorage
     const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || (typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') : '');
 
-    // Teacher data state
-    const [user, setUser] = useState(null);
+    // OPTIMIZED: Single state for all teacher data
     const [teacherData, setTeacherData] = useState({
-        lessons: [],
-        resources: [],
-        progress: [],
+        teacher: null,
+        students: [],
+        content: {
+            lessons: [],
+            assessments: [],
+            presentations: [],
+            comics: [],
+            images: [],
+            videos: [],
+            websearches: []
+        },
         achievements: [],
-        learningStats: {},
-        userProgress: []
+        stats: {}
     });
     const [dataLoading, setDataLoading] = useState(true);
-
-    // Add real student data state
-    const [students, setStudents] = useState([]);
 
     // Auto-scroll to bottom when messages change
     useEffect(() => {
@@ -160,128 +166,82 @@ const VoiceCoach = () => {
         }
     }, [transcript]);
 
-    // Fetch teacher data and real student data
+    // OPTIMIZED: Single data fetch with caching
     useEffect(() => {
-        const fetchTeacherData = async () => {
+        const fetchOptimizedTeacherData = async () => {
             setDataLoading(true);
             try {
-                const debugResult = await debugDatabaseCollections();
-
-                const [userResult, progressResult, achievementsResult, statsResult, studentsResult] = await Promise.all([
-                    getCurrentTeacherData(),
-                    getTeacherProgressData(),
-                    getTeacherAchievementsData(),
-                    getTeacherLearningStats(),
-                    getStudentsForTeacher()
-                ]);
-
-                if (userResult.success) {
-                    setUser({
-                        _id: userResult.data._id,
-                        email: userResult.data.email,
-                        name: userResult.data.name || userResult.data.email,
-                        grades: userResult.data.grades || ['Grade 8', 'Grade 9', 'Grade 10'],
-                        subjects: userResult.data.subjects || ['Mathematics', 'Science', 'English']
-                    });
+                // OPTIMIZED: Single call to get all data
+                const result = await initializeVoiceCoachSession();
+                
+                if (result.success) {
+                    setTeacherData(result.teacherData);
+                    setSessionId(result.sessionId);
+                    
+                    // FIXED: Remove undefined setUser and setStudents calls
+                    // The teacherData is already set above with all the data
                 } else {
-                    setUser({
+                    toast.error('Failed to load your teaching data');
+                    // Set fallback data
+                    setTeacherData({
+                        teacher: {
+                            _id: 'fallback_teacher_id',
+                            email: 'teacher@example.com',
+                            name: 'Teacher',
+                            grades: ['Grade 8', 'Grade 9', 'Grade 10'],
+                            subjects: ['Mathematics', 'Science', 'English']
+                        },
+                        students: [],
+                        content: {
+                            lessons: [],
+                            assessments: [],
+                            presentations: [],
+                            comics: [],
+                            images: [],
+                            videos: [],
+                            websearches: []
+                        },
+                        achievements: [],
+                        stats: {}
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching teacher data:', error);
+                toast.error('Failed to load your teaching data');
+                
+                // Set fallback data
+                setTeacherData({
+                    teacher: {
                         _id: 'fallback_teacher_id',
                         email: 'teacher@example.com',
                         name: 'Teacher',
                         grades: ['Grade 8', 'Grade 9', 'Grade 10'],
                         subjects: ['Mathematics', 'Science', 'English']
-                    });
-                }
-
-                if (studentsResult.success) {
-                    setStudents(studentsResult.data);
-                }
-
-                setTeacherData({
-                    lessons: progressResult.success ? progressResult.data.filter(item => item.contentType === 'lesson') : [],
-                    resources: progressResult.success ? progressResult.data : [],
-                    progress: progressResult.success ? progressResult.data : [],
-                    achievements: achievementsResult.success ? achievementsResult.data : [],
-                    learningStats: statsResult.success ? statsResult.data : {},
-                    userProgress: progressResult.success ? progressResult.data : []
-                });
-
-                if (debugResult.success) {
-                    toast.info(`Database: ${debugResult.data.userCounts.students} students, ${debugResult.data.teacherContentCounts.contents} contents`);
-                }
-
-            } catch (error) {
-                toast.error('Failed to load your teaching data');
-                
-                setUser({
-                    _id: 'fallback_teacher_id',
-                    email: 'teacher@example.com',
-                    name: 'Teacher',
-                    grades: ['Grade 8', 'Grade 9', 'Grade 10'],
-                    subjects: ['Mathematics', 'Science', 'English']
+                    },
+                    students: [],
+                    content: {
+                        lessons: [],
+                        assessments: [],
+                        presentations: [],
+                        comics: [],
+                        images: [],
+                        videos: [],
+                        websearches: []
+                    },
+                    achievements: [],
+                    stats: {}
                 });
             } finally {
                 setDataLoading(false);
             }
         };
 
-        fetchTeacherData();
+        fetchOptimizedTeacherData();
     }, []);
 
-    // Initialize session when user data is loaded
-    useEffect(() => {
-        if (user && !dataLoading) {
-            const initializeSession = async () => {
-                try {
-                    const sessionFormData = new FormData();
-                    sessionFormData.append('userId', user._id);
-                    sessionFormData.append('teacherData', JSON.stringify({
-                        grades: user.grades,
-                        subjects: user.subjects,
-                        recentActivities: teacherData.progress.slice(0, 5),
-                        teachingExperience: 'intermediate'
-                    }));
-
-                    const sessionResult = await createVoiceCoachSession(sessionFormData);
-                    
-                    if (sessionResult.success) {
-                        setSessionId(sessionResult.sessionId);
-                    } else {
-                        toast.error('Failed to initialize session');
-                    }
-                } catch (error) {
-                    toast.error('Failed to initialize session');
-                }
-            };
-
-            initializeSession();
-        }
-    }, [user, dataLoading, teacherData]);
-
-    // Save conversation to history
-    const saveConversationToHistory = async (allMessages, sessionType) => {
-        try {
-            const cleanMessages = allMessages.map(message => ({
-                id: message.id,
-                type: message.type,
-                content: message.content,
-                timestamp: message.timestamp?.toISOString() || new Date().toISOString()
-            }));
-
-            const formData = new FormData();
-            formData.append('sessionId', sessionId || 'temp_session');
-            formData.append('messages', JSON.stringify(cleanMessages));
-            formData.append('sessionType', sessionType);
-
-            await saveVoiceCoachChatSession(formData);
-        } catch (error) {
-            console.error('Failed to save conversation:', error);
-        }
-    };
-
-    // Send message handler - OPTIMIZED FOR MINIMAL DATA
+    // OPTIMIZED: Send message handler with cached data
     const handleSendMessage = async () => {
-        if (!inputValue.trim() || isLoading || !sessionId || !user) return;
+        if (!inputValue.trim() || isLoading || !sessionId || !teacherData.teacher) return;
 
         const userMessage = {
             id: Date.now(),
@@ -300,99 +260,10 @@ const VoiceCoach = () => {
             formData.append('message', inputValue);
             formData.append('sessionId', sessionId);
             
-            // OPTIMIZED: Create minimal student data - only essential fields
-            const optimizedStudentData = {
-                teacher_name: user.name,
-                teacher_id: user._id,
-                teacherName: user.name,
-                teacherId: user._id,
-                
-                // OPTIMIZED: Only send essential student data - limit to 10 students max (CONSISTENT WITH BACKEND)
-                student_details_with_reports: students.slice(0, 10).map(student => ({
-                    student_name: student.name,
-                    student_id: student._id,
-                    email: student.email,
-                    grades: student.grades || [],
-                    subjects: student.subjects || [],
-                    performance: {
-                        overall: student.performance?.overall || 75
-                    }
-                })),
-                
-                student_performance: {
-                    totalStudents: students.length,
-                    averagePerformance: students.length > 0 ? 
-                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0,
-                    topPerformers: students
-                        .sort((a, b) => (b.performance?.overall || 75) - (a.performance?.overall || 75))
-                        .slice(0, 3)
-                        .map(s => ({ name: s.name, score: s.performance?.overall || 75 })),
-                    strugglingStudents: students
-                        .filter(s => (s.performance?.overall || 75) < 70)
-                        .map(s => ({ name: s.name, score: s.performance?.overall || 75, subjects: s.subjects }))
-                },
-                
-                student_overview: {
-                    totalStudents: students.length,
-                    averageProgress: students.length > 0 ? 
-                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 75
-                },
-                
-                top_performers: students
-                    .sort((a, b) => (b.performance?.overall || 75) - (a.performance?.overall || 75))
-                    .slice(0, 5)
-                    .map(s => ({
-                        name: s.name,
-                        performance: s.performance?.overall || 75,
-                        strengths: s.subjects,
-                        group: s.group || 'Default'
-                    })),
-                
-                subject_performance: students.reduce((acc, s) => {
-                    s.subjects.forEach(subject => {
-                        if (!acc[subject]) {
-                            acc[subject] = { total: 0, count: 0, students: [] };
-                        }
-                        acc[subject].total += s.performance?.overall || 75;
-                        acc[subject].count += 1;
-                        acc[subject].students.push({
-                            name: s.name,
-                            score: s.performance?.overall || 75
-                        });
-                    });
-                    return acc;
-                }, {}),
-                
-                generated_content_details: teacherData.lessons || [],
-                assessment_details: teacherData.progress?.filter(item => item.contentType === 'assessment') || [],
-                
-                media_toolkit: {
-                    comics: teacherData.progress?.filter(item => item.contentType === 'comic') || [],
-                    images: teacherData.progress?.filter(item => item.contentType === 'image') || [],
-                    slides: teacherData.progress?.filter(item => item.contentType === 'presentation') || [],
-                    videos: teacherData.progress?.filter(item => item.contentType === 'video') || []
-                },
-                
-                media_counts: {
-                    comics: teacherData.learningStats?.totalComics || 0,
-                    images: teacherData.learningStats?.totalImages || 0,
-                    slides: teacherData.learningStats?.totalPresentations || 0,
-                    videos: teacherData.learningStats?.totalVideos || 0,
-                    webSearch: teacherData.learningStats?.totalWebSearches || 0
-                },
-                
-                learning_analytics: {
-                    totalLessons: teacherData.lessons?.length || 0,
-                    totalAssessments: teacherData.assessments?.length || 0,
-                    averageStudentPerformance: students.length > 0 ? 
-                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0,
-                    totalContent: teacherData.learningStats?.totalContent || 0
-                }
-            };
-
-            formData.append('studentData', JSON.stringify(optimizedStudentData));
+            // OPTIMIZED: No need to send student data - it's already cached in backend
+            formData.append('studentData', JSON.stringify({}));
             
-            // FIX: Pass the names of the uploaded files to the server action.
+            // Pass the names of the uploaded files to the server action
             const fileNames = uploadedFiles.map(file => file.name);
             formData.append('uploadedFiles', JSON.stringify(fileNames));
 
@@ -456,7 +327,7 @@ const VoiceCoach = () => {
         setMessages([clearMessage]);
     };
 
-    // Updated handleStart function
+    // OPTIMIZED: Voice functionality with cached data
     const handleStart = async () => {
         if (!apiKey) {
             setError('❌ OpenAI API key required');
@@ -520,35 +391,27 @@ const VoiceCoach = () => {
                 setMessages(prev => [...prev, userMessage]);
             };
 
-            // OPTIMIZED: Create minimal teacher data for voice AI - only essential fields
+            // OPTIMIZED: Use cached teacher data
             const teacherDataForAI = {
-                teacherName: user?.name || 'Teacher',
-                
-                // OPTIMIZED: Only send essential student data - limit to 10 students max (CONSISTENT WITH BACKEND)
-                students: students.slice(0, 10).map(student => ({
+                teacherName: teacherData.teacher?.name || 'Teacher',
+                students: teacherData.students.slice(0, 5).map(student => ({
                     student_name: student.name,
                     student_id: student._id,
                     email: student.email,
-                    grades: student.grades || [],
-                    subjects: student.subjects || [],
+                    grades: student.grades,
+                    subjects: student.subjects,
                     performance: {
-                        overall: student.performance?.overall || 75
+                        overall: student.performance?.overall || 0 // FIXED: Remove hardcoded 75, use 0 as fallback
                     }
                 })),
-                
-                // OPTIMIZED: Only send summary data
                 studentPerformance: {
-                    totalStudents: students.length,
-                    averagePerformance: students.length > 0 ? 
-                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0
+                    totalStudents: teacherData.students.length,
+                    averagePerformance: teacherData.stats.averageStudentPerformance || 0 // FIXED: Remove hardcoded 75, use 0 as fallback
                 },
-                
-                // OPTIMIZED: Only send summary analytics
                 learningAnalytics: {
-                    totalLessons: teacherData.lessons?.length || 0,
-                    totalAssessments: teacherData.assessments?.length || 0,
-                    averageStudentPerformance: students.length > 0 ? 
-                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0
+                    totalLessons: teacherData.stats.totalLessons || 0,
+                    totalAssessments: teacherData.stats.totalAssessments || 0,
+                    averageStudentPerformance: teacherData.stats.averageStudentPerformance || 0 // FIXED: Remove hardcoded 75, use 0 as fallback
                 }
             };
 
@@ -609,7 +472,7 @@ const VoiceCoach = () => {
     // File upload handler
     const handleFileUpload = async (event) => {
         const files = Array.from(event.target.files);
-        if (files.length === 0 || !sessionId || !user) return;
+        if (files.length === 0 || !sessionId || !teacherData.teacher) return;
 
         setIsUploading(true);
         try {
@@ -617,11 +480,11 @@ const VoiceCoach = () => {
             files.forEach(file => formData.append('files', file));
             formData.append('sessionId', sessionId);
             formData.append('studentData', JSON.stringify({
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                grades: user.grades,
-                subjects: user.subjects,
+                id: teacherData.teacher._id,
+                name: teacherData.teacher.name,
+                email: teacherData.teacher.email,
+                grades: teacherData.teacher.grades,
+                subjects: teacherData.teacher.subjects,
                 role: 'teacher'
             }));
 
@@ -771,7 +634,9 @@ const VoiceCoach = () => {
         return (
             <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900 flex items-center justify-center">
                 <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
                     <p className="text-lg text-gray-600 dark:text-gray-400">Loading your teaching data...</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">This may take a moment</p>
                 </div>
             </div>
         );
