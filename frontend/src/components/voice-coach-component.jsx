@@ -69,6 +69,21 @@ import {
 // Import RealtimeOpenAIService from the separate file
 import { RealtimeOpenAIService } from '@/lib/realtimeOpenAI';
 
+// Import the 3D LipSyncTeacher component with SSR disabled
+import dynamic from 'next/dynamic';
+
+const LipSyncTeacher3D = dynamic(() => import('./LipSyncTeacher3D'), { 
+    ssr: false,
+    loading: () => (
+        <div className="w-full h-[500px] flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 rounded-2xl">
+            <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Loading 3D Teacher...</p>
+            </div>
+        </div>
+    )
+});
+
 const VoiceCoach = () => {
     const [messages, setMessages] = useState([
         {
@@ -92,6 +107,10 @@ const VoiceCoach = () => {
     const [transcript, setTranscript] = useState('');
     const [error, setError] = useState('');
     const openAIServiceRef = useRef(null);
+
+    // NEW: Lip sync state
+    const [lipSyncData, setLipSyncData] = useState({ A: 0, E: 0, I: 0, O: 0, U: 0 });
+    const [isSpeaking, setIsSpeaking] = useState(false);
 
     // Get API key from environment or localStorage
     const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || (typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') : '');
@@ -342,9 +361,18 @@ const VoiceCoach = () => {
         try {
             openAIServiceRef.current = new RealtimeOpenAIService(apiKey);
 
+            // NEW: Set up lip sync callback
+            openAIServiceRef.current.onLipSyncData = (data) => {
+                setLipSyncData(data);
+                // Determine if currently speaking based on lip sync intensity
+                const totalIntensity = Object.values(data).reduce((sum, val) => sum + val, 0);
+                setIsSpeaking(totalIntensity > 0.1);
+            };
+
             // Add callback for when new response starts
             openAIServiceRef.current.onResponseStart = () => {
                 setTranscript(''); // Reset transcript for new response
+                setIsSpeaking(true); // Start speaking animation
                 // Mark the last live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -361,6 +389,7 @@ const VoiceCoach = () => {
 
             // Add callback for when response is complete
             openAIServiceRef.current.onResponseComplete = () => {
+                setIsSpeaking(false); // Stop speaking animation
                 // Mark the current live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -421,7 +450,7 @@ const VoiceCoach = () => {
             setMessages(prev => [...prev, { 
                 id: Date.now() + Math.random(),
                 type: 'system', 
-                content: `start speaking with AI Assistant` 
+                content: `🎤 Voice connection established! Start speaking with your AI Voice Coach.` 
             }]);
             
         } catch (error) {
@@ -457,11 +486,13 @@ const VoiceCoach = () => {
             setTranscript('');
             setError('');
             setIsLoading(false);
+            setIsSpeaking(false);
+            setLipSyncData({ A: 0, E: 0, I: 0, O: 0, U: 0 });
             
             setMessages(prev => [...prev, { 
                 id: Date.now() + Math.random(),
                 type: 'system', 
-                content: 'Its a pleasure to help you today' 
+                content: '🔌 Voice connection ended. It was a pleasure to help you today!' 
             }]);
             
         } catch (error) {
@@ -686,10 +717,35 @@ const VoiceCoach = () => {
             </motion.div>
 
             <div className="w-full px-4 py-6">
-                <div className="w-full">
-                    {/* Main Content Area - Full Width Chat */}
-                    <div className="w-full">
-                        {/* Chat Section */}
+                <div className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* NEW: 3D Teacher Lip Sync Section */}
+                    <div className="lg:col-span-1">
+                        <motion.div
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="w-full"
+                        >
+                            <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg ">
+                                <CardContent className="p-0 m-0">
+                                    <LipSyncTeacher3D 
+                                        lipSyncData={lipSyncData}
+                                        isConnected={isConnected}
+                                        isSpeaking={isSpeaking}
+                                    />
+                                </CardContent>
+
+                                {/* Error Display */}
+                                {error && (
+                                    <div className="mt-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm">
+                                        {error}
+                                    </div>
+                                )}
+                            </Card>
+                        </motion.div>
+                    </div>
+
+                    {/* Chat Section */}
+                    <div className="lg:col-span-2">
                         <motion.div
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -782,6 +838,27 @@ const VoiceCoach = () => {
                                             )}
                                         </Button>
                                         
+                                        {/* Connect Voice Button - Moved here between upload and send */}
+                                        <Button 
+                                            onClick={handleVoiceToggle}
+                                            disabled={isLoading || isUploading}
+                                            className={`${
+                                                isConnected 
+                                                    ? 'bg-red-500 hover:bg-red-600' 
+                                                    : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
+                                            } text-white dark:text-white rounded-2xl px-6 py-3`}
+                                            title={isConnected ? 'Disconnect Voice' : 'Connect Voice'}
+                                        >
+                                            {isLoading ? (
+                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                            ) : isConnected ? (
+                                                <MicOff className="w-4 h-4 mr-2" />
+                                            ) : (
+                                                <Mic className="w-4 h-4 mr-2" />
+                                            )}
+                                            {isConnected ? 'Disconnect' : 'Connect Voice'}
+                                        </Button>
+                                        
                                         {uploadedFiles.length > 0 && (
                                             <Button 
                                             onClick={handleClearFiles}
@@ -795,25 +872,6 @@ const VoiceCoach = () => {
                                             </Button>
                                         )}
                                         
-                                        <Button 
-                                        onClick={handleVoiceToggle}
-                                        disabled={isLoading || isUploading}
-                                        size="icon" 
-                                        className={`rounded-2xl px-6 py-3 ${
-                                            isConnected 
-                                                ? 'bg-red-500 hover:bg-red-600' 
-                                                : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
-                                        } text-white dark:text-white`}
-                                        title={isConnected ? 'Disconnect from OpenAI' : 'Connect to OpenAI Realtime API'}
-                                    >
-                                        {isLoading ? (
-                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        ) : isConnected ? (
-                                            <div className="w-4 h-4 bg-white rounded-full animate-pulse" />
-                                        ) : (
-                                            <AudioLines className="w-4 h-4" />
-                                        )}
-                                    </Button>
                                        <Button
                                             onClick={handleSendMessage}
                                             disabled={!inputValue.trim() || isLoading || isUploading}
