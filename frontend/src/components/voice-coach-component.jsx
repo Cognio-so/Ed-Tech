@@ -44,7 +44,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
-import { MarkdownStyles } from '@/components/Markdown'; // FIXED: Import the proper MarkdownStyles
+import { MarkdownStyles } from '@/components/Markdown';
 import { 
     sendVoiceCoachMessage, 
     uploadDocumentsToVoiceCoach, 
@@ -301,16 +301,16 @@ const VoiceCoach = () => {
             formData.append('sessionId', sessionId);
             
             // OPTIMIZED: Create minimal student data - only essential fields
-            const minimalStudentData = {
+            const optimizedStudentData = {
                 teacher_name: user.name,
                 teacher_id: user._id,
                 teacherName: user.name,
                 teacherId: user._id,
                 
                 // OPTIMIZED: Only send essential student data - limit to 10 students max (CONSISTENT WITH BACKEND)
-                students: students.slice(0, 10).map(student => ({
-                    name: student.name,
-                    _id: student._id,
+                student_details_with_reports: students.slice(0, 10).map(student => ({
+                    student_name: student.name,
+                    student_id: student._id,
                     email: student.email,
                     grades: student.grades || [],
                     subjects: student.subjects || [],
@@ -319,33 +319,82 @@ const VoiceCoach = () => {
                     }
                 })),
                 
-                // OPTIMIZED: Only send summary data
-                studentOverview: {
+                student_performance: {
+                    totalStudents: students.length,
+                    averagePerformance: students.length > 0 ? 
+                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0,
+                    topPerformers: students
+                        .sort((a, b) => (b.performance?.overall || 75) - (a.performance?.overall || 75))
+                        .slice(0, 3)
+                        .map(s => ({ name: s.name, score: s.performance?.overall || 75 })),
+                    strugglingStudents: students
+                        .filter(s => (s.performance?.overall || 75) < 70)
+                        .map(s => ({ name: s.name, score: s.performance?.overall || 75, subjects: s.subjects }))
+                },
+                
+                student_overview: {
                     totalStudents: students.length,
                     averageProgress: students.length > 0 ? 
                         students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 75
                 },
                 
-                // OPTIMIZED: Only send counts, not full data
-                media_counts: {
-                    totalContent: (teacherData.learningStats?.totalContent || 0),
-                    comics: (teacherData.learningStats?.totalComics || 0),
-                    images: (teacherData.learningStats?.totalImages || 0),
-                    slides: (teacherData.learningStats?.totalPresentations || 0),
-                    videos: (teacherData.learningStats?.totalVideos || 0),
-                    webSearch: (teacherData.learningStats?.totalWebSearches || 0)
+                top_performers: students
+                    .sort((a, b) => (b.performance?.overall || 75) - (a.performance?.overall || 75))
+                    .slice(0, 5)
+                    .map(s => ({
+                        name: s.name,
+                        performance: s.performance?.overall || 75,
+                        strengths: s.subjects,
+                        group: s.group || 'Default'
+                    })),
+                
+                subject_performance: students.reduce((acc, s) => {
+                    s.subjects.forEach(subject => {
+                        if (!acc[subject]) {
+                            acc[subject] = { total: 0, count: 0, students: [] };
+                        }
+                        acc[subject].total += s.performance?.overall || 75;
+                        acc[subject].count += 1;
+                        acc[subject].students.push({
+                            name: s.name,
+                            score: s.performance?.overall || 75
+                        });
+                    });
+                    return acc;
+                }, {}),
+                
+                generated_content_details: teacherData.lessons || [],
+                assessment_details: teacherData.progress?.filter(item => item.contentType === 'assessment') || [],
+                
+                media_toolkit: {
+                    comics: teacherData.progress?.filter(item => item.contentType === 'comic') || [],
+                    images: teacherData.progress?.filter(item => item.contentType === 'image') || [],
+                    slides: teacherData.progress?.filter(item => item.contentType === 'presentation') || [],
+                    videos: teacherData.progress?.filter(item => item.contentType === 'video') || []
                 },
                 
-                // OPTIMIZED: Only send summary analytics
+                media_counts: {
+                    comics: teacherData.learningStats?.totalComics || 0,
+                    images: teacherData.learningStats?.totalImages || 0,
+                    slides: teacherData.learningStats?.totalPresentations || 0,
+                    videos: teacherData.learningStats?.totalVideos || 0,
+                    webSearch: teacherData.learningStats?.totalWebSearches || 0
+                },
+                
                 learning_analytics: {
                     totalLessons: teacherData.lessons?.length || 0,
                     totalAssessments: teacherData.assessments?.length || 0,
                     averageStudentPerformance: students.length > 0 ? 
-                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 75
+                        students.reduce((sum, s) => sum + (s.performance?.overall || 75), 0) / students.length : 0,
+                    totalContent: teacherData.learningStats?.totalContent || 0
                 }
             };
 
-            formData.append('studentData', JSON.stringify(minimalStudentData));
+            formData.append('studentData', JSON.stringify(optimizedStudentData));
+            
+            // FIX: Pass the names of the uploaded files to the server action.
+            const fileNames = uploadedFiles.map(file => file.name);
+            formData.append('uploadedFiles', JSON.stringify(fileNames));
 
             const response = await sendVoiceCoachMessage(formData);
 
@@ -371,7 +420,8 @@ const VoiceCoach = () => {
                 setMessages(prev => [...prev, errorMessage]);
             }
         } catch (error) {
-            console.error('Error sending message:', error);
+            toast.error('Failed to send message. Please try again.');
+
             const errorMessage = {
                 id: Date.now() + 1,
                 type: 'ai',
@@ -471,7 +521,7 @@ const VoiceCoach = () => {
             };
 
             // OPTIMIZED: Create minimal teacher data for voice AI - only essential fields
-            const minimalTeacherDataForAI = {
+            const teacherDataForAI = {
                 teacherName: user?.name || 'Teacher',
                 
                 // OPTIMIZED: Only send essential student data - limit to 10 students max (CONSISTENT WITH BACKEND)
@@ -502,7 +552,7 @@ const VoiceCoach = () => {
                 }
             };
 
-            await openAIServiceRef.current.connect(minimalTeacherDataForAI);
+            await openAIServiceRef.current.connect(teacherDataForAI);
             
             setIsConnected(true);
             setMessages(prev => [...prev, { 

@@ -9,6 +9,8 @@ export class RealtimeOpenAIService {
     this.onLipSyncData = null;
     this.onTranscript = null;
     this.onUserTranscript = null;
+    this.onResponseStart = null; // Reset transcript when new response starts
+    this.onResponseComplete = null; // Mark response as complete
     this.isAnalyzing = false;
     this.currentLipSyncData = { A: 0, E: 0, I: 0, O: 0, U: 0 };
     
@@ -452,6 +454,7 @@ ${JSON.stringify(teacherData.learningAnalytics || {}, null, 2)}
 Your main objective is to act as a collaborative partner for the teacher. Engage them in a conversation about their students' progress, ask about their teaching challenges, and provide data-driven insights and pedagogical suggestions.
 
 Core Instructions:
+**Start the conversation with a brief, insightful overview of student performance.** Begin by highlighting a key positive trend and an area that might need attention. This will frame the conversation and allow the teacher to dive into the details they find most pressing.
 ** give response in which teacher talk **
 1.  **Adopt a Persona**: Always maintain a professional, encouraging, and analytical persona. Your language should be clear, respectful, and focused on educational best practices. Avoid being overly robotic or generic.
 2.  **Analyze and Adapt**: Before responding, analyze the teacher's query and the provided data. Your tone must dynamically change based on the conversation's context:
@@ -500,6 +503,10 @@ Core Instructions:
         break;
       case 'response.audio_transcript.done':
         console.log('📝 AI transcript complete');
+        // Mark current response as complete
+        if (this.onResponseComplete) {
+          this.onResponseComplete();
+        }
         break;
       case 'conversation.item.created':
         console.log('💬 Conversation item created');
@@ -509,6 +516,10 @@ Core Instructions:
         break;
       case 'conversation.item.output_created':
         console.log('🤖 AI output created');
+        // Reset transcript when new AI response starts
+        if (this.onResponseStart) {
+          this.onResponseStart();
+        }
         break;
       case 'error':
         console.error('❌ OpenAI error:', message.error);
