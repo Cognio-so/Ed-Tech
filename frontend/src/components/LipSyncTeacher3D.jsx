@@ -52,7 +52,7 @@ const GLBViewer = ({ lipSyncData, isSpeaking, isConnected }) => {
         scene.background = null;
 
         const camera = new THREE.PerspectiveCamera(35, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
-        camera.position.set(0, 0, 2.8);
+        camera.position.set(0, 0, 2.0); // Zoom out more to show the face properly
         cameraRef.current = camera;
 
         const renderer = new THREE.WebGLRenderer({ 
@@ -90,8 +90,8 @@ const GLBViewer = ({ lipSyncData, isSpeaking, isConnected }) => {
             setDebugInfo('Model loaded successfully!');
             const model = gltf.scene;
             modelRef.current = model;
-            model.scale.set(1.6, 1.6, 1.6);
-            model.position.set(0, -2.3, 0);
+            model.scale.set(1.8, 1.8, 1.8); // Slightly smaller scale
+            model.position.set(0, -2.7, 0); // Move model down to -2.5
 
             // Find head mesh and enable morph targets
             model.traverse((child) => {
@@ -133,9 +133,9 @@ const GLBViewer = ({ lipSyncData, isSpeaking, isConnected }) => {
             // Subtle head movement when speaking
             if (isSpeakingRef.current) {
               const headBob = Math.sin(elapsedTime * 3) * 0.01;
-              model.position.y = -2.3 + headBob;
+              model.position.y = -2.7 + headBob; // Updated to match new position
             } else {
-              model.position.y = -2.3;
+              model.position.y = -2.7; // Updated to match new position
             }
             model.rotation.y = Math.sin(elapsedTime * 0.1) * 0.05;
           }
@@ -199,13 +199,13 @@ const GLBViewer = ({ lipSyncData, isSpeaking, isConnected }) => {
   }, []); // <-- This dependency array is intentionally empty to run setup only once.
 
   return (
-    <div className="w-full h-full relative overflow-hidden">
+    <div className="w-[200px] h-[200px] relative overflow-hidden rounded-full bg-gray-800">
       <div 
         ref={mountRef} 
         className="w-full h-full"
       />
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-500/50 backdrop-blur-sm rounded-full">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
             <p className="text-sm text-white">Loading 3D Model...</p>
@@ -217,20 +217,18 @@ const GLBViewer = ({ lipSyncData, isSpeaking, isConnected }) => {
   );
 };
 
-// Main 3D Lip Sync Component (No changes needed here)
+// Main 3D Lip Sync Component - Updated to show only face with rounded-full container
 const LipSyncTeacher3D = ({ 
     lipSyncData = { A: 0, E: 0, I: 0, O: 0, U: 0 }, 
     isConnected = false,
     isSpeaking = false 
 }) => {
     return (
-        <div className="w-full h-[570px] relative overflow-hidden">
-            <GLBViewer 
-                lipSyncData={lipSyncData}
-                isConnected={isConnected}
-                isSpeaking={isSpeaking}
-            />
-        </div>
+        <GLBViewer 
+            lipSyncData={lipSyncData}
+            isConnected={isConnected}
+            isSpeaking={isSpeaking}
+        />
     );
 };
 

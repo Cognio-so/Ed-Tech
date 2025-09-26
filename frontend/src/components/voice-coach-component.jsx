@@ -719,13 +719,13 @@ const VoiceCoach = () => {
             <div className="w-full px-4 py-6">
                 <div className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* NEW: 3D Teacher Lip Sync Section */}
-                    <div className="lg:col-span-1">
+                    <div className="lg:col-span-1 flex items-center justify-center">
                         <motion.div
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
-                            className="w-full"
+                            className="w-full flex justify-center"
                         >
-                            <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg ">
+                            <Card className="bg-transparent backdrop-blur-sm border-0 shadow-none rounded-full">
                                 <CardContent className="p-0 m-0">
                                     <LipSyncTeacher3D 
                                         lipSyncData={lipSyncData}
@@ -752,7 +752,7 @@ const VoiceCoach = () => {
                             transition={{ delay: 0.1 }}
                             className="w-full"
                         >
-                            <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg h-[610px] flex flex-col">
+                            <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg h-[600px] flex flex-col">
                                 {/* Messages Area */}
                                 <div className="flex-1 overflow-hidden">
                                     <ScrollArea ref={scrollAreaRef} className="h-full w-full">

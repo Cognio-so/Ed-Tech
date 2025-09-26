@@ -117,57 +117,7 @@ export async function uploadComicImagesToCloudinaryAndSave(comicData, userId) {
   }
 }
 
-export async function saveComic(comicData) {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      throw new Error("User not authenticated");
-    }
-
-    const { db } = await connectToDatabase();
-    const comicsCollection = db.collection("comics");
-    
-    const userId = session.user.id;
-
-    // Create a title from the instruction (first 50 characters)
-    const title = comicData.instructions 
-      ? comicData.instructions.substring(0, 50) + (comicData.instructions.length > 50 ? '...' : '')
-      : 'Untitled Comic';
-
-    const comicDocument = {
-      _id: new ObjectId(),
-      userId: new ObjectId(userId),
-      title: title, // Add title field
-      instruction: comicData.instructions,
-      subject: comicData.subject || "General",
-      grade: comicData.gradeLevel,
-      language: comicData.language || "English",
-      numPanels: comicData.numPanels,
-      // REMOVED: images: comicData.images || [], // Don't store base64 images in database
-      metadata: {
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        tags: [comicData.subject, comicData.gradeLevel, comicData.language],
-        isPublic: false,
-        downloadCount: 0,
-      }
-    };
-
-    await comicsCollection.insertOne(comicDocument);
-
-    return {
-      success: true,
-      message: "Comic saved successfully",
-      comicId: comicDocument._id.toString()
-    };
-  } catch (error) {
-    console.error("Error saving comic:", error);
-    return {
-      success: false,
-      message: error.message || "Failed to save comic"
-    };
-  }
-}
+// REMOVED: saveComic function - this was causing 413 errors by storing base64 data directly
 
 export async function getComics() {
   try {

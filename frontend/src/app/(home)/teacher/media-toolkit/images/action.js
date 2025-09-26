@@ -99,55 +99,6 @@ export async function uploadImageToCloudinaryAndSave(imageData) {
   }
 }
 
-export async function saveImageToDatabase(imageData) {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      throw new Error("User not authenticated");
-    }
-
-    const { db } = await connectToDatabase();
-    const imagesCollection = db.collection("images");
-
-    const imageDocument = {
-      userId: session.user.id,
-      title: imageData.title,
-      topic: imageData.topic,
-      subject: imageData.subject,
-      grade: imageData.grade,
-      instructions: imageData.instructions,
-      visualType: imageData.visualType,
-      language: imageData.language,
-      difficultyFlag: imageData.difficultyFlag || false,
-      imageUrl: imageData.imageUrl,
-      // REMOVED: imageBase64: imageData.imageBase64, // Don't store base64 in database
-      status: imageData.status || "completed",
-      metadata: {
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        tags: imageData.tags || [],
-        isPublic: imageData.isPublic || false,
-        downloadCount: 0,
-        viewCount: 0
-      }
-    };
-
-    const result = await imagesCollection.insertOne(imageDocument);
-
-    return {
-      success: true,
-      imageId: result.insertedId.toString(),
-      message: "Image saved to database successfully"
-    };
-  } catch (error) {
-    console.error("Error saving image:", error);
-    return {
-      success: false,
-      error: error.message || "Failed to save image to database"
-    };
-  }
-}
-
 export async function getUserImages(userId = null) {
   try {
     const session = await getServerSession();
