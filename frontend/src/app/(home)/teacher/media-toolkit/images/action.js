@@ -45,7 +45,12 @@ export async function uploadImageToCloudinaryAndSave(imageData) {
     }
 
     // Upload base64 image to Cloudinary
-    const uploadResult = await uploadImageToCloudinary(imageData.imageBase64, 'ai-images');
+    const uploadResult = await uploadImageToCloudinary(
+      imageData.imageBase64.includes('data:') 
+        ? imageData.imageBase64.split(',')[1]  // Extract base64 from data URL
+        : imageData.imageBase64,               // Use as-is if already base64
+      'ai-images'
+    );
     
     if (!uploadResult.success) {
       return {

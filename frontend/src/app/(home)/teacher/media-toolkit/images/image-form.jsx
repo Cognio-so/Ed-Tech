@@ -114,7 +114,7 @@ const ImageForm = ({ onImageGenerated }) => {
                     language: formData.language,
                     difficultyFlag: formData.difficultyFlag,
                     imageUrl: result.image.image_url,
-                    imageBase64: result.image.image_url,
+                    imageBase64: result.image.image_url.split(',')[1], // Extract base64 part from data URL
                     status: 'generated'
                 });
             } else {

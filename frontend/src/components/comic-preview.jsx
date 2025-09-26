@@ -23,7 +23,7 @@ import {
     Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { saveComic, deleteComic, updateComic } from '@/app/(home)/teacher/media-toolkit/comic/action';
+import { uploadComicImagesToCloudinaryAndSave, deleteComic, updateComic } from '@/app/(home)/teacher/media-toolkit/comic/action';
 
 const ComicPreview = ({ comic, onSave, onDelete, onEdit, isNew = false }) => {
     const [currentPanel, setCurrentPanel] = useState(0);
@@ -83,10 +83,28 @@ const ComicPreview = ({ comic, onSave, onDelete, onEdit, isNew = false }) => {
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            const result = await saveComic(comic);
+            // Convert comic data to the format expected by uploadComicImagesToCloudinaryAndSave
+            const comicData = {
+                instructions: comic.instruction || comic.instructions,
+                subject: comic.subject || "General",
+                gradeLevel: comic.grade || comic.gradeLevel,
+                numPanels: comic.numPanels || comic.panels.length,
+                language: comic.language || "English",
+                images: comic.panels.map(panel => {
+                    const imageData = panel.imageBase64 || panel.imageUrl;
+                    // If it's a data URL, extract base64 part; otherwise use as is
+                    return imageData.includes('data:') ? imageData.split(',')[1] : imageData;
+                }).filter(Boolean), // Only include valid base64
+                comicType: comic.comicType || 'educational'
+            };
+
+            // Get user ID from session or pass it as a prop
+            const userId = comic.userId || 'current-user'; // This should be passed from parent component
+            
+            const result = await uploadComicImagesToCloudinaryAndSave(comicData, userId);
             if (result.success) {
                 toast.success('Comic saved successfully!');
-                onSave?.(result.comicId);
+                onSave?.(result.id);
             } else {
                 toast.error(result.error || 'Failed to save comic');
             }

@@ -34,17 +34,21 @@ export async function uploadComicImagesToCloudinaryAndSave(comicData, userId) {
     for (let i = 0; i < comicData.images.length; i++) {
       const imageData = comicData.images[i];
       
+      // Handle data URLs - extract base64 if needed
+      const base64Data = imageData.includes('data:') 
+        ? imageData.split(',')[1]  // Extract base64 from data URL
+        : imageData;               // Use as-is if already base64
+      
       // Upload base64 image to Cloudinary
-      const uploadResult = await uploadImageToCloudinary(imageData, 'ai-comics');
+      const uploadResult = await uploadImageToCloudinary(base64Data, 'ai-comics');
       
       if (uploadResult.success) {
         uploadedImageUrls.push(uploadResult.url);
         cloudinaryPublicIds.push(uploadResult.publicId);
       } else {
         console.error(`Failed to upload panel ${i + 1}:`, uploadResult.error);
-        // Continue with other panels even if one fails
-        uploadedImageUrls.push(imageData); // Fallback to base64
-        cloudinaryPublicIds.push(null);
+        // DON'T fallback to base64 - skip this panel or throw error
+        throw new Error(`Failed to upload panel ${i + 1} to Cloudinary: ${uploadResult.error}`);
       }
     }
 
@@ -117,7 +121,43 @@ export async function uploadComicImagesToCloudinaryAndSave(comicData, userId) {
   }
 }
 
-// REMOVED: saveComic function - this was causing 413 errors by storing base64 data directly
+export async function saveComic(comicData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const userId = session.user.id;
+
+    // Convert comic data to the format expected by uploadComicImagesToCloudinaryAndSave
+    const convertedData = {
+      instructions: comicData.instruction || comicData.instructions,
+      subject: comicData.subject || "General",
+      gradeLevel: comicData.grade || comicData.gradeLevel,
+      numPanels: comicData.numPanels || (comicData.panels ? comicData.panels.length : 0),
+      language: comicData.language || "English",
+      images: comicData.panels ? comicData.panels.map(panel => panel.imageBase64).filter(Boolean) : [], // Only include valid base64
+      comicType: comicData.comicType || 'educational'
+    };
+
+    // Use the Cloudinary function
+    const result = await uploadComicImagesToCloudinaryAndSave(convertedData, userId);
+    
+    return {
+      success: result.success,
+      comicId: result.id,
+      message: result.message,
+      error: result.error
+    };
+  } catch (error) {
+    console.error("Error saving comic:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to save comic"
+    };
+  }
+}
 
 export async function getComics() {
   try {
