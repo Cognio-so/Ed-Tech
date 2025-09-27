@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { CarouselWithControls } from "@/components/ui/carousel";
 import { toast } from "sonner";
 import ComicForm from "./comic-form";
-import { generateComic, uploadComicImagesToCloudinaryAndSave, getComics,  deleteComic } from "./action";
+import { generateComic, saveComicWithCloudinaryUrls, getComics, deleteComic } from "./action";
 import { authClient } from "@/lib/auth-client";
 import PythonApiClient from "@/lib/PythonApi";
 
@@ -243,18 +243,20 @@ export default function ComicPage() {
 
     setIsSaving(true);
     try {
+      // Prepare comic data with Cloudinary URLs only (no base64)
       const comicData = {
         instructions: currentFormData.instructions,
         subject: currentFormData.subject,
         gradeLevel: currentFormData.gradeLevel,
         numPanels: currentFormData.numPanels,
         language: currentFormData.language,
-        images: comicImages.map(img => img.url), // Base64 data URLs for upload
+        imageUrls: comicImages.map(img => img.url), // Cloudinary URLs only
+        cloudinaryPublicIds: [], // Will be populated by the function
         comicType: 'educational'
       };
 
-      // Use the new function that uploads to Cloudinary first
-      const result = await uploadComicImagesToCloudinaryAndSave(comicData, user.id);
+      // Use the NEW function that only saves Cloudinary URLs
+      const result = await saveComicWithCloudinaryUrls(comicData);
       if (result.success) {
         // Reload saved comics
         await loadSavedComics();
@@ -264,10 +266,12 @@ export default function ComicPage() {
         setExpectedPanels(0);
         setCurrentPanelIndex(0);
         toast.success('Comic saved successfully');
+      } else {
+        throw new Error(result.error || "Failed to save comic");
       }
     } catch (error) {
       console.error("Failed to save comic:", error);
-      toast.error("Failed to save comic");
+      toast.error(`Failed to save comic: ${error.message}`);
     } finally {
       setIsSaving(false);
     }

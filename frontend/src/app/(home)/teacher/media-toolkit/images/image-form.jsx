@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { Loader2, Wand2, Image, Palette, Globe, BookOpen, Save, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { subject, grade, language } from '@/config/data';
-import { generateImage, uploadImageToCloudinaryAndSave, getUserAssignedGradesAndSubjects } from './action';
+import { generateImage, saveImageWithCloudinaryUrl, getUserAssignedGradesAndSubjects } from './action';
 
 const ImageForm = ({ onImageGenerated }) => {
     const [formData, setFormData] = useState({
@@ -129,6 +129,8 @@ const ImageForm = ({ onImageGenerated }) => {
         }
     };
 
+    // Update the import (line 15)
+    // Update handleSave function
     const handleSave = async () => {
         if (!generatedImage) {
             toast.error("No image to save. Please generate an image first.");
@@ -138,12 +140,27 @@ const ImageForm = ({ onImageGenerated }) => {
         setIsSaving(true);
 
         try {
-            const saveResult = await uploadImageToCloudinaryAndSave(generatedImage);
+            // Prepare image data with Cloudinary URLs only (no base64) - SAME AS COMIC PATTERN
+            const imageData = {
+                title: generatedImage.title,
+                topic: generatedImage.topic,
+                subject: generatedImage.subject,
+                grade: generatedImage.grade,
+                instructions: generatedImage.instructions,
+                visualType: generatedImage.visualType,
+                language: generatedImage.language,
+                difficultyFlag: generatedImage.difficultyFlag,
+                imageUrl: generatedImage.imageUrl, // Cloudinary URL only
+                cloudinaryPublicId: generatedImage.cloudinaryPublicId || '', // Cloudinary public ID
+                status: 'completed'
+            };
 
-            if (saveResult.success) {
+            // Use the NEW function that only saves Cloudinary URLs - SAME AS COMIC PATTERN
+            const result = await saveImageWithCloudinaryUrl(imageData);
+            if (result.success) {
                 if (onImageGenerated) {
                     onImageGenerated({
-                        _id: saveResult.imageId,
+                        _id: result.imageId,
                         title: generatedImage.title,
                         topic: generatedImage.topic,
                         subject: generatedImage.subject,
@@ -152,7 +169,7 @@ const ImageForm = ({ onImageGenerated }) => {
                         visualType: generatedImage.visualType,
                         language: generatedImage.language,
                         difficultyFlag: generatedImage.difficultyFlag,
-                        imageUrl: saveResult.cloudinaryUrl,
+                        imageUrl: result.cloudinaryUrl,
                         status: 'completed',
                         metadata: {
                             createdAt: new Date().toISOString(),
@@ -165,6 +182,7 @@ const ImageForm = ({ onImageGenerated }) => {
                     });
                 }
 
+                toast.success("Image saved successfully!");
                 setFormData({
                     title: '',
                     topic: '',
@@ -177,11 +195,11 @@ const ImageForm = ({ onImageGenerated }) => {
                 });
                 setGeneratedImage(null);
             } else {
-                toast.error("Failed to save image: " + saveResult.error);
+                throw new Error(result.error || "Failed to save image");
             }
         } catch (error) {
-            console.error("Error saving image:", error);
-            toast.error("An error occurred while saving the image");
+            console.error("Failed to save image:", error);
+            toast.error(`Failed to save image: ${error.message}`);
         } finally {
             setIsSaving(false);
         }

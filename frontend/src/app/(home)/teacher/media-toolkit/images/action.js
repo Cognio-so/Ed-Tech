@@ -249,3 +249,54 @@ export async function getUserAssignedGradesAndSubjects() {
     };
   }
 }
+
+// NEW: Function to save image with pre-uploaded Cloudinary URLs (no base64 processing)
+export async function saveImageWithCloudinaryUrl(imageData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const { db } = await connectToDatabase();
+    const imagesCollection = db.collection("images");
+
+    const imageDocument = {
+      userId: session.user.id,
+      title: imageData.title,
+      topic: imageData.topic,
+      subject: imageData.subject,
+      grade: imageData.grade,
+      instructions: imageData.instructions,
+      visualType: imageData.visualType,
+      language: imageData.language,
+      difficultyFlag: imageData.difficultyFlag || false,
+      imageUrl: imageData.imageUrl, // Cloudinary URL only
+      cloudinaryPublicId: imageData.cloudinaryPublicId, // Store Cloudinary public ID for future operations
+      status: 'completed',
+      metadata: {
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        tags: imageData.tags || [],
+        isPublic: imageData.isPublic || false,
+        downloadCount: 0,
+        viewCount: 0
+      }
+    };
+
+    const result = await imagesCollection.insertOne(imageDocument);
+
+    return {
+      success: true,
+      imageId: result.insertedId.toString(),
+      cloudinaryUrl: imageData.imageUrl,
+      message: "Image uploaded to Cloudinary and saved to database successfully"
+    };
+  } catch (error) {
+    console.error("Error uploading and saving image:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to upload and save image"
+    };
+  }
+}

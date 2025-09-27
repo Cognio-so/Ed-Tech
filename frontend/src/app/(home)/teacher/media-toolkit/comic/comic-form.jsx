@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Play, Pause, Loader2, Sparkles } from "lucide-react";
 import { subject, grade, language } from "@/config/data";
 import { getUserAssignedGradesAndSubjects } from './action';
+import { toast } from "sonner";
 
 export default function ComicForm({ onSubmit, onStop, isLoading = false, isGenerating = false }) {
   const [formData, setFormData] = useState({
