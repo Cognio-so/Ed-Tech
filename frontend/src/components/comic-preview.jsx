@@ -368,7 +368,7 @@ const ComicPreview = ({ comic, onSave, onDelete, onEdit, isNew = false }) => {
                                                 src={`data:image/png;base64,${currentPanelData.imageBase64}`}
                                                 alt={`Panel ${currentPanel + 1}`}
                                                 className="max-w-full h-auto rounded-lg shadow-lg border border-gray-200"
-                                                style={{ maxHeight: '500px' }}
+                                                style={{ maxHeight: '300px' }}
                                                 onLoad={() => setIsLoading(false)}
                                             />
                                         ) : (
