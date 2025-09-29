@@ -126,6 +126,9 @@ const VoiceCoach = () => {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isFirstLoad, setIsFirstLoad] = useState(true);
 
+    // Add voice preference state
+    const [selectedVoice, setSelectedVoice] = useState('alloy'); // Default to female voice
+
     // Get API key from environment or localStorage
     const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || (typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') : '');
 
@@ -458,14 +461,15 @@ const VoiceCoach = () => {
                 }
             };
 
-            await openAIServiceRef.current.connect(teacherDataForAI);
+            // Connect with the selected voice
+            await openAIServiceRef.current.connect(teacherDataForAI, 'teacher', selectedVoice);
             
             setIsConnected(true);
             setIsFirstLoad(false); // Trigger intro video
             setMessages(prev => [...prev, { 
                 id: Date.now() + Math.random(),
                 type: 'system', 
-                content: `🎤 Voice connection established! Start speaking with your AI Voice Coach.` 
+                content: `🎤 Voice connection established with ${selectedVoice} voice! Start speaking with your AI Voice Coach.` 
             }]);
             
         } catch (error) {
@@ -744,6 +748,21 @@ const VoiceCoach = () => {
                                     <VoiceCoachVideo 
                                         isSpeaking={isSpeaking}
                                         isConnected={isConnected}
+                                        onVoiceChange={(voice) => {
+                                            console.log('Voice change requested:', voice);
+                                            console.log('openAIServiceRef.current:', openAIServiceRef.current);
+                                            
+                                            // Store the voice preference
+                                            setSelectedVoice(voice);
+                                            
+                                            // If already connected, change the voice immediately
+                                            if (openAIServiceRef.current && isConnected) {
+                                                console.log('Calling setVoice on service');
+                                                openAIServiceRef.current.setVoice(voice);
+                                            } else {
+                                                console.log('Voice preference stored, will be applied on next connection');
+                                            }
+                                        }}
                                     />
                                 </CardContent>
 

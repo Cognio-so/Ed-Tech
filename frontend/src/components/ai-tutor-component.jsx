@@ -107,6 +107,9 @@ const AiTutor = () => {
     // NEW: Video state instead of lip sync
     const [isSpeaking, setIsSpeaking] = useState(false);
 
+    // Add voice preference state
+    const [selectedVoice, setSelectedVoice] = useState('alloy'); // Default to female voice
+
     // Real student data state
     const [user, setUser] = useState(null);
     const [studentData, setStudentData] = useState({
@@ -813,7 +816,7 @@ const AiTutor = () => {
             };
 
             // Connect to RealtimeOpenAI with student data and userType
-            await service.connect(studentContext, 'student');
+            await service.connect(studentContext, 'student', selectedVoice);
             
             setRealtimeService(service);
             setIsVoiceActive(true);
@@ -1026,6 +1029,21 @@ const AiTutor = () => {
                                     <VoiceCoachVideo 
                                         isSpeaking={isSpeaking}
                                         isConnected={isVoiceActive}
+                                        onVoiceChange={(voice) => {
+                                            console.log('Voice change requested:', voice);
+                                            console.log('realtimeService:', realtimeService);
+                                            
+                                            // Store the voice preference
+                                            setSelectedVoice(voice);
+                                            
+                                            // If already connected, change the voice immediately
+                                            if (realtimeService && isVoiceActive) {
+                                                console.log('Calling setVoice on service');
+                                                realtimeService.setVoice(voice);
+                                            } else {
+                                                console.log('Voice preference stored, will be applied on next connection');
+                                            }
+                                        }}
                                     />
                                 </CardContent>
                             </Card>

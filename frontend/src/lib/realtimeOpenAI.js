@@ -21,7 +21,36 @@ export class RealtimeOpenAIService {
     this.userData = null;
     this.userType = null; // 'teacher' or 'student'
     
+    // Add voice selection
+    this.selectedVoice = 'alloy'; // Default voice
+    
     this.initializeAudio();
+  }
+
+  // Add method to change voice
+  setVoice(voice) {
+    console.log('🎤 setVoice method called with voice:', voice);
+    console.log('🎤 Current connection state - isConnected:', this.isConnected, 'dc readyState:', this.dc?.readyState);
+    
+    this.selectedVoice = voice;
+    console.log('Voice changed to:', voice);
+    
+    // If already connected, update the session with new voice
+    if (this.isConnected && this.dc?.readyState === 'open') {
+      console.log('Sending session update with new voice:', voice);
+      this.sendSessionUpdate(this.userData, this.userType);
+    } else {
+      console.log('Cannot update voice - not connected or data channel not ready');
+      console.log('isConnected:', this.isConnected, 'dc.readyState:', this.dc?.readyState);
+    }
+  }
+
+  // Add method to get available voices
+  getAvailableVoices() {
+    return {
+      female: ['alloy', 'shimmer', 'coral', 'sage'],
+      male: ['echo', 'ash', 'ballad', 'verse', 'marin', 'cedar']
+    };
   }
 
   async initializeAudio() {
@@ -35,12 +64,13 @@ export class RealtimeOpenAIService {
     }
   }
 
-  async connect(userData = null, userType = 'teacher') {
+  async connect(userData = null, userType = 'teacher', voice = 'alloy') {
     try {
       
-      // Store user data and type
+      // Store user data, type, and voice
       this.userData = userData;
       this.userType = userType;
+      this.selectedVoice = voice;
       
       // Create RTCPeerConnection
       this.pc = new RTCPeerConnection({
@@ -305,7 +335,7 @@ export class RealtimeOpenAIService {
         session: {
           modalities: ['text', 'audio'],
           instructions: createPrompt(userData, userType),
-          voice: 'alloy',
+          voice: this.selectedVoice, // Use the selected voice
           input_audio_format: 'pcm16',
           output_audio_format: 'pcm16',
           input_audio_transcription: { model: 'whisper-1' },
