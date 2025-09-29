@@ -51,16 +51,30 @@ import {
 import { saveStudentConversation } from '../app/(home)/student/history/action';
 import { RealtimeOpenAIService } from '@/lib/realtimeOpenAI';
 
-// Import the 3D LipSyncTeacher component with SSR disabled
+// Import the Video component instead of 3D model
 import dynamic from 'next/dynamic';
 
-const LipSyncTeacher3D = dynamic(() => import('./LipSyncTeacher3D'), { 
+// Comment out the 3D component
+// const LipSyncTeacher3D = dynamic(() => import('./LipSyncTeacher3D'), { 
+//     ssr: false,
+//     loading: () => (
+//         <div className="w-full h-[500px] flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 rounded-2xl">
+//             <div className="text-center">
+//                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+//                 <p className="text-sm text-gray-600 dark:text-gray-400">Loading 3D Teacher...</p>
+//             </div>
+//         </div>
+//     )
+// });
+
+// Import the new Video component
+const VoiceCoachVideo = dynamic(() => import('./VoiceCoachVideo'), { 
     ssr: false,
     loading: () => (
-        <div className="w-full h-[500px] flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 rounded-2xl">
+        <div className="w-[400px] h-[550px] flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 rounded-md">
             <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Loading 3D Teacher...</p>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-2"></div>
+                <p className="text-xs text-gray-600 dark:text-gray-400">Loading Video...</p>
             </div>
         </div>
     )
@@ -90,8 +104,7 @@ const AiTutor = () => {
     const [isListening, setIsListening] = useState(false);
     const [transcription, setTranscription] = useState('');
     
-    // NEW: Lip sync state - exactly like voice-coach
-    const [lipSyncData, setLipSyncData] = useState({ A: 0, E: 0, I: 0, O: 0, U: 0 });
+    // NEW: Video state instead of lip sync
     const [isSpeaking, setIsSpeaking] = useState(false);
 
     // Real student data state
@@ -663,7 +676,6 @@ const AiTutor = () => {
             setIsListening(false);
             setTranscription(''); // Reset transcription
             setIsSpeaking(false); // Reset speaking state
-            setLipSyncData({ A: 0, E: 0, I: 0, O: 0, U: 0 }); // Reset lip sync data
             return;
         }
 
@@ -736,12 +748,13 @@ const AiTutor = () => {
             const service = new RealtimeOpenAIService(apiKey);
             
             // Set up event handlers - same approach as voice-coach
-            service.onLipSyncData = (data) => {
-                setLipSyncData(data);
-                // Determine if currently speaking based on lip sync intensity
-                const totalIntensity = Object.values(data).reduce((sum, val) => sum + val, 0);
-                setIsSpeaking(totalIntensity > 0.1);
-            };
+            // Remove lip sync callback, keep speaking state for video
+            // service.onLipSyncData = (data) => {
+            //     setLipSyncData(data);
+            //     // Determine if currently speaking based on lip sync intensity
+            //     const totalIntensity = Object.values(data).reduce((sum, val) => sum + val, 0);
+            //     setIsSpeaking(totalIntensity > 0.1);
+            // };
 
             // Add callback for when new response starts
             service.onResponseStart = () => {
@@ -1001,19 +1014,18 @@ const AiTutor = () => {
 
             <div className="w-full px-4 py-6">
                 <div className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* NEW: 3D Teacher Lip Sync Section */}
-                    <div className="lg:col-span-1">
+                    {/* NEW: Video Teacher Section */}
+                    <div className="lg:col-span-1 flex items-center justify-center">
                         <motion.div
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
-                            className="w-full"
+                            className="w-full flex justify-center"
                         >
-                            <Card className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg ">
-                                <CardContent className="p-0 m-0">
-                                    <LipSyncTeacher3D 
-                                        lipSyncData={lipSyncData}
-                                        isConnected={isVoiceActive}
+                            <Card className="bg-transparent backdrop-blur-sm border-0 shadow-none">
+                                <CardContent className="p-4">
+                                    <VoiceCoachVideo 
                                         isSpeaking={isSpeaking}
+                                        isConnected={isVoiceActive}
                                     />
                                 </CardContent>
                             </Card>
