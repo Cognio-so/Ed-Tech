@@ -13,7 +13,8 @@ import {
   Eye,
   Clock,
   User,
-  Mic
+  Mic,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,10 +30,12 @@ const VideoPreview = ({
   isSaving = false,
   voiceName,
   avatarName,
-  videoId
+  videoId,
+  onRetry
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   const handlePreview = () => {
     if (videoUrl) {
@@ -75,25 +78,44 @@ const VideoPreview = ({
     }
   };
 
+  const handleRetry = () => {
+    setRetryCount(prev => prev + 1);
+    setPreviewError(false);
+    if (onRetry) {
+      onRetry();
+    }
+  };
+
   if (status === 'failed') {
     return (
       <Card className="border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20">
         <CardContent className="p-6">
           <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
             <AlertCircle className="h-5 w-5" />
-            <div>
+            <div className="flex-1">
               <p className="font-medium">Generation Failed</p>
               <p className="text-sm text-red-500 dark:text-red-300">
                 {errorMessage || 'An error occurred while generating the video'}
               </p>
             </div>
+            {onRetry && (
+              <Button
+                onClick={handleRetry}
+                variant="outline"
+                size="sm"
+                className="border-red-300 text-red-600 hover:bg-red-100"
+              >
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Retry
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  if (status === 'pending' || status === 'processing') {
+  if (status === 'pending' || status === 'processing' || status === 'generating') {
     return (
       <Card className="border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950/20">
         <CardContent className="p-6">
@@ -102,11 +124,13 @@ const VideoPreview = ({
             <div>
               <p className="font-medium">Generating Video...</p>
               <p className="text-sm text-yellow-500 dark:text-yellow-300">
-                This may take several minutes. Please wait.
+                {status === 'processing' 
+                  ? "Initializing video generation..." 
+                  : "This may take several minutes. Please wait."}
               </p>
               {videoId && (
                 <p className="text-xs text-yellow-400 mt-1">
-                  Video ID: {videoId}
+                  Task ID: {videoId}
                 </p>
               )}
             </div>
@@ -187,15 +211,28 @@ const VideoPreview = ({
                   </div>
                 )}
                 {videoUrl && (
-                  <Button
-                    onClick={handlePreview}
-                    variant="outline"
-                    size="sm"
-                    className="mb-2"
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Try Opening in Browser
-                  </Button>
+                  <div className="space-y-2">
+                    <Button
+                      onClick={handlePreview}
+                      variant="outline"
+                      size="sm"
+                      className="mb-2"
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Try Opening in Browser
+                    </Button>
+                    {previewError && (
+                      <Button
+                        onClick={handleRetry}
+                        variant="outline"
+                        size="sm"
+                        className="ml-2"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Retry Preview
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
             )}

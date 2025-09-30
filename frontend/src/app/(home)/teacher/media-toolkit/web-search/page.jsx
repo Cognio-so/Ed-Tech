@@ -4,9 +4,10 @@ import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Search, Eye, Download, Trash2, Save } from "lucide-react";
+import { Loader2, Search, Eye, Download, Trash2, Save, FileText, File } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MarkdownStyles } from "@/components/Markdown";
@@ -14,6 +15,7 @@ import { toast } from "sonner";
 import WebSearchForm from "./web-search-form";
 import { searchWeb, saveWebSearch, getWebSearches, updateWebSearch, deleteWebSearch } from "./action";
 import { authClient } from "@/lib/auth-client";
+import { generateDOCX, generateMarkdown } from "@/lib/pdf-utils";
 
 export default function WebSearchPage() {
   const [user, setUser] = useState(null);
@@ -103,22 +105,31 @@ export default function WebSearchPage() {
     }
   };
 
-  const handleDownloadMd = (content, filename = 'web-search.md') => {
+  const handleDownloadDOCX = async (content, filename = 'web-search', metadata = {}) => {
     try {
-      const blob = new Blob([content], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const title = metadata?.topic || 'Web Search Results';
+      const subtitle = `${metadata?.subject || 'General'} • Grade ${metadata?.gradeLevel || 'N/A'} • ${metadata?.contentType || 'Content'}`;
       
-      toast.success('Web search downloaded successfully');
+      await generateDOCX(content, filename, {
+        title,
+        subtitle,
+        includeHeader: true
+      });
+      
+      toast.success('DOCX file downloaded successfully');
     } catch (error) {
-      console.error('Failed to download web search', error);
-      toast.error('Failed to download web search');
+      console.error('Failed to download DOCX:', error);
+      toast.error('Failed to download DOCX file');
+    }
+  };
+
+  const handleDownloadMarkdown = (content, filename = 'web-search') => {
+    try {
+      generateMarkdown(content, filename);
+      toast.success('Markdown file downloaded successfully');
+    } catch (error) {
+      console.error('Failed to download Markdown:', error);
+      toast.error('Failed to download Markdown file');
     }
   };
 
@@ -147,12 +158,20 @@ export default function WebSearchPage() {
     }
   };
 
-  const handleDownloadCurrent = () => {
+  const handleDownloadCurrent = (format = 'markdown') => {
     if (!searchResults) {
       toast.error('No content to download');
       return;
     }
-    handleDownloadMd(searchResults.content, `${searchResults.metadata?.topic || 'web-search'}.md`);
+
+    const filename = searchResults.metadata?.topic || 'web-search';
+    const metadata = searchResults.metadata || {};
+
+    if (format === 'docx') {
+      handleDownloadDOCX(searchResults.content, filename, metadata);
+    } else {
+      handleDownloadMarkdown(searchResults.content, filename);
+    }
   };
 
   const formatTime = (dateString) => {
@@ -177,10 +196,24 @@ export default function WebSearchPage() {
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Generated Content</h3>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={handleDownloadCurrent}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Download
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleDownloadCurrent('markdown')}>
+                      <File className="h-4 w-4 mr-2" />
+                      Download as Markdown
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDownloadCurrent('docx')}>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Download as DOCX
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button size="sm" onClick={handleSave}>
                   <Save className="h-4 w-4 mr-2" />
                   Save
@@ -231,9 +264,25 @@ export default function WebSearchPage() {
                   <Button size="icon" variant="outline" onClick={() => handlePreview(item)}>
                     <Eye className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="outline" onClick={() => handleDownloadMd(item.content || '', `${item.metadata?.topic || 'web-search'}.md`)}>
-                    <Download className="h-4 w-4" />
-                  </Button>
+                  
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="icon" variant="outline">
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleDownloadMarkdown(item.content || '', item.metadata?.topic || 'web-search')}>
+                        <File className="h-4 w-4 mr-2" />
+                        Download as Markdown
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDownloadDOCX(item.content || '', item.metadata?.topic || 'web-search', item.metadata || {})}>
+                        <FileText className="h-4 w-4 mr-2" />
+                        Download as DOCX
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  
                   <Button size="icon" variant="outline" onClick={() => handleDelete(item.id)}>
                     <Trash2 className="h-4 w-4 text-primary" />
                   </Button>
@@ -248,7 +297,29 @@ export default function WebSearchPage() {
         <DialogContent className="sm:max-w-[90vw] md:max-w-[1024px] max-h-[98vh] overflow-y-auto p-0">
           <div className="relative w-full min-h-[600px] sm:min-h-[700px] h-auto">
             <DialogHeader className="p-6 pb-4">
-              <DialogTitle>{previewItem?.metadata?.topic || 'Preview'}</DialogTitle>
+              <div className="flex items-center justify-between">
+                <DialogTitle>{previewItem?.metadata?.topic || 'Preview'}</DialogTitle>
+                <div className="flex gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline">
+                        <Download className="h-4 w-4 mr-2" />
+                        Download
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleDownloadMarkdown(previewItem?.content || '', previewItem?.metadata?.topic || 'web-search')}>
+                        <File className="h-4 w-4 mr-2" />
+                        Download as Markdown
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDownloadDOCX(previewItem?.content || '', previewItem?.metadata?.topic || 'web-search', previewItem?.metadata || {})}>
+                        <FileText className="h-4 w-4 mr-2" />
+                        Download as DOCX
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
             </DialogHeader>
             <div className="px-6 pb-6 space-y-6">
               <div className="prose prose-sm dark:prose-invert max-w-none">

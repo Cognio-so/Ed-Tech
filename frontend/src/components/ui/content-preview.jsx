@@ -14,133 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FileText, Download, Copy, Check, Edit, Save, X, ExternalLink, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import remarkGfm from "remark-gfm";
-
-// Dynamic imports for PDF and DOC generation
-const generatePDF = async (content, filename) => {
-  const { jsPDF } = await import('jspdf');
-  
-  const doc = new jsPDF();
-  const pageHeight = doc.internal.pageSize.height;
-  const pageWidth = doc.internal.pageSize.width;
-  const margin = 20;
-  const lineHeight = 7;
-  const maxLineWidth = pageWidth - (margin * 2);
-  
-  // Convert markdown to plain text for PDF
-  const plainText = content
-    .replace(/#{1,6}\s/g, '') // Remove headers
-    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
-    .replace(/\*(.*?)\*/g, '$1') // Remove italic
-    .replace(/`(.*?)`/g, '$1') // Remove code
-    .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links
-    .replace(/^\s*[-*+]\s/gm, '• '); // Convert lists to bullets
-  
-  const lines = doc.splitTextToSize(plainText, maxLineWidth);
-  let currentY = margin;
-  
-  doc.setFontSize(12);
-  
-  for (let i = 0; i < lines.length; i++) {
-    if (currentY + lineHeight > pageHeight - margin) {
-      doc.addPage();
-      currentY = margin;
-    }
-    
-    doc.text(lines[i], margin, currentY);
-    currentY += lineHeight;
-  }
-  
-  doc.save(`${filename}.pdf`);
-};
-
-const generateDOCX = async (content, filename) => {
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import('docx');
-  
-  // Parse markdown content into structured elements
-  const lines = content.split('\n');
-  const docElements = [];
-  
-  for (const line of lines) {
-    if (!line.trim()) {
-      docElements.push(new Paragraph({ text: "" }));
-      continue;
-    }
-    
-    // Handle headers
-    if (line.startsWith('# ')) {
-      docElements.push(new Paragraph({
-        text: line.replace('# ', ''),
-        heading: HeadingLevel.HEADING_1
-      }));
-    } else if (line.startsWith('## ')) {
-      docElements.push(new Paragraph({
-        text: line.replace('## ', ''),
-        heading: HeadingLevel.HEADING_2
-      }));
-    } else if (line.startsWith('### ')) {
-      docElements.push(new Paragraph({
-        text: line.replace('### ', ''),
-        heading: HeadingLevel.HEADING_3
-      }));
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      // Handle bullet points
-      docElements.push(new Paragraph({
-        text: line.replace(/^[-*]\s/, ''),
-        bullet: { level: 0 }
-      }));
-    } else {
-      // Handle regular text with basic formatting
-      const textRuns = [];
-      let currentText = line;
-      
-      // Handle bold text
-      currentText = currentText.replace(/\*\*(.*?)\*\*/g, (match, text) => {
-        textRuns.push(new TextRun({ text, bold: true }));
-        return '\u0000'; // Placeholder
-      });
-      
-      // Handle italic text
-      currentText = currentText.replace(/\*(.*?)\*/g, (match, text) => {
-        textRuns.push(new TextRun({ text, italics: true }));
-        return '\u0000'; // Placeholder
-      });
-      
-      // Split by placeholders and add regular text
-      const parts = currentText.split('\u0000');
-      const finalRuns = [];
-      
-      for (let i = 0; i < parts.length; i++) {
-        if (parts[i]) {
-          finalRuns.push(new TextRun({ text: parts[i] }));
-        }
-        if (i < textRuns.length) {
-          finalRuns.push(textRuns[i]);
-        }
-      }
-      
-      docElements.push(new Paragraph({
-        children: finalRuns.length > 0 ? finalRuns : [new TextRun({ text: line })]
-      }));
-    }
-  }
-  
-  const doc = new Document({
-    sections: [{
-      properties: {},
-      children: docElements
-    }]
-  });
-  
-  const blob = await Packer.toBlob(doc);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${filename}.docx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
+import { generateDOCX, generateMarkdown } from "@/lib/pdf-utils";
 
 export default function ContentPreview({
   content,
@@ -155,7 +29,7 @@ export default function ContentPreview({
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(content);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
-  const [downloadFormat, setDownloadFormat] = useState('pdf');
+  const [downloadFormat, setDownloadFormat] = useState('docx'); // Changed from 'pdf' to 'docx'
   const [isDownloading, setIsDownloading] = useState(false);
 
   // Handle different content structures
@@ -230,41 +104,40 @@ export default function ContentPreview({
     }
 
     setIsDownloading(true);
-    const filename = contentData.topic || 'content';
+    const filename = metadata?.topic || 'content';
+    const contentData = {
+      content: editedContent || content,
+      metadata: metadata || {}
+    };
+
+    const options = {
+      title: metadata?.topic || 'Content',
+      subject: metadata?.subject || '',
+      grade: metadata?.grade || '',
+      language: metadata?.language || 'english'
+    };
 
     try {
       switch (downloadFormat) {
         case 'md':
-          const blob = new Blob([contentData.content], { type: 'text/markdown' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${filename}.md`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          break;
-          
-        case 'pdf':
-          await generatePDF(contentData.content, filename);
+          generateMarkdown(contentData.content, filename);
           break;
           
         case 'docx':
-          await generateDOCX(contentData.content, filename);
+          await generateDOCX(contentData.content, filename, options);
           break;
           
         default:
           throw new Error('Unsupported format');
       }
       
-      toast.success(`Content downloaded as ${downloadFormat.toUpperCase()}!`);
-      setShowDownloadDialog(false);
+      toast.success(`${downloadFormat.toUpperCase()} downloaded successfully!`);
     } catch (error) {
       console.error('Download failed:', error);
-      toast.error(`Failed to download as ${downloadFormat.toUpperCase()}`);
+      toast.error(`Download failed: ${error.message}`);
     } finally {
       setIsDownloading(false);
+      setShowDownloadDialog(false);
     }
   };
 
@@ -408,6 +281,7 @@ export default function ContentPreview({
                     size="sm"
                     onClick={() => setShowDownloadDialog(true)}
                     className="flex items-center gap-1"
+                    disabled={!contentData.content || contentData.content.trim() === ''}
                   >
                     <Download className="h-4 w-4" />
                     <ChevronDown className="h-3 w-3" />
@@ -499,14 +373,12 @@ export default function ContentPreview({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="md">Markdown (.md)</SelectItem>
-                  <SelectItem value="pdf">PDF (.pdf)</SelectItem>
                   <SelectItem value="docx">Word Document (.docx)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="text-sm text-muted-foreground">
               <p><strong>Markdown:</strong> Plain text with formatting markers</p>
-              <p><strong>PDF:</strong> Formatted document, good for printing</p>
               <p><strong>Word:</strong> Editable document with formatting</p>
             </div>
           </div>
@@ -516,7 +388,7 @@ export default function ContentPreview({
             </Button>
             <Button 
               onClick={handleDownloadContent} 
-              disabled={isDownloading || !downloadFormat}
+              disabled={isDownloading || !downloadFormat || !contentData.content}
             >
               {isDownloading ? "Downloading..." : "Download"}
             </Button>

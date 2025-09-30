@@ -9,138 +9,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Download, Copy, Check, Edit, Save, X, Clock, Users, BookOpen, ChevronDown, CheckCircle, XCircle, FileCheck, Loader2 } from "lucide-react";
+import { FileText, Download, Copy, Check, Edit, Save, X, Clock, Users, BookOpen, ChevronDown, CheckCircle, XCircle, FileCheck, Loader2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-
-const generatePDF = async (content, filename) => {
-  const { jsPDF } = await import('jspdf');
-  
-  const doc = new jsPDF();
-  const pageHeight = doc.internal.pageSize.height;
-  const pageWidth = doc.internal.pageSize.width;
-  const margin = 20;
-  const lineHeight = 7;
-  const maxLineWidth = pageWidth - (margin * 2);
-  
-  const plainText = content
-    .replace(/#{1,6}\s/g, '') // Remove headers
-    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
-    .replace(/\*(.*?)\*/g, '$1') // Remove italic
-    .replace(/`(.*?)`/g, '$1') // Remove code
-    .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links
-    .replace(/^\s*[-*+]\s/gm, '• '); // Convert lists to bullets
-  
-  const lines = doc.splitTextToSize(plainText, maxLineWidth);
-  let currentY = margin;
-  
-  doc.setFontSize(12);
-  
-  for (let i = 0; i < lines.length; i++) {
-    if (currentY + lineHeight > pageHeight - margin) {
-      doc.addPage();
-      currentY = margin;
-    }
-    
-    doc.text(lines[i], margin, currentY);
-    currentY += lineHeight;
-  }
-  
-  doc.save(`${filename}.pdf`);
-};
-
-const generateDOCX = async (content, filename) => {
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import('docx');
-  
-  // Parse markdown content into structured elements
-  const lines = content.split('\n');
-  const docElements = [];
-  
-  for (const line of lines) {
-    if (!line.trim()) {
-      docElements.push(new Paragraph({ text: "" }));
-      continue;
-    }
-    
-    // Handle headers
-    if (line.startsWith('# ')) {
-      docElements.push(new Paragraph({
-        text: line.replace('# ', ''),
-        heading: HeadingLevel.HEADING_1
-      }));
-    } else if (line.startsWith('## ')) {
-      docElements.push(new Paragraph({
-        text: line.replace('## ', ''),
-        heading: HeadingLevel.HEADING_2
-      }));
-    } else if (line.startsWith('### ')) {
-      docElements.push(new Paragraph({
-        text: line.replace('### ', ''),
-        heading: HeadingLevel.HEADING_3
-      }));
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      // Handle bullet points
-      docElements.push(new Paragraph({
-        text: line.replace(/^[-*]\s/, ''),
-        bullet: { level: 0 }
-      }));
-    } else {
-      // Handle regular text with basic formatting
-      const textRuns = [];
-      let currentText = line;
-      
-      // Handle bold text
-      currentText = currentText.replace(/\*\*(.*?)\*\*/g, (match, text) => {
-        textRuns.push(new TextRun({ text, bold: true }));
-        return '\u0000'; // Placeholder
-      });
-      
-      // Handle italic text
-      currentText = currentText.replace(/\*(.*?)\*/g, (match, text) => {
-        textRuns.push(new TextRun({ text, italics: true }));
-        return '\u0000'; // Placeholder
-      });
-      
-      // Split by placeholders and add regular text
-      const parts = currentText.split('\u0000');
-      const finalRuns = [];
-      
-      for (let i = 0; i < parts.length; i++) {
-        if (parts[i]) {
-          finalRuns.push(new TextRun({ text: parts[i] }));
-        }
-        if (i < textRuns.length) {
-          finalRuns.push(textRuns[i]);
-        }
-      }
-      
-      docElements.push(new Paragraph({
-        children: finalRuns.length > 0 ? finalRuns : [new TextRun({ text: line })]
-      }));
-    }
-  }
-  
-  const doc = new Document({
-    sections: [{
-      properties: {},
-      children: docElements
-    }]
-  });
-  
-  const blob = await Packer.toBlob(doc);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${filename}.docx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
+import { generateDOCX, generateMarkdown } from "@/lib/pdf-utils";
 
 export default function AssessmentPreview({ 
   assessment,
   onEditAssessment, 
   isEditable = true,
+  isPreviewMode = false,
   isReviewMode = false 
 }) {
   const [copied, setCopied] = useState(false);
@@ -151,6 +28,8 @@ export default function AssessmentPreview({
   const [isDownloading, setIsDownloading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState('');
+  // In preview mode, always show solutions. In review mode, always show solutions. Only hide in edit mode.
+  const [showSolutions, setShowSolutions] = useState(isPreviewMode || isReviewMode);
 
   // Parse assessment content to separate questions and solutions
   const parseAssessmentContent = (content) => {
@@ -253,13 +132,6 @@ export default function AssessmentPreview({
   // Parse the content to get questions
   const { questions, solutions } = parseAssessmentContent(content);
 
-  // Debug logging
-  console.log('=== AssessmentPreview Debug ===');
-  console.log('Assessment object:', assessment);
-  console.log('Content string:', content);
-  console.log('Parsed questions:', questions);
-  console.log('Solutions:', solutions);
-
   // In review mode, load the submitted answers
   useEffect(() => {
     if (isReviewMode) {
@@ -302,23 +174,15 @@ export default function AssessmentPreview({
     try {
       switch (downloadFormat) {
         case 'md':
-          const blob = new Blob([content], { type: 'text/markdown' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${filename}.md`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          break;
-          
-        case 'pdf':
-          await generatePDF(content, filename);
+          generateMarkdown(content, filename);
           break;
           
         case 'docx':
-          await generateDOCX(content, filename);
+          await generateDOCX(content, filename, {
+            title: assessment.title || 'Assessment',
+            subtitle: assessment.topic || '',
+            includeHeader: true
+          });
           break;
           
         default:
@@ -416,7 +280,7 @@ export default function AssessmentPreview({
                 <div 
                   key={optionIndex} 
                   className={optionClass}
-                  onClick={() => !isReviewMode && handleAnswerChange(index, optionIndex)}
+                  onClick={() => !isReviewMode && !isPreviewMode && handleAnswerChange(index, optionIndex)}
                 >
                   <div className="flex items-center gap-3">
                     <span className="font-medium text-sm">
@@ -429,7 +293,7 @@ export default function AssessmentPreview({
                     {isReviewMode && isSelected && !isCorrectOption && (
                       <XCircle className="h-4 w-4 text-red-600" />
                     )}
-                    {!isReviewMode && isSelected && (
+                    {!isReviewMode && !isPreviewMode && isSelected && (
                       <Check className="h-4 w-4 text-blue-600" />
                     )}
                   </div>
@@ -448,8 +312,8 @@ export default function AssessmentPreview({
                 name={`tf-${index}`}
                 value="true"
                 checked={studentAnswer === 'true'}
-                onChange={() => !isReviewMode && handleAnswerChange(index, 'true')}
-                disabled={isReviewMode}
+                onChange={() => !isReviewMode && !isPreviewMode && handleAnswerChange(index, 'true')}
+                disabled={isReviewMode || isPreviewMode}
               />
               <label htmlFor={`tf-${index}-true`} className="text-sm">True</label>
             </div>
@@ -460,8 +324,8 @@ export default function AssessmentPreview({
                 name={`tf-${index}`}
                 value="false"
                 checked={studentAnswer === 'false'}
-                onChange={() => !isReviewMode && handleAnswerChange(index, 'false')}
-                disabled={isReviewMode}
+                onChange={() => !isReviewMode && !isPreviewMode && handleAnswerChange(index, 'false')}
+                disabled={isReviewMode || isPreviewMode}
               />
               <label htmlFor={`tf-${index}-false`} className="text-sm">False</label>
             </div>
@@ -472,11 +336,11 @@ export default function AssessmentPreview({
           <div className="space-y-2">
             <textarea
               value={studentAnswer || ''}
-              onChange={(e) => !isReviewMode && handleAnswerChange(index, e.target.value)}
+              onChange={(e) => !isReviewMode && !isPreviewMode && handleAnswerChange(index, e.target.value)}
               placeholder="Enter your answer here..."
               className="w-full p-3 border rounded-lg resize-none"
               rows={3}
-              disabled={isReviewMode}
+              disabled={isReviewMode || isPreviewMode}
             />
           </div>
         )}
@@ -485,11 +349,11 @@ export default function AssessmentPreview({
           <div className="space-y-2">
             <textarea
               value={studentAnswer || ''}
-              onChange={(e) => !isReviewMode && handleAnswerChange(index, e.target.value)}
+              onChange={(e) => !isReviewMode && !isPreviewMode && handleAnswerChange(index, e.target.value)}
               placeholder="Enter your essay here..."
               className="w-full p-3 border rounded-lg resize-none"
               rows={6}
-              disabled={isReviewMode}
+              disabled={isReviewMode || isPreviewMode}
             />
           </div>
         )}
@@ -517,6 +381,15 @@ export default function AssessmentPreview({
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Show correct answer in review mode or preview mode */}
+        {(isReviewMode || isPreviewMode) && correctAnswer && (
+          <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
+            <p className="text-sm text-blue-700 dark:text-blue-400">
+              <strong>Correct Answer:</strong> {correctAnswer}
+            </p>
           </div>
         )}
       </div>
@@ -557,7 +430,7 @@ export default function AssessmentPreview({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {isEditable && !isReviewMode && (
+            {isEditable && !isReviewMode && !isPreviewMode && (
               <Button
                 variant="outline"
                 size="sm"
@@ -600,6 +473,27 @@ export default function AssessmentPreview({
         {questions && questions.length > 0 ? (
           <div className="space-y-6">
             {questions.map((question, index) => renderQuestion(question, index))}
+            
+            {/* Show solutions section if available and in review mode or preview mode */}
+            {(isReviewMode || isPreviewMode) && solutions && solutions.length > 0 && (
+              <div className="mt-8 border-t pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+                    Solutions
+                  </h3>
+                </div>
+                
+                <div className="space-y-3">
+                  {solutions.map((solution, index) => (
+                    <div key={index} className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
+                      <p className="text-sm text-blue-700 dark:text-blue-400">
+                        {solution}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           /* Fallback: Show raw content if no questions parsed */
@@ -625,8 +519,8 @@ export default function AssessmentPreview({
         )}
       </div>
 
-      {/* Footer - only show if not in review mode and has questions */}
-      {!isReviewMode && questions && questions.length > 0 && (
+      {/* Footer - only show submit button if NOT in preview mode and NOT in review mode */}
+      {!isPreviewMode && !isReviewMode && questions && questions.length > 0 && (
         <div className="flex-shrink-0 p-4 border-t">
           <Button 
             onClick={handleSubmit} 
@@ -654,7 +548,6 @@ export default function AssessmentPreview({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="md">Markdown (.md)</SelectItem>
-                <SelectItem value="pdf">PDF (.pdf)</SelectItem>
                 <SelectItem value="docx">Word Document (.docx)</SelectItem>
               </SelectContent>
             </Select>

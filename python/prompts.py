@@ -635,7 +635,6 @@ Please adhere to the following specifications:
 - **Question Distribution:** {question_distribution}
 - **Language:** {language}
 - **Test Duration:** {test_duration}
-- **Number of Questions:** {number_of_questions}
 - **Difficulty Level:** {difficulty_level}
 - **User-Specific Instructions:** {user_prompt}
 
