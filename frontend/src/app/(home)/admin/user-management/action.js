@@ -345,38 +345,53 @@ export async function getUserStats() {
   }
 }
 
-// Get all subjects and grades
+// Get all subjects and grades from curriculum collection
 export async function getSubjectsAndGrades() {
   try {
     const { db } = await connectToDatabase();
-    const subjectsCollection = db.collection("subjects");
-    const gradesCollection = db.collection("grade"); // Use existing grade collection
+    const curriculumCollection = db.collection("curriculum");
     
-    const [subjects, grades] = await Promise.all([
-      subjectsCollection.find({}).sort({ name: 1 }).toArray(),
-      gradesCollection.find({}).sort({ grade_number: 1 }).toArray()
-    ]);
+    // Fetch all curriculum documents
+    const curriculumDocs = await curriculumCollection.find({}).toArray();
+    
+    // Extract unique subjects and grades from curriculum
+    const subjectsSet = new Set();
+    const gradesSet = new Set();
+    
+    curriculumDocs.forEach(doc => {
+      if (doc.subject && doc.subject.trim()) {
+        subjectsSet.add(doc.subject.trim());
+      }
+      if (doc.grade && doc.grade.trim()) {
+        gradesSet.add(doc.grade.trim());
+      }
+    });
+    
+    // Convert sets to arrays and create objects with IDs
+    const subjects = Array.from(subjectsSet).map((subject, index) => ({
+      id: `subject_${index}`, // Generate a simple ID since we're extracting from curriculum
+      name: subject,
+      createdAt: new Date('2024-01-01') // Use a static date to avoid hydration mismatch
+    })).sort((a, b) => a.name.localeCompare(b.name));
+    
+    const grades = Array.from(gradesSet).map((grade, index) => ({
+      id: `grade_${index}`, // Generate a simple ID since we're extracting from curriculum
+      name: grade,
+      createdAt: new Date('2024-01-01') // Use a static date to avoid hydration mismatch
+    })).sort((a, b) => a.name.localeCompare(b.name));
     
     return {
       success: true,
-      subjects: subjects.map(subject => ({
-        id: subject._id.toString(),
-        name: subject.name,
-        createdAt: subject.createdAt
-      })),
-      grades: grades.map(grade => ({
-        id: grade._id.toString(),
-        name: grade.grade_number,
-        createdAt: grade.createdAt
-      }))
+      subjects,
+      grades
     };
   } catch (error) {
-    console.error("Error fetching subjects and grades:", error);
+    console.error("Error fetching subjects and grades from curriculum:", error);
     return {
       success: false,
       subjects: [],
       grades: [],
-      error: error.message || "Failed to fetch subjects and grades"
+      error: error.message || "Failed to fetch subjects and grades from curriculum"
     };
   }
 }

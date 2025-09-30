@@ -54,6 +54,9 @@ import { RealtimeOpenAIService } from '@/lib/realtimeOpenAI';
 // Import the Video component instead of 3D model
 import dynamic from 'next/dynamic';
 
+// Import the Markdown component
+import { MarkdownStyles } from './Markdown';
+
 // Comment out the 3D component
 // const LipSyncTeacher3D = dynamic(() => import('./LipSyncTeacher3D'), { 
 //     ssr: false,
@@ -107,6 +110,9 @@ const AiTutor = () => {
     // NEW: Video state instead of lip sync
     const [isSpeaking, setIsSpeaking] = useState(false);
 
+    // NEW: Add user speaking state
+    const [isUserSpeaking, setIsUserSpeaking] = useState(false);
+
     // Real student data state
     const [user, setUser] = useState(null);
     const [studentData, setStudentData] = useState({
@@ -133,19 +139,19 @@ const AiTutor = () => {
         initAudioContext();
     }, []);
 
-    // FIXED: Improved autoscrolling with proper timing
-    const scrollToBottom = () => {
-        setTimeout(() => {
-            if (messagesEndRef.current) {
-                messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-            }
-        }, 100);
-    };
+    // REMOVED: Auto-scroll functionality
+    // const scrollToBottom = () => {
+    //     setTimeout(() => {
+    //         if (messagesEndRef.current) {
+    //             messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    //         }
+    //     }, 100);
+    // };
 
-    // FIXED: Scroll to bottom when messages change or loading state changes
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages, isLoading]);
+    // REMOVED: Auto-scroll effect
+    // useEffect(() => {
+    //     scrollToBottom();
+    // }, [messages, isLoading]);
 
     // FIXED: Handle transcript updates - exactly like voice-coach
     useEffect(() => {
@@ -676,6 +682,7 @@ const AiTutor = () => {
             setIsListening(false);
             setTranscription(''); // Reset transcription
             setIsSpeaking(false); // Reset speaking state
+            setIsUserSpeaking(false); // Reset user speaking state
             return;
         }
 
@@ -748,18 +755,11 @@ const AiTutor = () => {
             const service = new RealtimeOpenAIService(apiKey);
             
             // Set up event handlers - same approach as voice-coach
-            // Remove lip sync callback, keep speaking state for video
-            // service.onLipSyncData = (data) => {
-            //     setLipSyncData(data);
-            //     // Determine if currently speaking based on lip sync intensity
-            //     const totalIntensity = Object.values(data).reduce((sum, val) => sum + val, 0);
-            //     setIsSpeaking(totalIntensity > 0.1);
-            // };
-
             // Add callback for when new response starts
             service.onResponseStart = () => {
                 setTranscription(''); // Reset transcript for new response
                 setIsSpeaking(true); // Start speaking animation
+                setIsUserSpeaking(false); // User is not speaking when AI starts
                 // Mark the last live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -777,6 +777,7 @@ const AiTutor = () => {
             // Add callback for when response is complete
             service.onResponseComplete = () => {
                 setIsSpeaking(false); // Stop speaking animation
+                setIsUserSpeaking(false); // User is not speaking when AI stops
                 // Mark the current live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -791,6 +792,15 @@ const AiTutor = () => {
                 });
             };
 
+            // NEW: Add callbacks for user speech start and stop
+            service.onUserSpeechStart = () => {
+                setIsUserSpeaking(true); // User started speaking
+            };
+
+            service.onUserSpeechStop = () => {
+                setIsUserSpeaking(false); // User stopped speaking
+            };
+
             // Handle AI response transcripts - exactly like voice-coach
             service.onTranscript = (delta) => {
                 setTranscription(prev => prev + delta);
@@ -799,6 +809,7 @@ const AiTutor = () => {
             // Handle user input transcripts - exactly like voice-coach
             service.onUserTranscript = (userTranscript) => {
                 console.log('🎤 User said:', userTranscript);
+                // Remove setIsUserSpeaking(true) from here since it's handled by onUserSpeechStart
                 
                 // Add user message to chat
                 const userMessage = {
@@ -838,114 +849,107 @@ const AiTutor = () => {
         }
     };
 
-    // Markdown styles for the chat messages
-    const MarkdownStyles = {
-        h1: ({ node, ...props }) => (
-            <h1 className="text-lg font-bold mb-2" {...props} />
-        ),
-        h2: ({ node, ...props }) => (
-            <h2 className="text-base font-semibold mb-2" {...props} />
-        ),
-        h3: ({ node, ...props }) => (
-            <h3 className="text-sm font-semibold mb-1" {...props} />
-        ),
-        p: ({ node, ...props }) => (
-            <p className="mb-2 last:mb-0" {...props} />
-        ),
-        ul: ({ node, ...props }) => (
-            <ul 
-                className="mb-2 space-y-1 ml-4" 
-                style={{ listStyleType: 'disc', paddingLeft: '1rem' }}
-                {...props} 
-            />
-        ),
-        ol: ({ node, ...props }) => (
-            <ol 
-                className="mb-2 space-y-1 ml-4" 
-                style={{ listStyleType: 'decimal', paddingLeft: '1rem' }}
-                {...props} 
-            />
-        ),
-        li: ({ node, ...props }) => (
-            <li className="mb-1 leading-relaxed" style={{ display: 'list-item' }} {...props} />
-        ),
-        strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
-        em: ({ node, ...props }) => <em className="italic" {...props} />,
-        code: ({ node, inline, ...props }) => (
-            inline ?
-                <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-sm" {...props} /> :
-                <code className="block bg-gray-200 dark:bg-gray-700 p-2 rounded text-sm overflow-x-auto" {...props} />
-        ),
-        pre: ({ node, ...props }) => (
-            <pre className="bg-gray-200 dark:bg-gray-700 p-2 rounded text-sm overflow-x-auto mb-2" {...props} />
-        ),
-        blockquote: ({ node, ...props }) => (
-            <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic mb-2" {...props} />
-        ),
-        img: ({ node, src, alt, ...props }) => {
-            if (!src || src.trim() === '') {
-                console.warn('Empty image src detected, skipping render');
-                return null;
-            }
-            
-            return (
-                <img 
-                    src={src}
-                    alt={alt || 'Generated image'}
-                    className="max-w-full h-auto rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 my-4"
-                    style={{ maxHeight: '400px' }}
-                    onError={(e) => {
-                        console.error('Image failed to load:', e.target.src);
-                        e.target.style.display = 'none';
-                    }}
-                    onLoad={() => {
-                        console.log('Image loaded successfully:', src);
-                    }}
-                    {...props}
-                />
-            );
-        },
-    };
+    // Enhanced image and video rendering component with grid layout
+    const MediaMessage = ({ content }) => {
+        // Extract all images and videos from the content
+        const imageMatches = content.match(/!\[.*?\]\((data:image\/[^)]+)\)/g) || [];
+        const videoMatches = content.match(/!\[.*?\]\((data:video\/[^)]+)\)/g) || [];
+        const youtubeMatches = content.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/g) || [];
+        const vimeoMatches = content.match(/https?:\/\/(?:www\.)?vimeo\.com\/(\d+)/g) || [];
+        
+        // Combine all media items
+        const mediaItems = [
+            ...imageMatches.map(match => ({ type: 'image', url: match.match(/!\[.*?\]\((data:image\/[^)]+)\)/)[1] })),
+            ...videoMatches.map(match => ({ type: 'video', url: match.match(/!\[.*?\]\((data:video\/[^)]+)\)/)[1] })),
+            ...youtubeMatches.map(url => ({ type: 'youtube', url })),
+            ...vimeoMatches.map(url => ({ type: 'vimeo', url }))
+        ];
 
-    // Enhanced image rendering component - EXACTLY like voice-coach
-    const ImageMessage = ({ content }) => {
-        const imageMatch = content.match(/!\[.*?\]\((data:image\/[^)]+)\)/);
-        
-        if (imageMatch) {
-            const imageUrl = imageMatch[1];
-            return (
-                <div className="my-4 flex justify-center">
-                    <img 
-                        src={imageUrl}
-                        alt="Generated image"
-                        className="max-w-full h-auto rounded-lg shadow-lg border border-gray-200 dark:border-gray-600"
-                        style={{ maxHeight: '400px' }}
-                        onError={(e) => {
-                            console.error('Image failed to load:', e.target.src);
-                            e.target.style.display = 'none';
-                        }}
-                        onLoad={() => {
-                            console.log('Image loaded successfully');
-                        }}
-                    />
-                </div>
-            );
-        }
-        
-        // Fallback to markdown rendering
+        // Remove media items from content to avoid duplication
+        let cleanContent = content;
+        mediaItems.forEach(item => {
+            if (item.type === 'image' || item.type === 'video') {
+                cleanContent = cleanContent.replace(/!\[.*?\]\([^)]+\)/g, '');
+            } else {
+                cleanContent = cleanContent.replace(item.url, '');
+            }
+        });
+
         return (
-            <div className="prose prose-sm max-w-none dark:prose-invert">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
-                    {content}
-                </ReactMarkdown>
+            <div className="space-y-4">
+                {/* Render media in grid */}
+                {mediaItems.length > 0 && (
+                    <div className={`grid gap-4 ${mediaItems.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                        {mediaItems.map((item, index) => (
+                            <div key={index} className="relative">
+                                {item.type === 'image' && (
+                                    <img 
+                                        src={item.url}
+                                        alt="Generated image"
+                                        className="w-full h-auto rounded-lg shadow-lg border border-gray-200 dark:border-gray-600"
+                                        style={{ maxHeight: '300px', objectFit: 'cover' }}
+                                        onError={(e) => {
+                                            console.error('Image failed to load:', e.target.src);
+                                            e.target.style.display = 'none';
+                                        }}
+                                        onLoad={() => {
+                                            console.log('Image loaded successfully');
+                                        }}
+                                    />
+                                )}
+                                {item.type === 'video' && (
+                                    <video 
+                                        src={item.url}
+                                        controls
+                                        className="w-full h-auto rounded-lg shadow-lg border border-gray-200 dark:border-gray-600"
+                                        style={{ maxHeight: '300px' }}
+                                    >
+                                        Your browser does not support the video tag.
+                                    </video>
+                                )}
+                                {item.type === 'youtube' && (
+                                    <div className="aspect-video w-full overflow-hidden rounded-lg border border-gray-200 dark:border-gray-600">
+                                        <iframe
+                                            src={item.url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+                                            className="h-full w-full"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                            allowFullScreen
+                                            title="YouTube embed"
+                                        />
+                                    </div>
+                                )}
+                                {item.type === 'vimeo' && (
+                                    <div className="aspect-video w-full overflow-hidden rounded-lg border border-gray-200 dark:border-gray-600">
+                                        <iframe
+                                            src={item.url.replace('vimeo.com/', 'player.vimeo.com/video/')}
+                                            className="h-full w-full"
+                                            allow="autoplay; fullscreen; picture-in-picture"
+                                            allowFullScreen
+                                            title="Vimeo embed"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+                
+                {/* Render remaining text content */}
+                {cleanContent.trim() && (
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
+                            {cleanContent.trim()}
+                        </ReactMarkdown>
+                    </div>
+                )}
             </div>
         );
     };
 
-    // Update the renderMessageContent function - EXACTLY like voice-coach
+    // Update the renderMessageContent function
     const renderMessageContent = (message) => {
         if (message.isImageResponse) {
-            return <ImageMessage content={message.content} />;
+            return <MediaMessage content={message.content} />;
         } else {
             return (
                 <div className="prose prose-sm max-w-none dark:prose-invert">
@@ -1026,6 +1030,7 @@ const AiTutor = () => {
                                     <VoiceCoachVideo 
                                         isSpeaking={isSpeaking}
                                         isConnected={isVoiceActive}
+                                        isUserSpeaking={isUserSpeaking} // NEW: Pass user speaking state
                                     />
                                 </CardContent>
                             </Card>
@@ -1065,13 +1070,24 @@ const AiTutor = () => {
                                                                     : 'text-black dark:text-white'
                                                                 }`}>
                                                                 {renderMessageContent(message)}
+                                                                {/* Show typing indicator only for streaming messages */}
+                                                                {message.isStreaming && (
+                                                                    <div className="inline-block ml-2">
+                                                                        <div className="flex space-x-1">
+                                                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </motion.div>
                                                 ))}
                                             </AnimatePresence>
 
-                                            {isLoading && (
+                                            {/* Only show loading indicator when no streaming message exists */}
+                                            {isLoading && !messages.some(msg => msg.isStreaming) && (
                                                 <motion.div
                                                     initial={{ opacity: 0, y: 20 }}
                                                     animate={{ opacity: 1, y: 0 }}

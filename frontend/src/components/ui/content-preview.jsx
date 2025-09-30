@@ -160,6 +160,36 @@ export default function ContentPreview({
 
   // Handle different content structures
   const getContentData = () => {
+    // If content is a string, use it directly
+    if (typeof content === 'string') {
+      return {
+        content: content,
+        metadata: metadata || {},
+        contentType: contentType || metadata?.contentType || 'content',
+        language: metadata?.language || 'English',
+        topic: metadata?.topic || metadata?.title || 'Unknown'
+      };
+    }
+
+    // If content is an object, extract the appropriate field
+    if (typeof content === 'object' && content !== null) {
+      const contentText = content.generatedContent || 
+                         content.content || 
+                         content.instruction || 
+                         content.topic || 
+                         content.title || 
+                         '';
+      
+      return {
+        content: contentText,
+        metadata: metadata || content || {},
+        contentType: contentType || content.resourceType || content.type || metadata?.contentType || 'content',
+        language: metadata?.language || content.language || 'English',
+        topic: metadata?.topic || content.topic || content.title || 'Unknown'
+      };
+    }
+    
+    // Fallback for web-search
     if (contentType === 'web-search') {
       return {
         content: content?.searchQuery || '',
@@ -170,13 +200,13 @@ export default function ContentPreview({
       };
     }
     
-    // For regular content
+    // Default fallback
     return {
       content: content || '',
       metadata: metadata || {},
-      contentType: metadata?.contentType || 'content',
-      language: metadata?.language || 'English',
-      topic: metadata?.topic || 'Unknown'
+      contentType: contentType || 'content',
+      language: 'English',
+      topic: 'Unknown'
     };
   };
 
@@ -432,12 +462,19 @@ export default function ContentPreview({
           ) : (
             <ScrollArea className="h-[600px] w-full">
               <div className="prose prose-gray max-w-none markdown-content">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={MarkdownStyles}
-                >
-                  {contentData.content}
-                </ReactMarkdown>
+                {contentData.content ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={MarkdownStyles}
+                  >
+                    {contentData.content}
+                  </ReactMarkdown>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+                    <p className="text-sm">No content available</p>
+                  </div>
+                )}
               </div>
             </ScrollArea>
           )}

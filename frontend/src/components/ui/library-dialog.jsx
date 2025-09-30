@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -25,7 +25,8 @@ import {
   ChevronDown,
   FileImage,
   File,
-  FileText as FileDoc
+  FileText as FileDoc,
+  CheckCircle
 } from "lucide-react";
 import ContentPreview from "@/components/ui/content-preview";
 import AssessmentPreview from "@/components/assessment-preview";
@@ -36,9 +37,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MarkdownStyles } from "../Markdown";
 
-// Content type configurations
+// Content type configurations - Updated to match teacher library
 const contentTypes = {
+  all: { label: "All", icon: FileText, color: "bg-gray-100" },
   content: { label: "Content", icon: FileText, color: "bg-blue-100" },
+  'lesson plan': { label: "Lesson Plan", icon: FileText, color: "bg-blue-100" },
   slides: { label: "Slides", icon: Presentation, color: "bg-purple-100" },
   comic: { label: "Comics", icon: BookOpen, color: "bg-green-100" },
   image: { label: "Images", icon: Image, color: "bg-pink-100" },
@@ -60,11 +63,28 @@ export default function LibraryDialog({
   onClose, 
   content, 
   onDelete, 
-  onDownload 
+  onDownload,
+  isReviewMode = false
 }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  if (!content) return null;
+  // Make sure the component always returns a consistent structure
+  if (!content) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-[80vw] md:max-w-[1024px] max-h-[90vh] p-2 overflow-y-auto">
+          <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
+            <DialogTitle>Content Preview</DialogTitle>
+            <DialogDescription>No content available</DialogDescription>
+          </DialogHeader>
+          <div className="p-6 text-center text-muted-foreground">
+            <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+            <p>No content available to preview</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const getContentIcon = (type) => {
     const IconComponent = contentTypes[type]?.icon || FileText;
@@ -160,24 +180,63 @@ export default function LibraryDialog({
   };
 
   const renderContentPreview = () => {
-    switch (content.type) {
+    // Use both type and resourceType for compatibility with both teacher and student libraries
+    const contentType = content?.type || content?.resourceType;
+    
+    // Debug logging to see what content we're getting
+    console.log('=== LibraryDialog Debug ===');
+    console.log('Content type:', contentType);
+    console.log('Content object:', content);
+    console.log('Content keys:', content ? Object.keys(content) : 'No content');
+    
+    // If no content type is found, try to render as content
+    if (!contentType) {
+      console.log('=== No Content Type Found ===');
+      console.log('Content object:', content);
+      
+      return (
+        <div className="h-full overflow-hidden">
+          <ContentPreview
+            content={content?.content || content?.generatedContent || content?.instruction || content?.topic || ''}
+            metadata={content}
+            contentType="content"
+            isEditable={false}
+          />
+        </div>
+      );
+    }
+    
+    switch (contentType) {
       case 'content':
+      case 'lesson plan':
         return (
           <div className="h-full overflow-hidden">
             <ContentPreview
-              content={content.generatedContent}
+              content={content.content || content.generatedContent}
               metadata={content}
+              contentType="content"
               isEditable={false}
             />
           </div>
         );
       
       case 'assessment':
+        const assessmentData = {
+          ...content,
+          content: content.content || content.generatedContent || content.assessmentContent || content.instruction || '',
+          assessmentContent: content.assessmentContent || content.content || content.generatedContent || content.instruction || ''
+        };
+        
+        console.log('=== Assessment Data Debug ===');
+        console.log('Assessment data being passed:', assessmentData);
+        console.log('Assessment content field:', assessmentData.content);
+        
         return (
           <div className="h-full overflow-hidden">
             <AssessmentPreview
-              assessment={content}
+              assessment={assessmentData}
               isEditable={false}
+              isReviewMode={isReviewMode}
             />
           </div>
         );
@@ -212,36 +271,165 @@ export default function LibraryDialog({
         );
       
       case 'comic':
-        const comicImages = content.panels?.map(panel => panel.imageUrl || panel.imageBase64) || 
-                           content.imageUrls || 
-                           content.images || [];
+        // Enhanced comic image extraction with better error handling and debugging
+        let comicImages = [];
+        
+        console.log('=== Comic Debug ===');
+        console.log('Content object:', content);
+        console.log('Content panels:', content.panels);
+        console.log('Content imageUrls:', content.imageUrls);
+        console.log('Content images:', content.images);
+        console.log('Content cloudinaryPublicIds:', content.cloudinaryPublicIds);
+        console.log('Content numPanels:', content.numPanels);
+        
+        // Priority order for comic images with better validation:
+        // 1. Check for panels with imageUrl or imageBase64
+        if (content.panels && Array.isArray(content.panels) && content.panels.length > 0) {
+          console.log('Processing panels:', content.panels);
+          comicImages = content.panels
+            .map((panel, index) => {
+              console.log(`Panel ${index}:`, panel);
+              if (panel && panel.imageUrl) {
+                console.log(`Panel ${index} has imageUrl:`, panel.imageUrl);
+                return panel.imageUrl;
+              }
+              if (panel && panel.imageBase64) {
+                console.log(`Panel ${index} has imageBase64`);
+                return `data:image/png;base64,${panel.imageBase64}`;
+              }
+              return null;
+            })
+            .filter(Boolean);
+          console.log('Images extracted from panels:', comicImages);
+        }
+        
+        // 2. Check for imageUrls array (Cloudinary URLs)
+        if (comicImages.length === 0 && content.imageUrls && Array.isArray(content.imageUrls) && content.imageUrls.length > 0) {
+          console.log('Using imageUrls array:', content.imageUrls);
+          comicImages = content.imageUrls.filter(Boolean);
+        }
+        
+        // 3. Check for images array
+        if (comicImages.length === 0 && content.images && Array.isArray(content.images) && content.images.length > 0) {
+          console.log('Using images array:', content.images);
+          comicImages = content.images.filter(Boolean);
+        }
+        
+        // 4. Check for cloudinary public IDs and construct URLs
+        if (comicImages.length === 0 && content.cloudinaryPublicIds && Array.isArray(content.cloudinaryPublicIds) && content.cloudinaryPublicIds.length > 0) {
+          console.log('Using cloudinaryPublicIds:', content.cloudinaryPublicIds);
+          comicImages = content.cloudinaryPublicIds
+            .filter(Boolean)
+            .map(id => {
+              // Handle both full URLs and just public IDs
+              if (id.startsWith('http')) {
+                return id;
+              }
+              // Try different Cloudinary URL formats
+              return `https://res.cloudinary.com/demo/image/upload/${id}`;
+            });
+        }
+        
+        // 5. Check if content itself contains base64 image data
+        if (comicImages.length === 0 && content.content && typeof content.content === 'string' && content.content.includes('data:image')) {
+          console.log('Extracting base64 images from content');
+          const base64Matches = content.content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g);
+          if (base64Matches) {
+            comicImages = base64Matches;
+          }
+        }
+        
+        // 6. Check for single imageUrl field
+        if (comicImages.length === 0 && content.imageUrl) {
+          console.log('Using single imageUrl:', content.imageUrl);
+          comicImages = [content.imageUrl];
+        }
+        
+        console.log('Final comic images found:', comicImages);
         
         return (
           <div className="h-full flex flex-col">
             <div className="text-center mb-4 flex-shrink-0">
               <h3 className="text-lg font-semibold">{content.title}</h3>
-              <p className="text-sm text-muted-foreground">{content.topic || content.instruction}</p>
+              <p className="text-sm text-muted-foreground">{content.topic || content.instruction || content.description}</p>
+              {content.numPanels && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {content.numPanels} panel{content.numPanels !== 1 ? 's' : ''}
+                </p>
+              )}
+              {content.comicType && (
+                <Badge variant="outline" className="mt-2">
+                  {content.comicType}
+                </Badge>
+              )}
             </div>
             <div className="flex-1 min-h-0">
               {comicImages.length > 0 ? (
+                <div className="h-full">
                 <CarouselWithControls
                   items={comicImages.map((url, i) => ({ url, index: i + 1 }))}
                   className="h-full"
                   renderItem={(p) => (
-                    <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-full">
+                      <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-full p-2">
                       <img 
                         src={p.url} 
                         alt={`Panel ${p.index}`} 
                         className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
+                          loading="lazy"
+                          onLoad={() => {
+                            console.log(`Successfully loaded comic panel ${p.index}`);
+                          }}
+                        onError={(e) => {
+                            console.error(`Failed to load comic panel ${p.index}:`, p.url);
+                          e.target.style.display = 'none';
+                          const fallbackDiv = document.createElement('div');
+                          fallbackDiv.className = 'text-center py-8 text-foreground';
+                          fallbackDiv.innerHTML = `
+                            <div>
+                              <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                              </svg>
+                              <p class="text-sm">Panel ${p.index} failed to load</p>
+                              <p class="text-xs text-muted-foreground mt-2">
+                                URL: ${p.url ? p.url.substring(0, 50) + '...' : 'Not provided'}
+                              </p>
+                            </div>
+                          `;
+                          e.target.parentNode.appendChild(fallbackDiv);
+                        }}
                       />
                     </div>
                   )}
                 />
+                </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground h-full flex items-center justify-center">
-                  <div>
+                  <div className="max-w-md">
                     <BookOpen className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-                    <p className="text-sm">No comic panels available</p>
+                    <p className="text-sm font-medium">No comic panels available</p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      This comic content may not have been generated yet or the images are not accessible.
+                    </p>
+                    
+                    {/* Show comic metadata for debugging */}
+                    <div className="mt-4 p-3 bg-muted/50 rounded-lg text-left text-xs">
+                      <p className="font-medium text-muted-foreground mb-2">Comic Details:</p>
+                      <div className="space-y-1">
+                        <p><span className="font-medium">Title:</span> {content.title || 'N/A'}</p>
+                        <p><span className="font-medium">Panels:</span> {content.numPanels || 0}</p>
+                        <p><span className="font-medium">Type:</span> {content.comicType || 'N/A'}</p>
+                        <p><span className="font-medium">Has panels array:</span> {content.panels ? 'Yes' : 'No'}</p>
+                        <p><span className="font-medium">Has imageUrls:</span> {content.imageUrls ? 'Yes' : 'No'}</p>
+                        <p><span className="font-medium">Has cloudinaryPublicIds:</span> {content.cloudinaryPublicIds ? 'Yes' : 'No'}</p>
+                      </div>
+                    </div>
+                    
+                    {content.instruction && (
+                      <div className="mt-4 p-3 bg-muted/50 rounded-lg text-left">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Instructions:</p>
+                        <p className="text-xs text-muted-foreground">{content.instruction}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -316,12 +504,19 @@ export default function LibraryDialog({
         );
       
       default:
+        // For any unrecognized content type, try to render as content
+        console.log('=== Unrecognized Content Type ===');
+        console.log('Content type:', contentType);
+        console.log('Content object:', content);
+        
         return (
-          <div className="text-center py-8 text-muted-foreground h-full flex items-center justify-center">
-            <div>
-              <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-              <p className="text-sm">Preview not available for this content type</p>
-            </div>
+          <div className="h-full overflow-hidden">
+            <ContentPreview
+              content={content?.content || content?.generatedContent || content?.instruction || content?.topic || ''}
+              metadata={content}
+              contentType="content"
+              isEditable={false}
+            />
           </div>
         );
     }
@@ -353,11 +548,13 @@ export default function LibraryDialog({
           {content.createdAt && (
             <div className="flex justify-between items-center">
               <span className="text-sm font-medium text-muted-foreground">Date:</span>
-              <span className="text-sm">{new Date(content.createdAt).toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "numeric"
-              })}</span>
+              <span className="text-sm">
+                {content.createdAt ? new Date(content.createdAt).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric"
+                }) : 'Unknown'}
+              </span>
             </div>
           )}
         </div>
@@ -373,29 +570,45 @@ export default function LibraryDialog({
             <DialogTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Eye className="h-5 w-5 text-green-600" />
-                Content Preview
+                {isReviewMode ? 'Content Review' : 'Content Preview'}
                 <Badge variant="outline" className="ml-2">
-                  {contentTypes[content.type]?.label}
+                  {contentTypes[content?.type || content?.resourceType]?.label || (content?.type || content?.resourceType || 'Unknown')}
                 </Badge>
               </div>
-              <div className="flex items-center gap-2 mr-4">
-                {renderDownloadButton()}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="h-8 px-3 text-red-600 hover:text-red-700"
-                >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Delete
+              <div className="flex items-center gap-2">
+                {isReviewMode && (
+                  <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Completed
+                  </Badge>
+                )}
+                <Button variant="ghost" size="sm" onClick={onClose}>
+                  <X className="h-4 w-4" />
                 </Button>
               </div>
             </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              {isReviewMode 
+                ? 'Review your completed content. You can view your work but cannot resubmit it.'
+                : 'Preview and interact with the learning content.'
+              }
+            </DialogDescription>
           </DialogHeader>
           
           <div className="flex-1 min-h-0 p-6">
             <div className="h-full flex flex-col">
               {renderMetadata()}
+              {isReviewMode && (
+                <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                  <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                    <CheckCircle className="h-4 w-4" />
+                    <span className="text-sm font-medium">This content has been completed</span>
+                  </div>
+                  <p className="text-xs text-green-600 dark:text-green-500 mt-1">
+                    You can review your work but cannot resubmit it.
+                  </p>
+                </div>
+              )}
               <div className="flex-1 min-h-0">
                 {renderContentPreview()}
               </div>
@@ -404,27 +617,29 @@ export default function LibraryDialog({
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base">Delete Content</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-muted-foreground">
-              Are you sure you want to delete "{content.title}"? This action cannot be undone.
-            </p>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" size="sm" onClick={handleDelete}>
-              Delete
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirmation Dialog - only show if not in review mode */}
+      {!isReviewMode && (
+        <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base">Delete Content</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to delete "{content.title}"? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" size="sm" onClick={handleDelete}>
+                Delete
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

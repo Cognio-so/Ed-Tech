@@ -126,6 +126,9 @@ const VoiceCoach = () => {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isFirstLoad, setIsFirstLoad] = useState(true);
 
+    // NEW: Add user speaking state
+    const [isUserSpeaking, setIsUserSpeaking] = useState(false);
+
     // Get API key from environment or localStorage
     const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || (typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') : '');
 
@@ -375,18 +378,11 @@ const VoiceCoach = () => {
         try {
             openAIServiceRef.current = new RealtimeOpenAIService(apiKey);
 
-            // Remove lip sync callback, keep speaking state for video
-            // openAIServiceRef.current.onLipSyncData = (data) => {
-            //     setLipSyncData(data);
-            //     // Determine if currently speaking based on lip sync intensity
-            //     const totalIntensity = Object.values(data).reduce((sum, val) => sum + val, 0);
-            //     setIsSpeaking(totalIntensity > 0.1);
-            // };
-
             // Add callback for when new response starts
             openAIServiceRef.current.onResponseStart = () => {
                 setTranscript(''); // Reset transcript for new response
                 setIsSpeaking(true); // Start speaking animation
+                setIsUserSpeaking(false); // User is not speaking when AI starts
                 // Mark the last live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -404,6 +400,7 @@ const VoiceCoach = () => {
             // Add callback for when response is complete
             openAIServiceRef.current.onResponseComplete = () => {
                 setIsSpeaking(false); // Stop speaking animation
+                setIsUserSpeaking(false); // User is not speaking when AI stops
                 // Mark the current live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -423,6 +420,7 @@ const VoiceCoach = () => {
             };
 
             openAIServiceRef.current.onUserTranscript = (userTranscript) => {
+                setIsUserSpeaking(true); // User is speaking
                 const userMessage = {
                     id: Date.now() + Math.random(),
                     type: 'user',
@@ -502,6 +500,7 @@ const VoiceCoach = () => {
             setError('');
             setIsLoading(false);
             setIsSpeaking(false);
+            setIsUserSpeaking(false); // Reset user speaking state
             
             setMessages(prev => [...prev, { 
                 id: Date.now() + Math.random(),
@@ -744,6 +743,7 @@ const VoiceCoach = () => {
                                     <VoiceCoachVideo 
                                         isSpeaking={isSpeaking}
                                         isConnected={isConnected}
+                                        isUserSpeaking={isUserSpeaking} // NEW: Pass user speaking state
                                     />
                                 </CardContent>
 

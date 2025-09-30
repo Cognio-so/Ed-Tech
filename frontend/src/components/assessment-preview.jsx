@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Download, Copy, Check, Edit, Save, X, Clock, Users, BookOpen, ChevronDown } from "lucide-react";
+import { FileText, Download, Copy, Check, Edit, Save, X, Clock, Users, BookOpen, ChevronDown, CheckCircle, XCircle, FileCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const generatePDF = async (content, filename) => {
@@ -137,17 +137,20 @@ const generateDOCX = async (content, filename) => {
   URL.revokeObjectURL(url);
 };
 
-export default function AssessmentPreview({
+export default function AssessmentPreview({ 
   assessment,
   onEditAssessment, 
-  isEditable = true 
+  isEditable = true,
+  isReviewMode = false 
 }) {
   const [copied, setCopied] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedContent, setEditedContent] = useState(assessment?.generatedContent || '');
+  const [answers, setAnswers] = useState({});
+  const [submitted, setSubmitted] = useState(false);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
-  const [downloadFormat, setDownloadFormat] = useState('pdf');
+  const [downloadFormat, setDownloadFormat] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState('');
 
   // Parse assessment content to separate questions and solutions
   const parseAssessmentContent = (content) => {
@@ -179,7 +182,7 @@ export default function AssessmentPreview({
           solutions.push(line);
         }
       } else {
-        // Parse question lines
+        // Parse question lines - look for numbered questions
         if (line.match(/^\d+\./)) {
           // Save previous question if exists
           if (currentQuestion) {
@@ -199,52 +202,86 @@ export default function AssessmentPreview({
           if (questionText.toLowerCase().includes('true or false') || 
               questionText.toLowerCase().includes('true/false')) {
             currentQuestion.type = 'true_false';
+            currentQuestion.options = [
+              { id: 'true', text: 'True' },
+              { id: 'false', text: 'False' }
+            ];
           }
         } else if (currentQuestion && line.match(/^[A-D]\)/)) {
-          // Multiple choice option
-          currentQuestion.type = 'mcq';
-          currentQuestion.options.push(line);
-        } else if (currentQuestion && line && !line.match(/^[A-D]\)/)) {
-          // This is a continuation line for the current question
-          currentQuestion.text += ' ' + line;
+          // This is an option for the current question
+          const optionText = line.replace(/^[A-D]\)\s*/, '');
+          currentQuestion.options.push({
+            id: line.match(/^([A-D])\)/)[1].toLowerCase(),
+            text: optionText
+          });
           
-          // Check if this continuation line indicates True/False
-          if (line.toLowerCase().includes('true or false') || 
-              line.toLowerCase().includes('true/false')) {
-            currentQuestion.type = 'true_false';
+          // If we have options, this is likely a multiple choice question
+          if (currentQuestion.type === 'unknown') {
+            currentQuestion.type = 'multiple_choice';
           }
+        } else if (currentQuestion && line.trim() && !line.startsWith('**')) {
+          // This might be additional text for the current question
+          currentQuestion.text += ' ' + line;
         }
       }
     }
 
-    // Add the last question
+    // Don't forget the last question
     if (currentQuestion) {
       questions.push(currentQuestion);
     }
 
-    // Final pass to determine question types for any remaining 'unknown' types
-    questions.forEach(question => {
-      if (question.type === 'unknown') {
-        // Check the full question text for True/False indicators
-        if (question.text.toLowerCase().includes('true or false') || 
-            question.text.toLowerCase().includes('true/false')) {
-          question.type = 'true_false';
-        } else if (question.options.length > 0) {
-          question.type = 'mcq';
-        } else {
-          question.type = 'short_answer';
-        }
+    // Match solutions to questions
+    questions.forEach((question, index) => {
+      const solutionLine = solutions.find(s => s.startsWith(`${question.number}.`));
+      if (solutionLine) {
+        const correctAnswer = solutionLine.replace(/^\d+\.\s*/, '').trim();
+        question.correctAnswer = correctAnswer;
       }
     });
 
     return { questions, solutions };
   };
 
-  const { questions, solutions } = parseAssessmentContent(assessment?.generatedContent);
+  // Get the content from various possible fields
+  const content = assessment?.content || 
+                 assessment?.generatedContent || 
+                 assessment?.assessmentContent || 
+                 assessment?.instruction || 
+                 '';
+
+  // Parse the content to get questions
+  const { questions, solutions } = parseAssessmentContent(content);
+
+  // Debug logging
+  console.log('=== AssessmentPreview Debug ===');
+  console.log('Assessment object:', assessment);
+  console.log('Content string:', content);
+  console.log('Parsed questions:', questions);
+  console.log('Solutions:', solutions);
+
+  // In review mode, load the submitted answers
+  useEffect(() => {
+    if (isReviewMode) {
+      // Check if student answers are passed as prop
+      if (assessment.submittedAnswers) {
+        setAnswers(assessment.submittedAnswers);
+        setSubmitted(true);
+      } else if (assessment.studentAnswers) {
+        setAnswers(assessment.studentAnswers);
+        setSubmitted(true);
+      } else {
+        // For testing - you can add sample answers here
+        console.log('No student answers found. Add sample answers for testing.');
+        // Uncomment the line below to add sample answers for testing:
+        // setAnswers({0: 2, 1: 1, 2: 2, 3: 2, 4: 1, 5: 2, 6: 1, 7: 2, 8: 1, 9: 3});
+      }
+    }
+  }, [isReviewMode, assessment?.submittedAnswers, assessment?.studentAnswers]);
 
   const handleCopyContent = async () => {
     try {
-      await navigator.clipboard.writeText(assessment.generatedContent);
+      await navigator.clipboard.writeText(content);
       setCopied(true);
       toast.success("Assessment copied to clipboard!");
       setTimeout(() => setCopied(false), 2000);
@@ -265,7 +302,7 @@ export default function AssessmentPreview({
     try {
       switch (downloadFormat) {
         case 'md':
-          const blob = new Blob([assessment.generatedContent], { type: 'text/markdown' });
+          const blob = new Blob([content], { type: 'text/markdown' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
@@ -277,11 +314,11 @@ export default function AssessmentPreview({
           break;
           
         case 'pdf':
-          await generatePDF(assessment.generatedContent, filename);
+          await generatePDF(content, filename);
           break;
           
         case 'docx':
-          await generateDOCX(assessment.generatedContent, filename);
+          await generateDOCX(content, filename);
           break;
           
         default:
@@ -299,12 +336,12 @@ export default function AssessmentPreview({
   };
 
   const handleStartEdit = () => {
-    setEditedContent(assessment.generatedContent);
+    setEditedContent(content);
     setIsEditing(true);
   };
 
   const handleCancelEdit = () => {
-    setEditedContent(assessment.generatedContent);
+    setEditedContent(content);
     setIsEditing(false);
     toast.info("Edit cancelled");
   };
@@ -330,225 +367,297 @@ export default function AssessmentPreview({
     );
   }
 
-  return (
-    <>
-      <Card className="w-full dark:bg-secondary">
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                {assessment.title}
-              </CardTitle>
-              <div className="flex flex-wrap gap-2 mt-2">
-                <Badge variant="outline">{assessment.subject}</Badge>
-                <Badge variant="secondary">{assessment.grade}</Badge>
-                <Badge variant="outline">{assessment.difficulty}</Badge>
-                <Badge variant="outline">{assessment.language}</Badge>
-                <Badge variant="outline">{assessment.status}</Badge>
-              </div>
-              <div className="flex items-center gap-4 mt-3 text-sm text-gray-600 dark:text-white">
-                <div className="flex items-center gap-1 dark:text-white">
-                  <Clock className="h-4 w-4" />
-                  {assessment.duration} minutes
-                </div>
-                <div className="flex items-center gap-1 dark:text-white">
-                  <BookOpen className="h-4 w-4" />
-                  {assessment.numQuestions} questions
-                </div>
-                {assessment.metadata?.createdAt && (
-                  <div className="flex items-center gap-1 dark:text-white">
-                    <Users className="h-4 w-4" />
-                    {new Date(assessment.metadata.createdAt).toLocaleDateString()}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              {isEditing ? (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCancelEdit}
-                    className="text-red-600 hover:text-red-700"
-                    cursor="pointer"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={handleSaveEdit}
-                    cursor="pointer"
-                  >
-                    <Save className="h-4 w-4" />
-                  </Button>
-                </>
+  const renderQuestion = (question, index) => {
+    const studentAnswer = answers[index];
+    const correctAnswer = question.correctAnswer;
+    const isCorrect = studentAnswer !== undefined && correctAnswer !== undefined && 
+                     studentAnswer.toString().toLowerCase() === correctAnswer.toLowerCase();
+
+    return (
+      <div key={index} className="border rounded-lg p-4 mb-4">
+        <div className="flex items-start justify-between mb-3">
+          <h3 className="font-medium text-base">
+            Question {question.number}: {question.text}
+          </h3>
+          {isReviewMode && correctAnswer && (
+            <div className="flex items-center gap-1 ml-2">
+              {isCorrect ? (
+                <CheckCircle className="h-5 w-5 text-green-600" />
               ) : (
-                <>
-                  {isEditable && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleStartEdit}
-                      title="Edit Assessment"
-                      cursor="pointer"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCopyContent}
-                    disabled={copied}
-                    cursor="pointer"
-                  >
-                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowDownloadDialog(true)}
-                    cursor="pointer"
-                    className="flex items-center gap-1"
-                  >
-                    <Download className="h-4 w-4" />
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </>
+                <XCircle className="h-5 w-5 text-red-600" />
               )}
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isEditing ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="assessmentEditor">Edit Assessment</Label>
-                <Textarea
-                  id="assessmentEditor"
-                  value={editedContent}
-                  onChange={(e) => setEditedContent(e.target.value)}
-                  rows={20}
-                  className="font-mono text-sm"
-                  placeholder="Edit your assessment here..."
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleCancelEdit}
-                  cursor="pointer"
+          )}
+        </div>
+        
+        {question.type === 'multiple_choice' && question.options && question.options.length > 0 && (
+          <div className="space-y-2">
+            {question.options.map((option, optionIndex) => {
+              const isSelected = studentAnswer === optionIndex;
+              const isCorrectOption = correctAnswer && option.id === correctAnswer.toLowerCase();
+              
+              let optionClass = "p-3 rounded border transition-colors";
+              
+              if (isReviewMode) {
+                if (isCorrectOption) {
+                  optionClass += " bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800";
+                } else if (isSelected && !isCorrectOption) {
+                  optionClass += " bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800";
+                } else {
+                  optionClass += " bg-gray-50 border-gray-200 dark:bg-gray-900/20 dark:border-gray-800";
+                }
+              } else if (isSelected) {
+                optionClass += " bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800 cursor-pointer";
+              } else {
+                optionClass += " cursor-pointer";
+              }
+              
+              return (
+                <div 
+                  key={optionIndex} 
+                  className={optionClass}
+                  onClick={() => !isReviewMode && handleAnswerChange(index, optionIndex)}
                 >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSaveEdit}
-                  className="min-w-[100px]"
-                  cursor="pointer"
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <ScrollArea className="h-[600px] w-full">
-              <div className="space-y-6">
-                {/* Questions Section */}
-                <div>
-                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 dark:text-white">
-                    <BookOpen className="h-5 w-5" />
-                    Questions
-                  </h3>
-                  <div className="space-y-6">
-                    {questions.map((question, index) => (
-                      <div key={index} className="border rounded-lg p-4 dark:bg-secondary">
-                        <div className="flex items-start gap-3 dark:text-white">
-                          <Badge variant="outline" className="mt-1">
-                            {question.number}
-                          </Badge>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2 dark:text-white">
-                              <Badge 
-                                variant={question.type === 'mcq' ? 'default' : 
-                                        question.type === 'true_false' ? 'secondary' : 'outline'}
-                                className="text-xs"
-                              >
-                                {question.type === 'mcq' ? 'MCQ' : 
-                                 question.type === 'true_false' ? 'True/False' : 'Short Answer'}
-                              </Badge>
-                            </div>
-                            <p className="text-gray-900 mb-3 dark:text-white">{question.text}</p>
-                            
-                            {question.type === 'mcq' && question.options.length > 0 && (
-                              <div className="space-y-1 ml-4">
-                                {question.options.map((option, optIndex) => (
-                                  <div key={optIndex} className="text-sm text-gray-700 dark:text-white">
-                                    {option}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium text-sm">
+                      {String.fromCharCode(65 + optionIndex)}.
+                    </span>
+                    <span className="flex-1">{option.text}</span>
+                    {isReviewMode && isCorrectOption && (
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                    )}
+                    {isReviewMode && isSelected && !isCorrectOption && (
+                      <XCircle className="h-4 w-4 text-red-600" />
+                    )}
+                    {!isReviewMode && isSelected && (
+                      <Check className="h-4 w-4 text-blue-600" />
+                    )}
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
 
-                {/* Solutions Section */}
-                {solutions.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 dark:text-white">
-                      <Check className="h-5 w-5" />
-                      Solutions
-                    </h3>
-                    <div className="space-y-2">
-                      {solutions.map((solution, index) => (
-                        <div key={index} className="border rounded-lg p-3 bg-green-50 dark:bg-secondary">
-                          <p className="text-sm text-gray-900 dark:text-white">{solution}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+        {question.type === 'true_false' && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="radio"
+                id={`tf-${index}-true`}
+                name={`tf-${index}`}
+                value="true"
+                checked={studentAnswer === 'true'}
+                onChange={() => !isReviewMode && handleAnswerChange(index, 'true')}
+                disabled={isReviewMode}
+              />
+              <label htmlFor={`tf-${index}-true`} className="text-sm">True</label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="radio"
+                id={`tf-${index}-false`}
+                name={`tf-${index}`}
+                value="false"
+                checked={studentAnswer === 'false'}
+                onChange={() => !isReviewMode && handleAnswerChange(index, 'false')}
+                disabled={isReviewMode}
+              />
+              <label htmlFor={`tf-${index}-false`} className="text-sm">False</label>
+            </div>
+          </div>
+        )}
+
+        {question.type === 'short_answer' && (
+          <div className="space-y-2">
+            <textarea
+              value={studentAnswer || ''}
+              onChange={(e) => !isReviewMode && handleAnswerChange(index, e.target.value)}
+              placeholder="Enter your answer here..."
+              className="w-full p-3 border rounded-lg resize-none"
+              rows={3}
+              disabled={isReviewMode}
+            />
+          </div>
+        )}
+
+        {question.type === 'essay' && (
+          <div className="space-y-2">
+            <textarea
+              value={studentAnswer || ''}
+              onChange={(e) => !isReviewMode && handleAnswerChange(index, e.target.value)}
+              placeholder="Enter your essay here..."
+              className="w-full p-3 border rounded-lg resize-none"
+              rows={6}
+              disabled={isReviewMode}
+            />
+          </div>
+        )}
+
+        {/* Show student answer result in review mode */}
+        {isReviewMode && studentAnswer !== undefined && (
+          <div className="mt-4">
+            <div className={`p-3 border rounded ${
+              isCorrect 
+                ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' 
+                : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
+            }`}>
+              <div className="flex items-center gap-2">
+                {isCorrect ? (
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-600" />
                 )}
+                <p className={`text-sm font-medium ${
+                  isCorrect 
+                    ? 'text-green-700 dark:text-green-400' 
+                    : 'text-red-700 dark:text-red-400'
+                }`}>
+                  {isCorrect ? 'Correct' : 'Incorrect'}
+                </p>
               </div>
-            </ScrollArea>
-          )}
-        </CardContent>
-      </Card>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
-      {/* Download Format Selection Dialog */}
+  const handleAnswerChange = (questionIndex, answer) => {
+    setAnswers(prev => ({
+      ...prev,
+      [questionIndex]: answer
+    }));
+  };
+
+  const canSubmit = Object.values(answers).every(answer => answer !== undefined);
+
+  const handleSubmit = () => {
+    if (!canSubmit) {
+      toast.error("Please answer all questions.");
+      return;
+    }
+    // In a real application, you would send answers to a backend
+    // For now, we'll just simulate submission
+    toast.success("Assessment submitted!");
+    setSubmitted(true);
+    // In a real app, you would update the assessment object with submitted answers
+    // onEditAssessment(assessment); 
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="flex-shrink-0 p-4 border-b">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">{assessment.title}</h2>
+            {assessment.topic && (
+              <p className="text-sm text-muted-foreground mt-1">{assessment.topic}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {isEditable && !isReviewMode && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleStartEdit}
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDownloadDialog(true)}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyContent}
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+        {isReviewMode && (
+          <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
+            <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+              <CheckCircle className="h-4 w-4" />
+              <span className="text-sm font-medium">Assessment Completed</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {/* Show parsed questions if available */}
+        {questions && questions.length > 0 ? (
+          <div className="space-y-6">
+            {questions.map((question, index) => renderQuestion(question, index))}
+          </div>
+        ) : (
+          /* Fallback: Show raw content if no questions parsed */
+          <div className="space-y-4">
+            <div className="text-center py-8 text-muted-foreground">
+              <FileCheck className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+              <p className="text-sm">No structured questions found in this assessment</p>
+              <p className="text-xs text-muted-foreground mt-2">
+                This appears to be a lesson plan or content review rather than an interactive assessment.
+              </p>
+            </div>
+            
+            {/* Show the raw content */}
+            <div className="bg-muted/50 rounded-lg p-4">
+              <h4 className="font-medium mb-2 text-foreground">Content:</h4>
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <pre className="whitespace-pre-wrap text-sm text-foreground">
+                  {content}
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer - only show if not in review mode and has questions */}
+      {!isReviewMode && questions && questions.length > 0 && (
+        <div className="flex-shrink-0 p-4 border-t">
+          <Button 
+            onClick={handleSubmit} 
+            disabled={!canSubmit}
+            className="w-full"
+          >
+            Submit Assessment
+          </Button>
+        </div>
+      )}
+
+      {/* Download Dialog */}
       <Dialog open={showDownloadDialog} onOpenChange={setShowDownloadDialog}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Download Assessment</DialogTitle>
             <DialogDescription>
-              Choose the format for downloading your assessment.
+              Choose the format you want to download the assessment in.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="format">Download Format</Label>
-              <Select value={downloadFormat} onValueChange={setDownloadFormat}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select format" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="md">Markdown (.md)</SelectItem>
-                  <SelectItem value="pdf">PDF (.pdf)</SelectItem>
-                  <SelectItem value="docx">Word Document (.docx)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              <p><strong>Markdown:</strong> Plain text with formatting markers</p>
-              <p><strong>PDF:</strong> Formatted document, good for printing</p>
-              <p><strong>Word:</strong> Editable document with formatting</p>
-            </div>
+          <div className="space-y-4">
+            <Select value={downloadFormat} onValueChange={setDownloadFormat}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select format" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="md">Markdown (.md)</SelectItem>
+                <SelectItem value="pdf">PDF (.pdf)</SelectItem>
+                <SelectItem value="docx">Word Document (.docx)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDownloadDialog(false)}>
@@ -556,13 +665,23 @@ export default function AssessmentPreview({
             </Button>
             <Button 
               onClick={handleDownloadContent} 
-              disabled={isDownloading || !downloadFormat}
+              disabled={!downloadFormat || isDownloading}
             >
-              {isDownloading ? "Downloading..." : "Download"}
+              {isDownloading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
