@@ -32,7 +32,6 @@ const AssessmentForm = () => {
     short_answer: false
   });
   const [questionDistribution, setQuestionDistribution] = useState({});
-  const [totalQuestions, setTotalQuestions] = useState(10);
   const [isSaving, setIsSaving] = useState(false);
   const [previewAssessment, setPreviewAssessment] = useState(null);
   const [editingAssessment, setEditingAssessment] = useState(null);
@@ -68,8 +67,7 @@ const AssessmentForm = () => {
       language: 'English',
       learningObjectives: '',
       anxietyTriggers: '',
-      customPrompt: '',
-      numQuestions: 10
+      customPrompt: ''
     }
   });
 
@@ -114,23 +112,23 @@ const AssessmentForm = () => {
     }
   };
 
-  // Update question distribution when question types or total questions change
+  // Update question distribution when question types change
   useEffect(() => {
     const selectedTypes = Object.keys(questionTypes).filter(type => questionTypes[type]);
-    if (selectedTypes.length > 0 && totalQuestions > 0) {
-      const distribution = distributeQuestions(totalQuestions, selectedTypes);
+    if (selectedTypes.length > 0) {
+      const distribution = distributeQuestions(selectedTypes);
       setQuestionDistribution(distribution);
     }
-  }, [questionTypes, totalQuestions]);
+  }, [questionTypes]);
 
-  const distributeQuestions = (total, types) => {
+  const distributeQuestions = (types) => {
     if (types.length === 1) {
-      return { [types[0]]: total };
+      return { [types[0]]: 5 }; // Default 5 questions per type
     }
 
     const distribution = {};
-    const questionsPerType = Math.floor(total / types.length);
-    const remainder = total % types.length;
+    const questionsPerType = Math.floor(10 / types.length); // Default 10 total questions
+    const remainder = 10 % types.length;
 
     types.forEach((type, index) => {
       distribution[type] = questionsPerType + (index < remainder ? 1 : 0);
@@ -152,14 +150,6 @@ const AssessmentForm = () => {
       ...prev,
       [type]: numValue
     }));
-    
-    // Update total questions
-    const newTotal = Object.values({
-      ...questionDistribution,
-      [type]: numValue
-    }).reduce((sum, count) => sum + count, 0);
-    setTotalQuestions(newTotal);
-    setValue('numQuestions', newTotal);
   };
 
   const onSubmit = async (data) => {
@@ -177,8 +167,7 @@ const AssessmentForm = () => {
       const assessmentData = {
         ...data,
         questionTypes,
-        questionDistribution,
-        numQuestions: totalQuestions
+        questionDistribution
       };
 
       const result = await generateAssessment(assessmentData);
@@ -191,7 +180,6 @@ const AssessmentForm = () => {
       reset();
       setQuestionTypes({ mcq: false, true_false: false, short_answer: false });
       setQuestionDistribution({});
-      setTotalQuestions(10);
       
     } catch (err) {
       setError(err.message || 'An error occurred while processing the assessment');
@@ -214,8 +202,7 @@ const AssessmentForm = () => {
       language: assessment.language || 'English',
       learningObjectives: assessment.learningObjectives || '',
       anxietyTriggers: assessment.anxietyTriggers || '',
-      customPrompt: assessment.customPrompt || '',
-      numQuestions: assessment.numQuestions || 10
+      customPrompt: assessment.customPrompt || ''
     });
 
     if (assessment.questionTypes) {
@@ -226,7 +213,6 @@ const AssessmentForm = () => {
       setQuestionDistribution(assessment.questionDistribution);
     }
 
-    setTotalQuestions(assessment.numQuestions || 10);
     setSelectedAssessment(assessment);
   };
 
@@ -236,7 +222,6 @@ const AssessmentForm = () => {
     reset();
     setQuestionTypes({ mcq: false, true_false: false, short_answer: false });
     setQuestionDistribution({});
-    setTotalQuestions(10);
   };
 
   const saveEditedAssessment = async () => {
@@ -676,41 +661,17 @@ const AssessmentForm = () => {
                               id={`dist-${type}`}
                               type="number"
                               min="0"
-                              max={totalQuestions}
+                              max="50"
                               value={questionDistribution[type] || 0}
                               onChange={(e) => handleQuestionDistributionChange(type, e.target.value)}
                             />
                           </div>
                         ))}
                       </div>
-                      <div className="flex items-center gap-2">
-                        {totalQuestions !== Object.values(questionDistribution).reduce((sum, count) => sum + count, 0) && (
-                          <Badge variant="destructive">
-                            Distribution doesn't match total
-                          </Badge>
-                        )}
-                      </div>
                     </div>
                   )}
 
-                  <div className="space-y-2">
-                    <Label htmlFor="numQuestions">Total Questions *</Label>
-                    <Input
-                      id="numQuestions"
-                      type="number"
-                      min="1"
-                      max="50"
-                      value={totalQuestions}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value) || 0;
-                        setTotalQuestions(value);
-                        setValue('numQuestions', value);
-                      }}
-                    />
-                    {errors.numQuestions && (
-                      <p className="text-sm text-red-500">{errors.numQuestions.message}</p>
-                    )}
-                  </div>
+                  
 
                   <Separator />
 
@@ -789,6 +750,8 @@ const AssessmentForm = () => {
                   <AssessmentPreview 
                     assessment={selectedAssessment}
                     isEditable={true}
+                    isPreviewMode={true}  // Changed from false to true
+                    isReviewMode={false}
                   />
                 )}
 
@@ -971,6 +934,8 @@ const AssessmentForm = () => {
               <AssessmentPreview 
                 assessment={previewAssessment}
                 isEditable={false}
+                isPreviewMode={true}  // This is already correct
+                isReviewMode={false}
               />
             </div>
           </div>

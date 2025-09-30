@@ -1,5 +1,6 @@
 "use server";
 
+import { cache } from "react";
 import { getServerSession } from "@/lib/get-session";
 import { connectToDatabase } from "@/lib/db";
 import { ObjectId } from "mongodb";
@@ -74,8 +75,8 @@ function generateBetterTitle(item, type) {
   }
 }
 
-// Get teacher dashboard data
-export async function getTeacherDashboardData() {
+// OPTIMIZED: Add caching to prevent duplicate calls during SSR
+export const getTeacherDashboardData = cache(async () => {
   try {
     const session = await getServerSession();
     if (!session?.user?.id) {
@@ -85,15 +86,10 @@ export async function getTeacherDashboardData() {
     const { db } = await connectToDatabase();
     const userId = new ObjectId(session.user.id);
 
-    // Get user data
-    const user = await db.collection('user').findOne({ _id: userId });
-    if (!user) {
-      return { success: false, error: "User not found" };
-    }
-
-    // Get teacher-specific data using correct collection names
-    const [conversations, contents, presentations, comics, images, videos, assessments, webSearches] = await Promise.all([
-      // Get teacher conversations
+    // OPTIMIZED: Use Promise.all for parallel execution
+    const [user, conversations, contents, presentations, comics, images, videos, assessments, webSearches] = await Promise.all([
+      db.collection('user').findOne({ _id: userId }),
+      
       db.collection('teacherConversations')
         .find({ 
           $or: [
@@ -105,49 +101,42 @@ export async function getTeacherDashboardData() {
         .limit(10)
         .toArray(),
       
-      // Get generated content from contents collection
       db.collection('contents')
         .find({ userId: userId.toString() })
         .sort({ "metadata.createdAt": -1 })
         .limit(5)
         .toArray(),
       
-      // Get presentations
       db.collection('presentations')
         .find({ userId: userId.toString() })
         .sort({ "metadata.createdAt": -1 })
         .limit(5)
         .toArray(),
       
-      // Get comics
       db.collection('comics')
         .find({ userId: userId })
         .sort({ "metadata.createdAt": -1 })
         .limit(5)
         .toArray(),
       
-      // Get images
       db.collection('images')
         .find({ userId: userId.toString() })
         .sort({ "metadata.createdAt": -1 })
         .limit(5)
         .toArray(),
       
-      // Get videos
       db.collection('videos')
         .find({ userId: userId.toString() })
         .sort({ "metadata.createdAt": -1 })
         .limit(5)
         .toArray(),
       
-      // Get assessments
       db.collection('assessments')
         .find({ userId: userId })
         .sort({ "metadata.createdAt": -1 })
         .limit(5)
         .toArray(),
       
-      // Get web searches
       db.collection('websearches')
         .find({ userId: userId })
         .sort({ "metadata.createdAt": -1 })
@@ -155,7 +144,11 @@ export async function getTeacherDashboardData() {
         .toArray()
     ]);
 
-    // Calculate statistics using correct collection names
+    if (!user) {
+      return { success: false, error: "User not found" };
+    }
+
+    // OPTIMIZED: Calculate stats in parallel
     const [
       totalConversations,
       totalContents,
@@ -164,7 +157,9 @@ export async function getTeacherDashboardData() {
       totalImages,
       totalVideos,
       totalAssessments,
-      totalWebSearches
+      totalWebSearches,
+      recentActivity,
+      todayActivity
     ] = await Promise.all([
       db.collection('teacherConversations')
         .countDocuments({ 
@@ -173,55 +168,46 @@ export async function getTeacherDashboardData() {
             { teacherId: { $in: [userId, userId.toString()] } }
           ]
         }),
-      db.collection('contents')
-        .countDocuments({ userId: userId.toString() }),
-      db.collection('presentations')
-        .countDocuments({ userId: userId.toString() }),
-      db.collection('comics')
-        .countDocuments({ userId: userId }),
-      db.collection('images')
-        .countDocuments({ userId: userId.toString() }),
-      db.collection('videos')
-        .countDocuments({ userId: userId.toString() }),
-      db.collection('assessments')
-        .countDocuments({ userId: userId }),
-      db.collection('websearches')
-        .countDocuments({ userId: userId })
+      db.collection('contents').countDocuments({ userId: userId.toString() }),
+      db.collection('presentations').countDocuments({ userId: userId.toString() }),
+      db.collection('comics').countDocuments({ userId: userId }),
+      db.collection('images').countDocuments({ userId: userId.toString() }),
+      db.collection('videos').countDocuments({ userId: userId.toString() }),
+      db.collection('assessments').countDocuments({ userId: userId }),
+      db.collection('websearches').countDocuments({ userId: userId }),
+      
+      // Recent activity (last 7 days)
+      db.collection('teacherConversations')
+        .countDocuments({
+          $or: [
+            { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
+            { teacherId: { $in: [userId, userId.toString()] } }
+          ],
+          "metadata.updatedAt": { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+        }),
+      
+      // Today's activity
+      (() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        return db.collection('teacherConversations')
+          .countDocuments({
+            $or: [
+              { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
+              { teacherId: { $in: [userId, userId.toString()] } }
+            ],
+            "metadata.updatedAt": {
+              $gte: today,
+              $lt: tomorrow
+            }
+          });
+      })()
     ]);
 
-    // Calculate total content generated (all types combined)
     const totalContentGenerated = totalContents + totalPresentations + totalComics + totalImages + totalVideos + totalWebSearches;
-
-    // Get recent activity (last 7 days)
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    
-    const recentActivity = await db.collection('teacherConversations')
-      .countDocuments({
-        $or: [
-          { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
-          { teacherId: { $in: [userId, userId.toString()] } }
-        ],
-        "metadata.updatedAt": { $gte: weekAgo }
-      });
-
-    // Get today's activity
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const todayActivity = await db.collection('teacherConversations')
-      .countDocuments({
-        $or: [
-          { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
-          { teacherId: { $in: [userId, userId.toString()] } }
-        ],
-        "metadata.updatedAt": {
-          $gte: today,
-          $lt: tomorrow
-        }
-      });
 
     // Transform recent conversations
     const recentConversations = conversations.map(conversation => ({
@@ -315,7 +301,6 @@ export async function getTeacherDashboardData() {
       }))
     ].sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
 
-    // Get recent content (top 10)
     const recentContent = allContent.slice(0, 10);
 
     // Transform assessments
@@ -334,7 +319,6 @@ export async function getTeacherDashboardData() {
       updatedAt: safeToISOString(assessment.metadata?.updatedAt)
     }));
 
-    // Calculate productivity metrics with more realistic scoring
     const productivityScore = Math.min(100, Math.round(
       (totalConversations * 5) + 
       (totalContentGenerated * 8) + 
@@ -342,34 +326,50 @@ export async function getTeacherDashboardData() {
       (recentActivity * 2)
     ));
 
-    // Get weekly activity for chart
+    // OPTIMIZED: Use aggregation for weekly activity instead of 7 separate queries
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    weekAgo.setHours(0, 0, 0, 0);
+    
+    const weeklyActivityResults = await db.collection('teacherConversations').aggregate([
+      {
+        $match: {
+          $or: [
+            { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
+            { teacherId: { $in: [userId, userId.toString()] } }
+          ],
+          "metadata.updatedAt": { $gte: weekAgo }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$metadata.updatedAt" }
+          },
+          activity: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]).toArray();
+
+    // Create weeklyActivity array with all 7 days
     const weeklyActivity = [];
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
       date.setHours(0, 0, 0, 0);
-      const nextDate = new Date(date);
-      nextDate.setDate(nextDate.getDate() + 1);
-
-      const dayActivity = await db.collection('teacherConversations')
-        .countDocuments({
-          $or: [
-            { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
-            { teacherId: { $in: [userId, userId.toString()] } }
-          ],
-          "metadata.updatedAt": {
-            $gte: date,
-            $lt: nextDate
-          }
-        });
-
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const dayData = weeklyActivityResults.find(d => d._id === dateStr);
+      
       weeklyActivity.push({
-        date: date.toISOString().split('T')[0],
-        activity: dayActivity
+        date: dateStr,
+        activity: dayData ? dayData.activity : 0
       });
     }
 
-    // Properly serialize all data
     const dashboardData = {
       user: {
         id: user._id.toString(),
@@ -383,11 +383,10 @@ export async function getTeacherDashboardData() {
         totalConversations,
         totalContentGenerated,
         totalAssessments,
-        totalMediaUploads: totalImages + totalVideos, // Combined media count
+        totalMediaUploads: totalImages + totalVideos,
         recentActivity,
         todayActivity,
         productivityScore,
-        // Additional breakdown stats
         totalContents,
         totalPresentations,
         totalComics,
@@ -406,92 +405,6 @@ export async function getTeacherDashboardData() {
     console.error('Error fetching teacher dashboard data:', error);
     return { success: false, error: "Failed to fetch dashboard data" };
   }
-}
+});
 
-// Get quick stats for dashboard widgets
-export async function getTeacherQuickStats() {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      return { success: false, error: "Unauthorized" };
-    }
-
-    const { db } = await connectToDatabase();
-    const userId = new ObjectId(session.user.id);
-
-    // Get counts using correct collection names
-    const [
-      conversationsCount,
-      contentsCount,
-      presentationsCount,
-      comicsCount,
-      imagesCount,
-      videosCount,
-      assessmentsCount,
-      webSearchesCount
-    ] = await Promise.all([
-      db.collection('teacherConversations')
-        .countDocuments({ 
-          $or: [
-            { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
-            { teacherId: { $in: [userId, userId.toString()] } }
-          ]
-        }),
-      db.collection('contents')
-        .countDocuments({ userId: userId.toString() }),
-      db.collection('presentations')
-        .countDocuments({ userId: userId.toString() }),
-      db.collection('comics')
-        .countDocuments({ userId: userId }),
-      db.collection('images')
-        .countDocuments({ userId: userId.toString() }),
-      db.collection('videos')
-        .countDocuments({ userId: userId.toString() }),
-      db.collection('assessments')
-        .countDocuments({ userId: userId }),
-      db.collection('websearches')
-        .countDocuments({ userId: userId })
-    ]);
-
-    const totalContent = contentsCount + presentationsCount + comicsCount + imagesCount + videosCount + webSearchesCount;
-
-    // Get today's activity
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const todayActivity = await db.collection('teacherConversations')
-      .countDocuments({
-        $or: [
-          { sessionId: { $regex: `voice_coach_${userId}_`, $options: 'i' } },
-          { teacherId: { $in: [userId, userId.toString()] } }
-        ],
-        "metadata.updatedAt": {
-          $gte: today,
-          $lt: tomorrow
-        }
-      });
-
-    return {
-      success: true,
-      data: {
-        totalConversations: conversationsCount,
-        totalContent,
-        totalAssessments: assessmentsCount,
-        totalMedia: imagesCount + videosCount,
-        todayActivity,
-        // Additional breakdown
-        totalContents: contentsCount,
-        totalPresentations: presentationsCount,
-        totalComics: comicsCount,
-        totalImages: imagesCount,
-        totalVideos: videosCount,
-        totalWebSearches: webSearchesCount
-      }
-    };
-  } catch (error) {
-    console.error('Error fetching teacher quick stats:', error);
-    return { success: false, error: "Failed to fetch quick stats" };
-  }
-}
+// Remove getTeacherQuickStats since we're getting all data in one call now

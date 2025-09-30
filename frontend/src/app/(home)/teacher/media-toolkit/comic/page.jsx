@@ -10,22 +10,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { CarouselWithControls } from "@/components/ui/carousel";
 import { toast } from "sonner";
 import ComicForm from "./comic-form";
-import { generateComic, saveComicWithCloudinaryUrls, getComics, deleteComic } from "./action";
+import { generateComic, saveComicWithCloudinaryUrls } from "./action";
 import { authClient } from "@/lib/auth-client";
 import PythonApiClient from "@/lib/PythonApi";
 
 export default function ComicPage() {
   const [user, setUser] = useState(null);
   const [comicImages, setComicImages] = useState([]);
+  const [comicTexts, setComicTexts] = useState([]); // Store text separately
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [savedComics, setSavedComics] = useState([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
   const [liveViewerOpen, setLiveViewerOpen] = useState(false);
-  const [loadingSaved, setLoadingSaved] = useState(false);
   const [currentFormData, setCurrentFormData] = useState(null);
   const [abortController, setAbortController] = useState(null);
   const [expectedPanels, setExpectedPanels] = useState(0);
@@ -45,36 +44,11 @@ export default function ComicPage() {
     getUser();
   }, []);
 
-  // Load saved comics when user is available
-  useEffect(() => {
-    if (user?.id) {
-      loadSavedComics();
-    }
-  }, [user?.id]);
-
-  const loadSavedComics = async () => {
-    setLoadingSaved(true);
-    try {
-      // The user.id is no longer needed here as the server action gets it from the session
-      const result = await getComics(); 
-      if (result.success) {
-        // Correctly access the 'comics' property from the result
-        setSavedComics(result.comics);
-      } else {
-        toast.error(result.message || "Failed to load saved comics");
-      }
-    } catch (error) {
-      console.error("Failed to load saved comics:", error);
-      toast.error("An unexpected error occurred while loading comics.");
-    } finally {
-      setLoadingSaved(false);
-    }
-  };
-
   const handleGenerate = async (formData) => {
     setIsLoading(true);
     setError(null);
     setComicImages([]);
+    setComicTexts([]); // Clear previous texts
     setCurrentFormData(formData);
     setExpectedPanels(formData.numPanels);
     setCurrentPanelIndex(0);
@@ -100,9 +74,8 @@ export default function ComicPage() {
     }
   };
 
-  const handleComicStream = async (formData, signal) => { // FIX: Revert to using the API client
+  const handleComicStream = async (formData, signal) => {
     try {
-      // Start the comics stream directly from the client, passing the signal
       const response = await PythonApiClient.startComicsStream(formData, signal);
       
       if (!response.ok || !response.body) {
@@ -135,9 +108,9 @@ export default function ComicPage() {
             const evt = JSON.parse(json);
             
             if (evt.type === 'panel_image' && evt.url) {
-              // FIX: The backend now sends the full data URL. No need to add the prefix again.
               const dataUrl = evt.url;
               
+              // Update images
               setComicImages(prev => {
                 const existingIndex = prev.findIndex(p => p.index === evt.index);
                 if (existingIndex >= 0) {
@@ -148,6 +121,20 @@ export default function ComicPage() {
                   return [...prev, { index: evt.index, url: dataUrl }].sort((a, b) => a.index - b.index);
                 }
               });
+
+              // Update texts separately
+              if (evt.footer_text) {
+                setComicTexts(prev => {
+                  const existingIndex = prev.findIndex(p => p.index === evt.index);
+                  if (existingIndex >= 0) {
+                    const newTexts = [...prev];
+                    newTexts[existingIndex] = { index: evt.index, text: evt.footer_text };
+                    return newTexts;
+                  } else {
+                    return [...prev, { index: evt.index, text: evt.footer_text }].sort((a, b) => a.index - b.index);
+                  }
+                });
+              }
 
               setTimeout(() => {
                 setCurrentPanelIndex(evt.index);
@@ -191,24 +178,6 @@ export default function ComicPage() {
     setPreviewOpen(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!user?.id) {
-      toast.error("User not authenticated");
-      return;
-    }
-
-    try {
-      const result = await deleteComic(id, user.id);
-      if (result.success) {
-        setSavedComics(prev => prev.filter(item => item._id !== id));
-        toast.success("Comic deleted successfully");
-      }
-    } catch (error) {
-      console.error("Failed to delete comic:", error);
-      toast.error("Failed to delete comic");
-    }
-  };
-
   const handleDownload = (url, filename = 'comic-panel.png') => {
     try {
       const a = document.createElement('a');
@@ -243,7 +212,7 @@ export default function ComicPage() {
 
     setIsSaving(true);
     try {
-      // Prepare comic data with Cloudinary URLs only (no base64)
+      // Prepare comic data with Cloudinary URLs and separate texts
       const comicData = {
         instructions: currentFormData.instructions,
         subject: currentFormData.subject,
@@ -252,20 +221,23 @@ export default function ComicPage() {
         language: currentFormData.language,
         imageUrls: comicImages.map(img => img.url), // Cloudinary URLs only
         cloudinaryPublicIds: [], // Will be populated by the function
+        panelTexts: comicTexts.map(text => ({ // Include panel texts
+          index: text.index,
+          text: text.text
+        })),
         comicType: 'educational'
       };
 
       // Use the NEW function that only saves Cloudinary URLs
       const result = await saveComicWithCloudinaryUrls(comicData);
       if (result.success) {
-        // Reload saved comics
-        await loadSavedComics();
         setComicImages([]);
+        setComicTexts([]); // Clear texts
         setLiveViewerOpen(false);
         setCurrentFormData(null);
         setExpectedPanels(0);
         setCurrentPanelIndex(0);
-        toast.success('Comic saved successfully');
+        toast.success('Comic saved successfully! You can view it in your Library.');
       } else {
         throw new Error(result.error || "Failed to save comic");
       }
@@ -274,14 +246,6 @@ export default function ComicPage() {
       toast.error(`Failed to save comic: ${error.message}`);
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const formatTime = (dateStr) => {
-    try { 
-      return new Date(dateStr).toLocaleString() 
-    } catch { 
-      return '' 
     }
   };
 
@@ -306,6 +270,11 @@ export default function ComicPage() {
     ...comicImages,
     ...createLoadingPanels()
   ].sort((a, b) => a.index - b.index);
+
+  // Get text for a specific panel
+  const getPanelText = (panelIndex) => {
+    return comicTexts.find(t => t.index === panelIndex)?.text || '';
+  };
 
   return (
     <div className="min-h-screen bg-background dark:bg-secondary rounded-3xl">
@@ -380,21 +349,35 @@ export default function ComicPage() {
                   items={allPanels}
                   showIndicators={true}
                   renderItem={(p) => (
-                    <div className="relative w-full h-[50vh] flex items-center justify-center bg-muted/20 rounded-lg overflow-hidden">
-                      {p.isLoading ? (
-                        <div className="flex flex-col items-center justify-center space-y-4">
-                          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                    <div className="space-y-4">
+                      {/* Image */}
+                      <div className="relative w-full h-[40vh] flex items-center justify-center bg-muted/20 rounded-lg overflow-hidden">
+                        {p.isLoading ? (
+                          <div className="flex flex-col items-center justify-center space-y-4">
+                            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                            <div className="text-center">
+                              <p className="text-sm font-medium">Generating Panel {p.index}</p>
+                              <p className="text-xs text-muted-foreground">Please wait...</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <img
+                            src={p.url}
+                            alt={`Panel ${p.index}`}
+                            className="max-h-full max-w-full object-contain"
+                          />
+                        )}
+                      </div>
+                      
+                      {/* Text Display - Separate from image */}
+                      {!p.isLoading && getPanelText(p.index) && (
+                        <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 shadow-sm">
                           <div className="text-center">
-                            <p className="text-sm font-medium">Generating Panel {p.index}</p>
-                            <p className="text-xs text-muted-foreground">Please wait...</p>
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed">
+                              {getPanelText(p.index)}
+                            </p>
                           </div>
                         </div>
-                      ) : (
-                        <img
-                          src={p.url}
-                          alt={`Panel ${p.index}`}
-                          className="max-h-full max-w-full object-contain"
-                        />
                       )}
                     </div>
                   )}
@@ -425,25 +408,39 @@ export default function ComicPage() {
                   items={allPanels}
                   className="h-full"
                   renderItem={(p) => (
-                    <div className="rounded-xl border overflow-hidden bg-white dark:bg-gray-800">
-                      {p.isLoading ? (
-                        <div className="flex flex-col items-center justify-center h-[calc(85vh-200px)] space-y-4">
-                          <Loader2 className="h-16 w-16 animate-spin text-blue-500" />
+                    <div className="space-y-4">
+                      {/* Image */}
+                      <div className="rounded-xl border overflow-hidden bg-white dark:bg-gray-800">
+                        {p.isLoading ? (
+                          <div className="flex flex-col items-center justify-center h-[calc(85vh-200px)] space-y-4">
+                            <Loader2 className="h-16 w-16 animate-spin text-blue-500" />
+                            <div className="text-center">
+                              <p className="text-lg font-medium">Generating Panel {p.index}</p>
+                              <p className="text-sm text-muted-foreground">Creating your comic story...</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <img
+                            src={p.url}
+                            alt={`Comic Panel ${p.index}`}
+                            className="w-full h-auto object-contain"
+                            onError={(e) => {
+                              console.error('Image failed to load:', p.url);
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                        )}
+                      </div>
+                      
+                      {/* Text Display - Separate from image */}
+                      {!p.isLoading && getPanelText(p.index) && (
+                        <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 shadow-sm">
                           <div className="text-center">
-                            <p className="text-lg font-medium">Generating Panel {p.index}</p>
-                            <p className="text-sm text-muted-foreground">Creating your comic story...</p>
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed">
+                              {getPanelText(p.index)}
+                            </p>
                           </div>
                         </div>
-                      ) : (
-                        <img
-                          src={p.url}
-                          alt={`Comic Panel ${p.index}`}
-                          className="w-full h-auto object-contain"
-                          onError={(e) => {
-                            console.error('Image failed to load:', p.url);
-                            e.target.style.display = 'none';
-                          }}
-                        />
                       )}
                     </div>
                   )}
@@ -489,66 +486,6 @@ export default function ComicPage() {
                 </Button>
               </div>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Preview Dialog */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="w-[95vw] max-w-[1400px] h-[95vh] p-0">
-          <div className="flex flex-col h-full">
-            <DialogHeader className="p-6 pb-2 border-b">
-              <DialogTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Eye className="h-5 w-5 text-primary" />
-                  Comic Preview
-                  {previewItem && (
-                    <Badge variant="outline" className="ml-2">
-                      Grade {previewItem.gradeLevel}
-                    </Badge>
-                  )}
-                </div>
-              </DialogTitle>
-            </DialogHeader>
-            
-            {previewItem && (
-              <div className="flex-1 p-6 overflow-hidden">
-                <CarouselWithControls
-                  items={(previewItem.imageUrls || previewItem.images || []).map((url, i) => ({ url, index: i + 1 }))}
-                  className="h-full"
-                  renderItem={(p) => (
-                    <div className="rounded-xl border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-[calc(85vh-200px)]">
-                      <img 
-                        src={p.url} 
-                        alt={`Panel ${p.index}`} 
-                        className="max-h-full max-w-full object-contain rounded-lg shadow-lg" 
-                      />
-                    </div>
-                  )}
-                />
-              </div>
-            )}
-            
-            {previewItem && (
-              <div className="p-6 pt-2 border-t">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    <p className="font-medium">{previewItem.instruction || previewItem.instructions}</p>
-                    <p>{previewItem.numPanels || (previewItem.imageUrls?.length || previewItem.images?.length || 0)} panels • Created {formatTime(previewItem.createdAt)}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => previewItem.images?.[0] && handleDownload(previewItem.images[0], `${previewItem.instructions.slice(0,20)}.png`)}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Download
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </DialogContent>
       </Dialog>

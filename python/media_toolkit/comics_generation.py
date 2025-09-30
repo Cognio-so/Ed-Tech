@@ -45,6 +45,7 @@ def get_user_input():
 def create_comical_story_prompt(instructions, student_class, num_panels, language):
     """
     Uses GPT-4o to create a comic story with separate visual prompts and footer text.
+    Enhanced to maintain character consistency across panels.
     """
     print("\nTurning your idea into a fun comic story...")
     try:
@@ -58,16 +59,45 @@ def create_comical_story_prompt(instructions, student_class, num_panels, languag
                         "Your task is to take a user's topic and create a fun, educational comic story. "
                         "The story should be tailored for a specific grade level and have a specific number of panels. "
                         f"Generate all dialogue and narrative text in {language}. "
+                        
+                        "🎭 **CRITICAL CHARACTER CONSISTENCY REQUIREMENTS:**\n"
+                        "1. **Define Main Characters First**: Create 1-3 main characters with specific visual descriptions (appearance, clothing, colors, style)\n"
+                        "2. **Character Consistency**: Use the SAME characters throughout ALL panels with identical visual descriptions\n"
+                        "3. **Visual Style Consistency**: Maintain the same art style, color palette, and visual approach across all panels\n"
+                        "4. **Character Names**: Give each main character a memorable name and always refer to them by name\n"
+                        
                         "For each panel, you must provide two separate components:\n"
-                        "1. 'Panel_Prompt': A detailed visual description for an image generation model (dall-e-3). This prompt must describe the entire scene, characters, and actions, but contain NO text elements, speech bubbles, or captions.\n"
+                        "1. 'Panel_Prompt': A detailed visual description for an image generation model (gpt-image-1). This prompt must describe the entire scene, characters, and actions, but contain NO text elements, speech bubbles, or captions.\n"
                         "2. 'Footer_Text': The story narration and dialogue for that panel. This text will be placed in a footer box below the image.\n"
+                        
                         "The language and complexity of the topic should be appropriate for the target students. "
                         f"Ensure the visual style is described as fun, kid-friendly, and colorful, based on {student_class} class students. "
-                        "Structure the output as a numbered list for each panel. Start each line with 'Panel_Prompt:' or 'Footer_Text:'. "
-                        "For example:\n"
-                        "1. Panel_Prompt: A friendly water drop character smiling inside a fluffy white cloud against a bright blue sky. The style is a colorful, simple cartoon.\n"
+                        
+                        "📋 **OUTPUT FORMAT:**\n"
+                        "Start with a character definition section, then structure the output as a numbered list for each panel:\n"
+                        "CHARACTERS:\n"
+                        "- [Character Name]: [Detailed visual description including appearance, clothing, colors, style]\n"
+                        "- [Character Name]: [Detailed visual description including appearance, clothing, colors, style]\n\n"
+                        "STORY PANELS:\n"
+                        "1. Panel_Prompt: [Scene description with consistent character appearances from CHARACTERS section]\n"
+                        "   Footer_Text: [Story text]\n"
+                        "2. Panel_Prompt: [Scene description with consistent character appearances from CHARACTERS section]\n"
+                        "   Footer_Text: [Story text]\n"
+                        "...\n"
+                        
+                        "🎨 **VISUAL CONSISTENCY RULES:**\n"
+                        "- Always reference the exact character descriptions from the CHARACTERS section\n"
+                        "- Use the same color scheme and art style throughout\n"
+                        "- Maintain consistent lighting and background style\n"
+                        "- Keep the same character proportions and features\n"
+                        
+                        "Example:\n"
+                        "CHARACTERS:\n"
+                        "- Water Drop Wally: A friendly blue water drop with big eyes, a small smile, wearing a tiny blue hat, cartoon style with simple shapes\n"
+                        "- Cloud Clara: A fluffy white cloud with a gentle face, soft features, wearing a small silver crown, same cartoon style\n\n"
+                        "STORY PANELS:\n"
+                        "1. Panel_Prompt: Water Drop Wally (blue water drop with big eyes, small smile, tiny blue hat) floating inside Cloud Clara (fluffy white cloud with gentle face, silver crown) against bright blue sky, cartoon style\n"
                         "   Footer_Text: I'm getting heavy! Time to fall as rain!\n"
-                        "Follow the same animation style throughout the storyline."
                     )
                 },
                 {
@@ -77,11 +107,12 @@ def create_comical_story_prompt(instructions, student_class, num_panels, languag
                         f"- Topic: {instructions}\n"
                         f"- Target Audience: {student_class} class students\n"
                         f"- Number of Panels: {num_panels}\n"
-                        f"- Language: {language}"
+                        f"- Language: {language}\n\n"
+                        f"IMPORTANT: Ensure character consistency and visual style consistency across all {num_panels} panels."
                     )
                 }
             ],
-            temperature=0.8,
+            temperature=0.7,  # Reduced temperature for more consistency
         )
         story_prompts = response.choices[0].message.content
         return story_prompts

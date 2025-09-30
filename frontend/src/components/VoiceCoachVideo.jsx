@@ -7,7 +7,8 @@ import { User, Users } from 'lucide-react';
 const VoiceCoachVideo = ({ 
     isSpeaking = false, 
     isConnected = false,
-    onFirstLoad = false 
+    onFirstLoad = false,
+    isUserSpeaking = false
 }) => {
     const [selectedGender, setSelectedGender] = useState('female');
     const [hasPlayedIntro, setHasPlayedIntro] = useState(false);
@@ -25,6 +26,23 @@ const VoiceCoachVideo = ({
             unmuted: '/video/unmuted_video_female.mp4'
         }
     };
+
+    // Handle muted video playback based on connection and user speaking
+    useEffect(() => {
+        const mutedVideo = mutedVideoRef.current;
+        if (!mutedVideo) return;
+
+        if (isConnected && !isUserSpeaking) {
+            // Play when connected and user is not speaking
+            mutedVideo.play().catch(console.error);
+        } else {
+            // Pause when disconnected or user is speaking
+            mutedVideo.pause();
+        }
+    }, [isConnected, isUserSpeaking]);
+
+    // REMOVED: The unmuted video useEffect that was playing during connection
+    // The unmuted video should only play during intro, not during connection
 
     useEffect(() => {
         const unmutedVideo = unmutedVideoRef.current;
@@ -44,17 +62,6 @@ const VoiceCoachVideo = ({
         const timer = setTimeout(playIntro, 500);
         return () => clearTimeout(timer);
     }, []); 
-
-    useEffect(() => {
-        const mutedVideo = mutedVideoRef.current;
-        if (!mutedVideo) return;
-
-        if (isSpeaking && isConnected) {
-            mutedVideo.play().catch(console.error);
-        } else {
-            mutedVideo.pause();
-        }
-    }, [isSpeaking, isConnected]);
 
     const handleGenderChange = (gender) => {
         setSelectedGender(gender);
@@ -138,7 +145,7 @@ const VoiceCoachVideo = ({
                 playsInline
                 preload="metadata"
                 style={{
-                    opacity: isSpeaking && isConnected ? 1 : 0.7,
+                    opacity: isConnected && !isUserSpeaking ? 1 : 0.7,
                     transition: 'opacity 0.3s ease',
                     zIndex: hasPlayedIntro ? 1 : 0,
                     display: hasPlayedIntro ? 'block' : 'none'
@@ -148,7 +155,7 @@ const VoiceCoachVideo = ({
                 Your browser does not support the video tag.
             </video>
 
-            {/* Unmuted Video */}
+            {/* Unmuted Video - ONLY for intro, not during connection */}
             <video
                 ref={unmutedVideoRef}
                 className="absolute inset-0 w-full h-full object-cover"
