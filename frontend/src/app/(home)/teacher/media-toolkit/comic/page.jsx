@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { CarouselWithControls } from "@/components/ui/carousel";
 import { toast } from "sonner";
 import ComicForm from "./comic-form";
-import { generateComic, saveComicWithCloudinaryUrls, uploadBase64ComicImagesAndSave } from "./action";
+import { generateComic, saveComicWithCloudinaryUrls } from "./action";
 import { authClient } from "@/lib/auth-client";
 import PythonApiClient from "@/lib/PythonApi";
 
@@ -212,14 +212,60 @@ export default function ComicPage() {
 
     setIsSaving(true);
     try {
-      // Prepare comic data with base64 images for Cloudinary upload
+      console.log(`Starting upload of ${comicImages.length} comic panels to Cloudinary...`);
+      
+      // Upload all images to Cloudinary from client side first
+      const uploadPromises = comicImages.map(async (imageData, index) => {
+        try {
+          const response = await fetch('/api/upload-to-cloudinary', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              base64Image: imageData.url,
+              folder: 'ai-comics'
+            }),
+          });
+
+          const result = await response.json();
+          
+          if (result.success) {
+            console.log(`Successfully uploaded panel ${index + 1} to Cloudinary`);
+            return {
+              index: imageData.index,
+              url: result.url,
+              publicId: result.publicId
+            };
+          } else {
+            throw new Error(`Failed to upload panel ${index + 1}: ${result.error}`);
+          }
+        } catch (error) {
+          console.error(`Error uploading panel ${index + 1}:`, error);
+          throw error;
+        }
+      });
+
+      // Wait for all uploads to complete
+      const uploadResults = await Promise.all(uploadPromises);
+      
+      // Sort results by index to maintain order
+      uploadResults.sort((a, b) => a.index - b.index);
+      
+      const cloudinaryUrls = uploadResults.map(result => result.url);
+      const cloudinaryPublicIds = uploadResults.map(result => result.publicId);
+
+      console.log(`Successfully uploaded all ${cloudinaryUrls.length} panels to Cloudinary`);
+
+      // Now prepare comic data with Cloudinary URLs only (no base64)
       const comicData = {
         instructions: currentFormData.instructions,
         subject: currentFormData.subject,
         gradeLevel: currentFormData.gradeLevel,
         numPanels: currentFormData.numPanels,
         language: currentFormData.language,
-        images: comicImages.map(img => img.url), // Base64 data URLs for upload
+        imageUrls: cloudinaryUrls, // Cloudinary URLs only
+        cloudinaryPublicIds: cloudinaryPublicIds, // Cloudinary public IDs
         panelTexts: comicTexts.map(text => ({ // Include panel texts
           index: text.index,
           text: text.text
@@ -227,8 +273,8 @@ export default function ComicPage() {
         comicType: 'educational'
       };
 
-      // Use the NEW function that uploads base64 to Cloudinary first
-      const result = await uploadBase64ComicImagesAndSave(comicData);
+      // Use the function that only saves Cloudinary URLs (no base64 processing)
+      const result = await saveComicWithCloudinaryUrls(comicData);
       if (result.success) {
         setComicImages([]);
         setComicTexts([]); // Clear texts
@@ -386,108 +432,6 @@ export default function ComicPage() {
           </Card>
         )}
       </div>
-
-      {/* Live Viewer Dialog */}
-      <Dialog open={liveViewerOpen} onOpenChange={setLiveViewerOpen}>
-        <DialogContent className="w-[95vw] max-w-[1400px] h-[95vh] p-0">
-          <div className="flex flex-col h-full">
-            <DialogHeader className="p-6 pb-2 border-b">
-              <DialogTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-yellow-500" />
-                  Live Comic Viewer
-                  <Badge variant="secondary">{comicImages.length}/{expectedPanels} panels</Badge>
-                </div>
-              </DialogTitle>
-            </DialogHeader>
-            
-            <div className="flex-1 p-6 overflow-hidden">
-              {allPanels.length > 0 ? (
-                <CarouselWithControls
-                  items={allPanels}
-                  className="h-full"
-                  renderItem={(p) => (
-                    <div className="space-y-4">
-                      {/* Image */}
-                      <div className="rounded-xl border overflow-hidden bg-white dark:bg-gray-800">
-                        {p.isLoading ? (
-                          <div className="flex flex-col items-center justify-center h-[calc(85vh-200px)] space-y-4">
-                            <Loader2 className="h-16 w-16 animate-spin text-blue-500" />
-                            <div className="text-center">
-                              <p className="text-lg font-medium">Generating Panel {p.index}</p>
-                              <p className="text-sm text-muted-foreground">Creating your comic story...</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <img
-                            src={p.url}
-                            alt={`Comic Panel ${p.index}`}
-                            className="w-full h-auto object-contain"
-                            onError={(e) => {
-                              console.error('Image failed to load:', p.url);
-                              e.target.style.display = 'none';
-                            }}
-                          />
-                        )}
-                      </div>
-                      
-                      {/* Text Display - Separate from image */}
-                      {!p.isLoading && getPanelText(p.index) && (
-                        <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 shadow-sm">
-                          <div className="text-center">
-                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed">
-                              {getPanelText(p.index)}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center space-y-4">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-                    <p className="text-gray-600 dark:text-gray-400">Waiting for comic panels...</p>
-                    <p className="text-xs text-gray-500">Images received: {comicImages.length}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <div className="p-6 pt-2 border-t">
-              <div className="flex justify-end gap-2">
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => comicImages?.[0]?.url && handleDownload(comicImages[0].url, 'comic.png')} 
-                  disabled={!comicImages.length || isSaving}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Download First
-                </Button>
-                <Button 
-                  size="sm" 
-                  onClick={handleSave} 
-                  disabled={!comicImages.length || isSaving}
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Comic
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
