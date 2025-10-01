@@ -38,6 +38,11 @@ export async function saveComicWithCloudinaryUrls(comicData) {
       ? comicData.instructions.substring(0, 50) + (comicData.instructions.length > 50 ? '...' : '')
       : 'Untitled Comic';
 
+    // Validate that we have image URLs
+    if (!comicData.imageUrls || comicData.imageUrls.length === 0) {
+      throw new Error("No image URLs provided for saving");
+    }
+
     const comicDoc = {
       userId: new ObjectId(session.user.id),
       title: title,
@@ -45,10 +50,11 @@ export async function saveComicWithCloudinaryUrls(comicData) {
       subject: comicData.subject || "General",
       grade: comicData.gradeLevel,
       language: comicData.language || "English",
-      numPanels: comicData.numPanels,
+      numPanels: comicData.numPanels || comicData.imageUrls.length,
       comicType: comicData.comicType || "educational",
       imageUrls: comicData.imageUrls, // Cloudinary URLs only
-      cloudinaryPublicIds: comicData.cloudinaryPublicIds, // Cloudinary public IDs
+      cloudinaryPublicIds: comicData.cloudinaryPublicIds || [], // Cloudinary public IDs
+      panelTexts: comicData.panelTexts || [], // NEW: Store panel texts separately
       metadata: {
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -71,10 +77,11 @@ export async function saveComicWithCloudinaryUrls(comicData) {
       subject: comicData.subject || "General",
       grade: comicData.gradeLevel,
       language: comicData.language || "English",
-      numPanels: comicData.numPanels,
+      numPanels: comicData.numPanels || comicData.imageUrls.length,
       comicType: comicData.comicType || "educational",
       imageUrls: comicData.imageUrls,
-      cloudinaryPublicIds: comicData.cloudinaryPublicIds,
+      cloudinaryPublicIds: comicData.cloudinaryPublicIds || [],
+      panelTexts: comicData.panelTexts || [], // NEW: Include panel texts
       metadata: {
         createdAt: comicDoc.metadata.createdAt.toISOString(),
         updatedAt: comicDoc.metadata.updatedAt.toISOString(),
@@ -238,7 +245,7 @@ export async function saveComic(comicData) {
   }
 }
 
-export async function getComics() {
+export async function getComics(page = 1, limit = 20) {
   try {
     const session = await getServerSession();
     if (!session?.user?.id) {
@@ -249,9 +256,77 @@ export async function getComics() {
     const { db } = await connectToDatabase();
     const comicsCollection = db.collection("comics");
 
+    // Calculate skip value for pagination
+    const skip = (page - 1) * limit;
+
+    // Use limit and skip to avoid memory issues
     const comics = await comicsCollection
-      .find({ userId: new ObjectId(userId) }) // Filter comics by the logged-in user's ID
+      .find({ userId: new ObjectId(userId) })
       .sort({ "metadata.createdAt": -1 })
+      .limit(limit)
+      .skip(skip)
+      .toArray();
+
+    // Get total count for pagination info
+    const totalCount = await comicsCollection.countDocuments({ userId: new ObjectId(userId) });
+
+    // Convert ObjectIds to strings to make them serializable
+    const serializedComics = comics.map(comic => ({
+      ...comic,
+      _id: comic._id.toString(),
+      userId: comic.userId.toString(),
+      // Ensure nested metadata dates are also serialized
+      createdAt: comic.metadata?.createdAt?.toISOString() || new Date().toISOString(),
+      updatedAt: comic.metadata?.updatedAt?.toISOString() || new Date().toISOString()
+    }));
+
+    return {
+      success: true,
+      comics: serializedComics,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasNext: page < Math.ceil(totalCount / limit),
+        hasPrev: page > 1
+      }
+    };
+  } catch (error) {
+    console.error("Error fetching comics:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to fetch comics",
+      comics: [],
+      pagination: {
+        page: 1,
+        limit: 20,
+        total: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrev: false
+      }
+    };
+  }
+}
+
+// Alternative: Get recent comics only (last 50)
+export async function getRecentComics() {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+    
+    const userId = session.user.id;
+    const { db } = await connectToDatabase();
+    const comicsCollection = db.collection("comics");
+
+    // Get only the most recent 50 comics to avoid memory issues
+    const comics = await comicsCollection
+      .find({ userId: new ObjectId(userId) })
+      .sort({ "metadata.createdAt": -1 })
+      .limit(50)
       .toArray();
 
     // Convert ObjectIds to strings to make them serializable
@@ -269,7 +344,7 @@ export async function getComics() {
       comics: serializedComics
     };
   } catch (error) {
-    console.error("Error fetching comics:", error);
+    console.error("Error fetching recent comics:", error);
     return {
       success: false,
       message: error.message || "Failed to fetch comics",

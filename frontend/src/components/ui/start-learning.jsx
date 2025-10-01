@@ -60,53 +60,63 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
     const solutions = [];
     let currentQuestion = null;
     let inSolutionsSection = false;
+    let questionCounter = 1;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       
       // Check if we're entering solutions section
-      if (line === '---') {
+      if (line === '---' || line.includes('**Solutions**') || line.includes('**الحلول**')) {
         inSolutionsSection = true;
         continue;
       }
 
       if (inSolutionsSection) {
-        // Skip the "Solutions" header
-        if (line.includes('**Solutions**') || line.includes('**الحلول**')) {
-          continue;
-        }
-        
         // Parse solution lines
         if (line.match(/^\d+\./)) {
           solutions.push(line);
         }
       } else {
-        // Parse question lines - fixed regex to match actual format
-        if (line.match(/^\d+\./) && !line.includes('A)') && !line.includes('B)') && !line.includes('C)') && !line.includes('D)')) {
+        // Look for question patterns - both numbered and unnumbered
+        const isQuestionStart = line.match(/^\d+\./) || 
+                               line.match(/^[A-Z]\./) ||
+                               line.match(/^[أ-ي]\./) || // Arabic letters
+                               (line.includes('؟') && line.length > 10) || // Arabic question mark
+                               (line.includes('?') && line.length > 10) || // English question mark
+                               line.match(/^السؤال/) || // Arabic "Question"
+                               line.match(/^Question/); // English "Question"
+
+        if (isQuestionStart) {
           // Save previous question if exists
           if (currentQuestion) {
             questions.push(currentQuestion);
           }
           
           // Start new question
-          const questionText = line.replace(/^\d+\.\s*/, '');
+          const questionText = line.replace(/^(\d+\.|[A-Z]\.|[أ-ي]\.|السؤال\s*\d*:?\s*|Question\s*\d*:?\s*)/, '');
           currentQuestion = {
-            number: line.match(/^(\d+)\./)[1],
+            number: questionCounter.toString(),
             text: questionText,
             type: 'unknown',
             options: []
           };
+          questionCounter++;
 
           // Check if this is a True/False question
           if (questionText.toLowerCase().includes('true or false') || 
-              questionText.toLowerCase().includes('true/false')) {
+              questionText.toLowerCase().includes('true/false') ||
+              questionText.includes('صح أم خطأ') ||
+              questionText.includes('صحيح أم خاطئ')) {
             currentQuestion.type = 'true_false';
             currentQuestion.options = ['True', 'False'];
           } else if (questionText.toLowerCase().includes('briefly explain') ||
                      questionText.toLowerCase().includes('explain') ||
                      questionText.toLowerCase().includes('describe') ||
                      questionText.toLowerCase().includes('what is meant by') ||
-                     questionText.toLowerCase().includes('how')) {
+                     questionText.toLowerCase().includes('how') ||
+                     questionText.includes('اشرح') ||
+                     questionText.includes('وضح') ||
+                     questionText.includes('ما المقصود')) {
             currentQuestion.type = 'short_answer';
           } else {
             currentQuestion.type = 'mcq';
@@ -114,7 +124,7 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
         } else if (currentQuestion && line.match(/^[A-D]\)/)) {
           // This is an option for the current MCQ question
           currentQuestion.options.push(line);
-        } else if (currentQuestion && currentQuestion.type === 'short_answer' && line && !line.match(/^\d+\./)) {
+        } else if (currentQuestion && currentQuestion.type === 'short_answer' && line && !line.match(/^(\d+\.|[A-Z]\.|[أ-ي]\.|السؤال|Question)/)) {
           // This might be additional text for the short answer question
           currentQuestion.text += ' ' + line;
         }
@@ -126,14 +136,45 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
       questions.push(currentQuestion);
     }
 
+    // If no questions were found with the above logic, try to extract content as a single question
+    if (questions.length === 0 && content.trim()) {
+      // Check if this is a lesson plan rather than an assessment
+      if (content.includes('**عنوان الاختبار**') || content.includes('**Test Title**')) {
+        // This is an assessment header, but no questions found
+        return { questions: [], solutions: [] };
+      } else {
+        // Treat the entire content as a single question for completion
+        questions.push({
+          number: '1',
+          text: 'Review the content and mark as complete',
+          type: 'content_review',
+          options: []
+        });
+      }
+    }
+
     return { questions, solutions };
   };
 
-  const { questions, solutions } = parseAssessmentContent(assessment?.content || assessment?.generatedContent || assessment?.assessmentContent);
+  // Try multiple possible content fields - same as library-dialog.jsx
+  const assessmentContent = assessment?.content || 
+                           assessment?.generatedContent || 
+                           assessment?.assessmentContent || 
+                           assessment?.instruction || '';
+
+  const { questions, solutions } = parseAssessmentContent(assessmentContent);
   
   // Debug logging
   console.log('=== InteractiveAssessment Debug ===');
-  console.log('Assessment content:', assessment?.content?.substring(0, 200));
+  console.log('Assessment object:', assessment);
+  console.log('Assessment content found:', assessmentContent?.substring(0, 200));
+  console.log('Content fields:', {
+    content: assessment?.content,
+    generatedContent: assessment?.generatedContent,
+    assessmentContent: assessment?.assessmentContent,
+    instruction: assessment?.instruction,
+    topic: assessment?.topic
+  });
   console.log('Parsed questions:', questions);
   console.log('Student answers:', studentAnswers);
 
@@ -300,8 +341,35 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
             <div className="text-center py-8 text-muted-foreground">
               <div>
                 <FileCheck className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-                <p className="text-sm">No questions found in assessment content</p>
-                <p className="text-xs text-muted-foreground mt-2">Content: {assessment?.content?.substring(0, 100)}...</p>
+                <p className="text-sm">No assessment questions found</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  This appears to be a lesson plan rather than an assessment.
+                </p>
+                
+                {/* Show available content from description and topic */}
+                {(assessment.description || assessment.topic) && (
+                  <div className="mt-6 p-4 bg-muted/50 rounded-lg text-left max-w-2xl mx-auto">
+                    <h4 className="font-medium mb-2 text-foreground">Content:</h4>
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      {assessment.description && (
+                        <p className="text-sm text-foreground mb-2">
+                          <strong>Description:</strong> {assessment.description}
+                        </p>
+                      )}
+                      {assessment.topic && (
+                        <p className="text-sm text-foreground">
+                          <strong>Topic:</strong> {assessment.topic}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="mt-6">
+                  <p className="text-xs text-muted-foreground">
+                    Since no questions are available, you can mark this content as completed.
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -317,6 +385,24 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
           >
             <FileCheck className="mr-2 h-4 w-4" />
             Submit Assessment
+          </Button>
+        </div>
+      )}
+      
+      {/* Show "Mark as Complete" button when no questions are found */}
+      {questions.length === 0 && (
+        <div className="mt-6 flex justify-center flex-shrink-0">
+          <Button 
+            onClick={() => {
+              // Call the parent's completion handler with a default score
+              if (onSubmit) {
+                onSubmit(100, 1, 1, {}); // 100% score for content-only completion
+              }
+            }}
+            className="bg-green-600 hover:bg-green-700 px-8"
+          >
+            <CheckCircle className="mr-2 h-4 w-4" />
+            Mark as Complete
           </Button>
         </div>
       )}
@@ -551,7 +637,7 @@ export default function StartLearning({
   
   
   const contentId = content?.id || content?._id;
-  const contentType = content?.type || content?.contentType;
+  const contentType = content?.resourceType || content?.type || content?.contentType;
   
 
 
@@ -827,7 +913,7 @@ export default function StartLearning({
 
   const renderContentPreview = () => {
     // Show score screen for completed assessments
-    if (content.type === 'assessment' && showScore && assessmentResults) {
+    if (content.resourceType === 'assessment' && showScore && assessmentResults) {
       return (
         <div className="h-full flex flex-col items-center justify-center text-center">
           <div className="mb-6">
@@ -863,7 +949,7 @@ export default function StartLearning({
     }
 
     // Show completion screen for other content types
-    if (isCompleted && content.type !== 'assessment') {
+    if (isCompleted && content.resourceType !== 'assessment') {
       return (
         <div className="h-full flex flex-col items-center justify-center text-center">
           <div className="mb-6">
@@ -880,8 +966,12 @@ export default function StartLearning({
       );
     }
 
-    switch (content.type) {
+    // Use resourceType instead of type for the switch statement
+    const contentType = content.resourceType || content.type;
+    
+    switch (contentType) {
       case 'content':
+      case 'lesson plan':
         return (
           <div className="h-full flex flex-col">
             <div className="flex-1 min-h-0 overflow-hidden">
@@ -910,7 +1000,7 @@ export default function StartLearning({
         );
         
       case 'slides':
-          return (
+        return (
           <div className="h-full flex flex-col">
             <div className="flex-1 min-h-0 overflow-hidden">
               <PPTXViewer
@@ -926,7 +1016,7 @@ export default function StartLearning({
                 }}
                 isSaving={false}
               />
-              </div>
+            </div>
             <div className="mt-4 flex justify-center flex-shrink-0">
               <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
                 {isLoading ? (
@@ -936,8 +1026,8 @@ export default function StartLearning({
                   </>
                 ) : (
                   <>
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Mark as Complete
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Mark as Complete
                   </>
                 )}
               </Button>
@@ -949,16 +1039,16 @@ export default function StartLearning({
         return (
           <div className="h-full flex flex-col">
             <div className="flex-1 min-h-0 overflow-hidden">
-            <VideoPreview
-              videoUrl={content.videoUrl || content.url}
-              title={content.title}
-              slidesCount={content.slidesCount}
-              status="completed"
-              voiceName={content.voiceName}
-              avatarName={content.talkingPhotoName}
-              videoId={content.videoId}
-              isEditable={false}
-            />
+              <VideoPreview
+                videoUrl={content.videoUrl || content.url}
+                title={content.title}
+                slidesCount={content.slidesCount}
+                status="completed"
+                voiceName={content.voiceName}
+                avatarName={content.talkingPhotoName}
+                videoId={content.videoId}
+                isEditable={false}
+              />
             </div>
             <div className="mt-4 flex justify-center flex-shrink-0">
               <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
@@ -969,8 +1059,8 @@ export default function StartLearning({
                   </>
                 ) : (
                   <>
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Mark as Complete
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Mark as Complete
                   </>
                 )}
               </Button>
@@ -980,7 +1070,7 @@ export default function StartLearning({
       
       case 'comic':
         // Check if this is a comic lesson
-        if (content.contentType === 'comic') {
+        if (content.resourceType === 'comic' || content.contentType === 'comic') {
           // Try multiple sources for comic images
           let comicImages = [];
           
@@ -994,29 +1084,29 @@ export default function StartLearning({
             comicImages = content.cloudinaryPublicIds.map(id => `https://res.cloudinary.com/demo/image/upload/${id}`);
           }
         
-        if (comicImages.length === 0) {
-          return (
+          if (comicImages.length === 0) {
+            return (
               <div className="text-center py-8 text-foreground h-full flex items-center justify-center">
-              <div>
-                <BookOpen className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-                <p className="text-sm">No comic panels available</p>
+                <div>
+                  <BookOpen className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+                  <p className="text-sm">No comic panels available</p>
+                </div>
               </div>
-            </div>
-          );
-        }
+            );
+          }
 
-        return (
-          <div className="h-full flex flex-col">
+          return (
+            <div className="h-full flex flex-col">
               <div className="flex-1 min-h-0 overflow-hidden">
-              <CarouselWithControls
-                items={comicImages.map((url, i) => ({ url, index: i + 1 }))}
-                className="h-full"
-                renderItem={(p) => (
-                  <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-full">
-                    <img 
-                      src={p.url} 
-                      alt={`Panel ${p.index}`} 
-                      className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
+                <CarouselWithControls
+                  items={comicImages.map((url, i) => ({ url, index: i + 1 }))}
+                  className="h-full"
+                  renderItem={(p) => (
+                    <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-full">
+                      <img 
+                        src={p.url} 
+                        alt={`Panel ${p.index}`} 
+                        className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
                         onError={(e) => {
                           e.target.style.display = 'none';
                           const fallbackDiv = document.createElement('div');
@@ -1034,11 +1124,11 @@ export default function StartLearning({
                           `;
                           e.target.parentNode.appendChild(fallbackDiv);
                         }}
-                    />
-                  </div>
-                )}
-              />
-            </div>
+                      />
+                    </div>
+                  )}
+                />
+              </div>
               <div className="mt-4 flex justify-center flex-shrink-0">
                 <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
                   {isLoading ? (
@@ -1048,14 +1138,14 @@ export default function StartLearning({
                     </>
                   ) : (
                     <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
+                      <CheckCircle className="mr-2 h-4 w-4" />
                       Mark as Complete
                     </>
                   )}
                 </Button>
               </div>
-          </div>
-        );
+            </div>
+          );
         }
         
         // Fallback for non-comic content
@@ -1070,34 +1160,34 @@ export default function StartLearning({
       
       case 'image':
         // Check if this is an image lesson
-        if (content.contentType === 'image') {
-        return (
-          <div className="h-full flex flex-col">
+        if (content.resourceType === 'image' || content.contentType === 'image') {
+          return (
+            <div className="h-full flex flex-col">
               <div className="flex-1 min-h-0 overflow-hidden">
                 <div className="flex flex-col h-full">
-            <div className="flex-1 min-h-0 flex items-center justify-center">
-              <div className="relative max-w-full max-h-full">
+                  <div className="flex-1 min-h-0 flex items-center justify-center">
+                    <div className="relative max-w-full max-h-full">
                       {content.imageUrl ? (
-                <img 
-                  src={content.imageUrl} 
-                  alt={content.title}
-                  className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+                        <img 
+                          src={content.imageUrl} 
+                          alt={content.title}
+                          className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
                           loading="lazy"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    const fallbackDiv = document.createElement('div');
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            const fallbackDiv = document.createElement('div');
                             fallbackDiv.className = 'text-center py-8 text-foreground';
-                    fallbackDiv.innerHTML = `
-                      <div>
-                        <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                        </svg>
-                        <p class="text-sm">Image failed to load</p>
-                      </div>
-                    `;
-                    e.target.parentNode.appendChild(fallbackDiv);
-                  }}
-                />
+                            fallbackDiv.innerHTML = `
+                              <div>
+                                <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                <p class="text-sm">Image failed to load</p>
+                              </div>
+                            `;
+                            e.target.parentNode.appendChild(fallbackDiv);
+                          }}
+                        />
                       ) : content.imageBase64 ? (
                         <img 
                           src={`data:image/png;base64,${content.imageBase64}`} 
@@ -1111,17 +1201,17 @@ export default function StartLearning({
                           <p className="text-sm">No image data available</p>
                         </div>
                       )}
-              </div>
-            </div>
-            {content.instructions && (
+                    </div>
+                  </div>
+                  {content.instructions && (
                     <div className="p-4 bg-muted/50 border-t">
                       <p className="text-sm text-muted-foreground">{content.instructions}</p>
-              </div>
-            )}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="mt-4 flex justify-center flex-shrink-0">
-              <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
+                <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
                   {isLoading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1129,14 +1219,14 @@ export default function StartLearning({
                     </>
                   ) : (
                     <>
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Mark as Complete
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Mark as Complete
                     </>
                   )}
-              </Button>
+                </Button>
+              </div>
             </div>
-          </div>
-        );
+          );
         }
       
         // Fallback for non-image content
@@ -1200,7 +1290,10 @@ export default function StartLearning({
           <div className="text-center py-8 text-foreground h-full flex items-center justify-center">
             <div>
               <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-              <p className="text-sm">Content type not supported: {content.type}</p>
+              <p className="text-sm">Content type not supported: {contentType}</p>
+              <p className="text-xs text-muted-foreground mt-2">
+                Available content: {content?.content?.substring(0, 100)}...
+              </p>
             </div>
           </div>
         );
@@ -1208,7 +1301,7 @@ export default function StartLearning({
   };
 
   const renderNavigation = () => {
-    if (isCompleted || content.type === 'assessment') {
+    if (isCompleted || content.resourceType === 'assessment') {
       return null;
     }
 
@@ -1225,9 +1318,9 @@ export default function StartLearning({
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
             Step {currentStep + 1} of {progress.totalSteps}
-        </span>
+          </span>
           <Badge variant="outline" className="ml-2">
-            {contentTypes[content.type]?.label}
+            {contentTypes[content.resourceType || content.type]?.label}
           </Badge>
         </div>
         
@@ -1250,7 +1343,7 @@ export default function StartLearning({
               <Eye className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               <span className="text-foreground">{isCompleted ? 'Review Content' : 'Learning Mode'}</span>
               <Badge variant="outline" className="ml-2">
-                {contentTypes[content.type]?.label}
+                {contentTypes[content.resourceType || content.type]?.label}
               </Badge>
               {isCompleted && (
                 <Badge className="bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 border-green-200 dark:border-green-700">

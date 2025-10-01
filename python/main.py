@@ -427,7 +427,6 @@ class AssessmentSchema(BaseModel):
     question_types: Optional[List[str]] = Field(None, description="List of question types when using mixed assessments.", example=["mcq", "true_false"])
     question_distribution: Optional[Dict[str, int]] = Field(None, description="Distribution of questions by type.", example={"mcq": 6, "true_false": 2, "short_answer": 2})
     test_duration: str = Field(..., description="The estimated duration for completing the test.", example="30 minutes")
-    number_of_questions: int = Field(..., description="The exact number of questions to generate.", example=10)
     difficulty_level: str = Field(..., description="The difficulty level of the questions.", example="Medium", pattern="^(Easy|Medium|Hard)$")
     learning_objectives: Optional[str] = Field("", description="Learning objectives for the assessment.")
     anxiety_triggers: Optional[str] = Field("", description="Anxiety considerations to account for.")
@@ -467,14 +466,6 @@ async def assessment_endpoint(schema: AssessmentSchema):
         
         # Validate and process mixed question types
         if schema.assessment_type == "Mixed" and schema.question_types and schema.question_distribution:
-            # Validate that the distribution sums to the total number of questions
-            total_distributed = sum(schema.question_distribution.values())
-            if total_distributed != schema.number_of_questions:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Question distribution ({total_distributed}) does not match total questions ({schema.number_of_questions})"
-                )
-            
             logger.info(f"Generating mixed assessment for topic: {schema.topic}")
             logger.info(f"Question distribution: {schema.question_distribution}")
         else:
@@ -651,7 +642,7 @@ async def presentation_endpoint(schema: PresentationSchema):
 class ImageGenSchema(BaseModel):
     topic: str = Field(..., description="Topic for the image")
     grade_level: str = Field(..., description="Grade level")
-    preferred_visual_type: str = Field(..., description="Visual type, e.g., image/chart/diagram")
+    preferred_visual_type: str = Field(..., description="Visual type: 'image' for general images, 'chart' for data visualizations, 'diagram' for technical diagrams")
     subject: str = Field(..., description="Subject")
     instructions: str = Field(..., description="Detailed instructions")
     difficulty_flag: str = Field("false", description="true/false flag")
@@ -662,6 +653,10 @@ async def image_generation_endpoint(schema: ImageGenSchema):
     try:
         generator = ImageGenerator()
         schema_dict = schema.model_dump()
+        
+        # Log the visual type for debugging
+        logger.info(f"Generating {schema_dict['preferred_visual_type']} for topic: {schema_dict['topic']}")
+        
         image_b64 = generator.generate_image_from_schema(schema_dict)
         if not image_b64:
             raise HTTPException(status_code=500, detail="Image generation failed.")
@@ -841,7 +836,7 @@ async def comics_stream_endpoint(schema: ComicsSchema, request: Request):
             }):
                 yield chunk
 
-            # 3) Generate images with footer text for each panel
+            # 3) Generate images WITHOUT footer text for each panel
             for i, panel_data in enumerate(panels[:schema.num_panels]):
                 # Check if client disconnected
                 if await request.is_disconnected():
@@ -851,7 +846,7 @@ async def comics_stream_endpoint(schema: ComicsSchema, request: Request):
                 panel_index = i + 1
                 logger.info(f"Processing panel {panel_index}/{len(panels)}")
                 
-                # Emit the panel information
+                # Emit the panel information with separate text
                 async for chunk in send({
                     "type": "panel_info",
                     "index": panel_index,
@@ -862,14 +857,14 @@ async def comics_stream_endpoint(schema: ComicsSchema, request: Request):
                     yield chunk
 
                 try:
-                    # Generate panel image with footer text using enhanced function
+                    # Generate panel image WITHOUT footer text
                     logger.info(f"Generating image for panel {panel_index}...")
-                    enhanced_image_b64 = await run_in_threadpool(
+                    image_b64 = await run_in_threadpool(
                         generate_comic_image, 
                         panel_data['prompt'], 
                         panel_index,
-                        panel_data['footer_text'],  # Include footer text
-                        schema.language  # Include language parameter
+                        "",  # No footer text - we'll handle text separately
+                        schema.language
                     )
                     
                     # Check for disconnection again
@@ -877,22 +872,22 @@ async def comics_stream_endpoint(schema: ComicsSchema, request: Request):
                         logger.info("Client disconnected after image generation")
                         break
                     
-                    if enhanced_image_b64:
+                    if image_b64:
                         # Create data URL for the image
-                        image_data_url = f"data:image/png;base64,{enhanced_image_b64}"
+                        image_data_url = f"data:image/png;base64,{image_b64}"
                         
-                        # Send the enhanced image with footer text
+                        # Send the image and text separately
                         async for chunk in send({
                             "type": "panel_image",
                             "index": panel_index,
                             "url": image_data_url,
-                            "has_footer": bool(panel_data['footer_text']),
                             "footer_text": panel_data['footer_text'],
+                            "has_footer": bool(panel_data['footer_text']),
                             "prompt_used": panel_data['prompt'][:100] + "..." if len(panel_data['prompt']) > 100 else panel_data['prompt']
                         }):
                             yield chunk
                             
-                        logger.info(f"Panel {panel_index} completed successfully with footer text")
+                        logger.info(f"Panel {panel_index} completed successfully")
                     else:
                         error_msg = f"Failed to generate image for panel {panel_index}"
                         logger.error(error_msg)
@@ -1012,8 +1007,11 @@ async def teacher_bulk_data_endpoint(schema: TeacherBulkDataSchema):
 
 
 # ==============================
-# 10. VIDEO PRESENTATION ENDPOINT
+# 10. VIDEO PRESENTATION ENDPOINT (UPDATED)
 # ==============================
+
+# Global dictionary to store video generation tasks
+video_generation_tasks: Dict[str, Dict[str, Any]] = {}
 
 @app.post("/video_presentation_endpoint", response_model=Dict[str, Any])
 async def video_presentation_endpoint(
@@ -1023,11 +1021,15 @@ async def video_presentation_endpoint(
     title: str = Form(...)
 ):
     """
-    Generates a video presentation from PowerPoint using HeyGen API.
+    Starts video generation and returns immediately with task ID.
+    Use check_video_status endpoint to poll for completion.
     """
     try:
         logger.info(f"Video presentation request received: {title}")
         logger.info(f"Voice ID: {voice_id}, Talking Photo ID: {talking_photo_id}")
+        
+        # Generate unique task ID
+        task_id = str(uuid.uuid4())
         
         # Save uploaded file temporarily
         import tempfile
@@ -1038,37 +1040,119 @@ async def video_presentation_endpoint(
             temp_file.write(content)
             temp_file_path = temp_file.name
         
-        try:
-            # Initialize the HeyGen video converter
-            converter = PPTXToHeyGenVideo(
-                pptx_avatar_id=talking_photo_id,
-                pptx_voice_id=voice_id
-            )
-            
-            # Convert the presentation to video
-            result = converter.convert(
-                pptx_path=temp_file_path,
-                title=title
-            )
-            
-            logger.info(f"Video generation completed: {result}")
-            
-            return {
-                "success": True,
-                "video_id": result.get("video_id"),
-                "video_url": result.get("video_url"),
-                "slides_count": result.get("slides_count"),
-                "title": title
-            }
-            
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_file_path):
-                os.unlink(temp_file_path)
+        # Store task info
+        video_generation_tasks[task_id] = {
+            "status": "processing",
+            "title": title,
+            "voice_id": voice_id,
+            "talking_photo_id": talking_photo_id,
+            "temp_file_path": temp_file_path,
+            "created_at": datetime.now().isoformat(),
+            "error": None
+        }
+        
+        # Start video generation in background
+        asyncio.create_task(generate_video_background(task_id, temp_file_path, voice_id, talking_photo_id, title))
+        
+        logger.info(f"Video generation task started with ID: {task_id}")
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "status": "processing",
+            "message": "Video generation started. Use the task_id to check status."
+        }
                 
     except Exception as e:
         logger.error(f"Error in video presentation endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Video generation failed: {str(e)}")
+
+async def generate_video_background(task_id: str, temp_file_path: str, voice_id: str, talking_photo_id: str, title: str):
+    """Background task to generate video"""
+    try:
+        logger.info(f"Starting background video generation for task: {task_id}")
+        
+        # Update task status
+        video_generation_tasks[task_id]["status"] = "generating"
+        
+        # Initialize the HeyGen video converter
+        converter = PPTXToHeyGenVideo(
+            pptx_avatar_id=talking_photo_id,
+            pptx_voice_id=voice_id
+        )
+        
+        # Convert the presentation to video (this is the long-running operation)
+        result = await run_in_threadpool(
+            converter.convert,
+            pptx_path=temp_file_path,
+            title=title
+        )
+        
+        # Update task with results
+        video_generation_tasks[task_id].update({
+            "status": "completed",
+            "video_id": result.get("video_id"),
+            "video_url": result.get("video_url"),
+            "slides_count": result.get("slides_count"),
+            "completed_at": datetime.now().isoformat()
+        })
+        
+        logger.info(f"Video generation completed for task: {task_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in background video generation for task {task_id}: {e}", exc_info=True)
+        video_generation_tasks[task_id].update({
+            "status": "failed",
+            "error": str(e),
+            "failed_at": datetime.now().isoformat()
+        })
+    finally:
+        # Clean up temporary file
+        if os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+                logger.info(f"Cleaned up temporary file: {temp_file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
+
+@app.get("/check_video_status/{task_id}", response_model=Dict[str, Any])
+async def check_video_status(task_id: str):
+    """
+    Check the status of a video generation task.
+    """
+    try:
+        if task_id not in video_generation_tasks:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        task_info = video_generation_tasks[task_id]
+        
+        response = {
+            "success": True,
+            "task_id": task_id,
+            "status": task_info["status"],
+            "title": task_info["title"]
+        }
+        
+        if task_info["status"] == "completed":
+            response.update({
+                "video_id": task_info.get("video_id"),
+                "video_url": task_info.get("video_url"),
+                "slides_count": task_info.get("slides_count"),
+                "completed_at": task_info.get("completed_at")
+            })
+        elif task_info["status"] == "failed":
+            response.update({
+                "error": task_info.get("error"),
+                "failed_at": task_info.get("failed_at")
+            })
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking video status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ==============================
 # 11. TEACHER CHAT ENDPOINT (Missing - should use AI_tutor.py)

@@ -60,55 +60,82 @@ export async function getAllConversations() {
       .sort({ updatedAt: -1, createdAt: -1 })
       .toArray();
 
+    // Get all unique user IDs
+    const studentIds = [...new Set(studentConversations.map(conv => conv.studentId?.toString()).filter(Boolean))];
+    const teacherIds = [...new Set(teacherConversations.map(conv => conv.teacherId?.toString()).filter(Boolean))];
+    const allUserIds = [...studentIds, ...teacherIds];
+
+    // Fetch user names
+    const users = await db.collection('user')
+      .find({ _id: { $in: allUserIds.map(id => new ObjectId(id)) } })
+      .project({ _id: 1, name: 1, email: 1 })
+      .toArray();
+
+    // Create user lookup map
+    const userMap = users.reduce((acc, user) => {
+      acc[user._id.toString()] = { name: user.name, email: user.email };
+      return acc;
+    }, {});
+
     // Transform student conversations to unified format
-    const transformedStudentConversations = studentConversations.map(conv => ({
-      _id: conv._id.toString(),
-      type: 'student',
-      userId: conv.studentId?.toString(),
-      sessionId: conv.sessionId,
-      title: conv.title,
-      sessionType: conv.sessionType || 'text',
-      messages: conv.messages || [],
-      messageCount: conv.messages?.length || 0,
-      lastMessage: conv.messages && conv.messages.length > 0 
-        ? conv.messages[conv.messages.length - 1].content 
-        : "No messages",
-      lastMessageAt: conv.metadata?.lastMessageAt || conv.metadata?.createdAt,
-      createdAt: conv.metadata?.createdAt,
-      conversationStats: conv.conversationStats || {
-        totalMessages: conv.messages?.length || 0,
-        userMessages: conv.messages?.filter(m => m.role === 'user').length || 0,
-        aiMessages: conv.messages?.filter(m => m.role === 'assistant').length || 0,
-        totalDuration: 0
-      },
-      uploadedFiles: conv.uploadedFiles || [],
-      studentData: conv.studentData || {}
-    }));
+    const transformedStudentConversations = studentConversations.map(conv => {
+      const userInfo = userMap[conv.studentId?.toString()] || { name: 'Unknown User', email: 'Unknown' };
+      return {
+        _id: conv._id.toString(),
+        type: 'student',
+        userId: conv.studentId?.toString(),
+        userName: userInfo.name,
+        userEmail: userInfo.email,
+        sessionId: conv.sessionId,
+        title: conv.title,
+        sessionType: conv.sessionType || 'text',
+        messages: conv.messages || [],
+        messageCount: conv.messages?.length || 0,
+        lastMessage: conv.messages && conv.messages.length > 0 
+          ? conv.messages[conv.messages.length - 1].content 
+          : "No messages",
+        lastMessageAt: conv.metadata?.lastMessageAt || conv.metadata?.createdAt,
+        createdAt: conv.metadata?.createdAt,
+        conversationStats: conv.conversationStats || {
+          totalMessages: conv.messages?.length || 0,
+          userMessages: conv.messages?.filter(m => m.role === 'user').length || 0,
+          aiMessages: conv.messages?.filter(m => m.role === 'assistant').length || 0,
+          totalDuration: 0
+        },
+        uploadedFiles: conv.uploadedFiles || [],
+        studentData: conv.studentData || {}
+      };
+    });
 
     // Transform teacher conversations to unified format
-    const transformedTeacherConversations = teacherConversations.map(conv => ({
-      _id: conv._id.toString(),
-      type: 'teacher',
-      userId: conv.teacherId?.toString(),
-      sessionId: conv.sessionId,
-      title: conv.title || `Conversation ${conv.sessionId.split('_').pop()}`,
-      sessionType: conv.sessionType || 'text',
-      messages: conv.messages || [],
-      messageCount: conv.messages?.length || 0,
-      lastMessage: conv.messages && conv.messages.length > 0 
-        ? conv.messages[conv.messages.length - 1].content 
-        : "No messages",
-      lastMessageAt: conv.updatedAt || conv.createdAt,
-      createdAt: conv.createdAt,
-      conversationStats: conv.conversationStats || {
-        totalMessages: conv.messages?.length || 0,
-        userMessages: conv.messages?.filter(m => m.role === 'user').length || 0,
-        aiMessages: conv.messages?.filter(m => m.role === 'assistant').length || 0,
-        totalDuration: 0
-      },
-      uploadedFiles: conv.uploadedFiles || [],
-      teacherData: conv.teacherData || {}
-    }));
+    const transformedTeacherConversations = teacherConversations.map(conv => {
+      const userInfo = userMap[conv.teacherId?.toString()] || { name: 'Unknown User', email: 'Unknown' };
+      return {
+        _id: conv._id.toString(),
+        type: 'teacher',
+        userId: conv.teacherId?.toString(),
+        userName: userInfo.name,
+        userEmail: userInfo.email,
+        sessionId: conv.sessionId,
+        title: conv.title || `Conversation ${conv.sessionId.split('_').pop()}`,
+        sessionType: conv.sessionType || 'text',
+        messages: conv.messages || [],
+        messageCount: conv.messages?.length || 0,
+        lastMessage: conv.messages && conv.messages.length > 0 
+          ? conv.messages[conv.messages.length - 1].content 
+          : "No messages",
+        lastMessageAt: conv.updatedAt || conv.createdAt,
+        createdAt: conv.createdAt,
+        conversationStats: conv.conversationStats || {
+          totalMessages: conv.messages?.length || 0,
+          userMessages: conv.messages?.filter(m => m.role === 'user').length || 0,
+          aiMessages: conv.messages?.filter(m => m.role === 'assistant').length || 0,
+          totalDuration: 0
+        },
+        uploadedFiles: conv.uploadedFiles || [],
+        teacherData: conv.teacherData || {}
+      };
+    });
 
     // Combine and sort all conversations
     const allConversations = [...transformedStudentConversations, ...transformedTeacherConversations]
@@ -153,29 +180,49 @@ export async function getConversationsByType(formData) {
         .sort({ updatedAt: -1, createdAt: -1 })
         .toArray();
 
-      conversations = teacherConversations.map(conv => ({
-        _id: conv._id.toString(),
-        type: 'teacher',
-        userId: conv.teacherId?.toString(),
-        sessionId: conv.sessionId,
-        title: conv.title || `Conversation ${conv.sessionId.split('_').pop()}`,
-        sessionType: conv.sessionType || 'text',
-        messages: conv.messages || [],
-        messageCount: conv.messages?.length || 0,
-        lastMessage: conv.messages && conv.messages.length > 0 
-          ? conv.messages[conv.messages.length - 1].content 
-          : "No messages",
-        lastMessageAt: conv.updatedAt || conv.createdAt,
-        createdAt: conv.createdAt,
-        conversationStats: conv.conversationStats || {
-          totalMessages: conv.messages?.length || 0,
-          userMessages: conv.messages?.filter(m => m.role === 'user').length || 0,
-          aiMessages: conv.messages?.filter(m => m.role === 'assistant').length || 0,
-          totalDuration: 0
-        },
-        uploadedFiles: conv.uploadedFiles || [],
-        teacherData: conv.teacherData || {}
-      }));
+      // Get teacher user IDs
+      const teacherIds = [...new Set(teacherConversations.map(conv => conv.teacherId?.toString()).filter(Boolean))];
+      
+      // Fetch teacher user names
+      const users = await db.collection('user')
+        .find({ _id: { $in: teacherIds.map(id => new ObjectId(id)) } })
+        .project({ _id: 1, name: 1, email: 1 })
+        .toArray();
+
+      // Create user lookup map
+      const userMap = users.reduce((acc, user) => {
+        acc[user._id.toString()] = { name: user.name, email: user.email };
+        return acc;
+      }, {});
+
+      conversations = teacherConversations.map(conv => {
+        const userInfo = userMap[conv.teacherId?.toString()] || { name: 'Unknown User', email: 'Unknown' };
+        return {
+          _id: conv._id.toString(),
+          type: 'teacher',
+          userId: conv.teacherId?.toString(),
+          userName: userInfo.name,
+          userEmail: userInfo.email,
+          sessionId: conv.sessionId,
+          title: conv.title || `Conversation ${conv.sessionId.split('_').pop()}`,
+          sessionType: conv.sessionType || 'text',
+          messages: conv.messages || [],
+          messageCount: conv.messages?.length || 0,
+          lastMessage: conv.messages && conv.messages.length > 0 
+            ? conv.messages[conv.messages.length - 1].content 
+            : "No messages",
+          lastMessageAt: conv.updatedAt || conv.createdAt,
+          createdAt: conv.createdAt,
+          conversationStats: conv.conversationStats || {
+            totalMessages: conv.messages?.length || 0,
+            userMessages: conv.messages?.filter(m => m.role === 'user').length || 0,
+            aiMessages: conv.messages?.filter(m => m.role === 'assistant').length || 0,
+            totalDuration: 0
+          },
+          uploadedFiles: conv.uploadedFiles || [],
+          teacherData: conv.teacherData || {}
+        };
+      });
     } else if (type === 'student') {
       // Get only student conversations
       const studentConversations = await db.collection('student_conversations')
@@ -183,29 +230,49 @@ export async function getConversationsByType(formData) {
         .sort({ 'metadata.lastMessageAt': -1 })
         .toArray();
 
-      conversations = studentConversations.map(conv => ({
-        _id: conv._id.toString(),
-        type: 'student',
-        userId: conv.studentId?.toString(),
-        sessionId: conv.sessionId,
-        title: conv.title,
-        sessionType: conv.sessionType || 'text',
-        messages: conv.messages || [],
-        messageCount: conv.messages?.length || 0,
-        lastMessage: conv.messages && conv.messages.length > 0 
-          ? conv.messages[conv.messages.length - 1].content 
-          : "No messages",
-        lastMessageAt: conv.metadata?.lastMessageAt || conv.metadata?.createdAt,
-        createdAt: conv.metadata?.createdAt,
-        conversationStats: conv.conversationStats || {
-          totalMessages: conv.messages?.length || 0,
-          userMessages: conv.messages?.filter(m => m.role === 'user').length || 0,
-          aiMessages: conv.messages?.filter(m => m.role === 'assistant').length || 0,
-          totalDuration: 0
-        },
-        uploadedFiles: conv.uploadedFiles || [],
-        studentData: conv.studentData || {}
-      }));
+      // Get student user IDs
+      const studentIds = [...new Set(studentConversations.map(conv => conv.studentId?.toString()).filter(Boolean))];
+      
+      // Fetch student user names
+      const users = await db.collection('user')
+        .find({ _id: { $in: studentIds.map(id => new ObjectId(id)) } })
+        .project({ _id: 1, name: 1, email: 1 })
+        .toArray();
+
+      // Create user lookup map
+      const userMap = users.reduce((acc, user) => {
+        acc[user._id.toString()] = { name: user.name, email: user.email };
+        return acc;
+      }, {});
+
+      conversations = studentConversations.map(conv => {
+        const userInfo = userMap[conv.studentId?.toString()] || { name: 'Unknown User', email: 'Unknown' };
+        return {
+          _id: conv._id.toString(),
+          type: 'student',
+          userId: conv.studentId?.toString(),
+          userName: userInfo.name,
+          userEmail: userInfo.email,
+          sessionId: conv.sessionId,
+          title: conv.title,
+          sessionType: conv.sessionType || 'text',
+          messages: conv.messages || [],
+          messageCount: conv.messages?.length || 0,
+          lastMessage: conv.messages && conv.messages.length > 0 
+            ? conv.messages[conv.messages.length - 1].content 
+            : "No messages",
+          lastMessageAt: conv.metadata?.lastMessageAt || conv.metadata?.createdAt,
+          createdAt: conv.metadata?.createdAt,
+          conversationStats: conv.conversationStats || {
+            totalMessages: conv.messages?.length || 0,
+            userMessages: conv.messages?.filter(m => m.role === 'user').length || 0,
+            aiMessages: conv.messages?.filter(m => m.role === 'assistant').length || 0,
+            totalDuration: 0
+          },
+          uploadedFiles: conv.uploadedFiles || [],
+          studentData: conv.studentData || {}
+        };
+      });
     }
 
     return {

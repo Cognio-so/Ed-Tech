@@ -49,7 +49,6 @@ class PythonApiClient {
   async generateAssessment(assessmentData) {
     // Transform frontend data to match Python backend schema
     const selectedTypes = this.getSelectedQuestionTypes(assessmentData.questionTypes);
-    const questionDistribution = this.distributeQuestions(parseInt(assessmentData.numQuestions), selectedTypes);
     
     // Map the assessment_type to assessment_types for the backend
     const assessmentTypes = selectedTypes.length === 1 
@@ -64,9 +63,8 @@ class PythonApiClient {
       assessment_type: selectedTypes.length === 1 ? this.mapSingleQuestionType(selectedTypes[0]) : 'Mixed',
       assessment_types: assessmentTypes,
       question_types: selectedTypes,
-      question_distribution: questionDistribution,
+      question_distribution: assessmentData.questionDistribution,
       test_duration: `${assessmentData.duration} minutes`,
-      number_of_questions: parseInt(assessmentData.numQuestions),
       difficulty_level: this.capitalizeDifficulty(assessmentData.difficulty),
       user_prompt: this.buildUserPrompt(assessmentData),
       learning_objectives: assessmentData.learningObjectives || '',
@@ -310,22 +308,6 @@ class PythonApiClient {
     return selected;
   }
 
-  distributeQuestions(totalQuestions, questionTypes) {
-    if (questionTypes.length === 1) {
-      return { [questionTypes[0]]: totalQuestions };
-    }
-
-    const distribution = {};
-    const questionsPerType = Math.floor(totalQuestions / questionTypes.length);
-    const remainder = totalQuestions % questionTypes.length;
-
-    questionTypes.forEach((type, index) => {
-      distribution[type] = questionsPerType + (index < remainder ? 1 : 0);
-    });
-
-    return distribution;
-  }
-
   mapSingleQuestionType(type) {
     const typeMap = {
       'mcq': 'MCQ',
@@ -366,12 +348,14 @@ class PythonApiClient {
     const pythonSchema = {
       topic: imageData.topic,
       grade_level: imageData.gradeLevel || '8',
-      preferred_visual_type: imageData.preferred_visual_type, // Fix: use the field name that's being sent from frontend
+      preferred_visual_type: imageData.preferred_visual_type, // This correctly maps visualType to preferred_visual_type
       subject: imageData.subject,
       difficulty_flag: (imageData.difficultyFlag ? 'true' : 'false'),
       instructions: imageData.instructions,
       language: imageData.language || 'English',
     };
+
+    console.log('Sending image generation request with schema:', pythonSchema);
 
     return this.makeRequest('/image_generation_endpoint', {
       method: 'POST',
@@ -548,7 +532,7 @@ class PythonApiClient {
     }
   }
 
-  // NEW: Video presentation generation endpoint
+  // NEW: Video presentation generation endpoint (UPDATED)
   async generateVideoPresentation(videoData) {
     const formData = new FormData();
     formData.append('pptx_file', videoData.pptx_file);
@@ -560,6 +544,54 @@ class PythonApiClient {
       method: 'POST',
       body: formData,
       headers: {} // Let browser set Content-Type for FormData
+    });
+  }
+
+  // NEW: Check video generation status
+  async checkVideoStatus(taskId) {
+    return this.makeRequest(`/check_video_status/${taskId}`, {
+      method: 'GET'
+    });
+  }
+
+  // NEW: Poll video status with timeout
+  async pollVideoStatus(taskId, maxAttempts = 60, intervalMs = 15000) {
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      
+      const poll = async () => {
+        try {
+          attempts++;
+          const result = await this.checkVideoStatus(taskId);
+          
+          if (result.status === 'completed') {
+            resolve({
+              success: true,
+              video_id: result.video_id,
+              video_url: result.video_url,
+              slides_count: result.slides_count,
+              status: 'completed'
+            });
+          } else if (result.status === 'failed') {
+            reject(new Error(result.error || 'Video generation failed'));
+          } else if (attempts >= maxAttempts) {
+            reject(new Error('Video generation timeout. Please check back later.'));
+          } else {
+            // Still processing, continue polling
+            setTimeout(poll, intervalMs);
+          }
+        } catch (error) {
+          if (attempts >= maxAttempts) {
+            reject(error);
+          } else {
+            // Retry on network error
+            setTimeout(poll, intervalMs);
+          }
+        }
+      };
+      
+      // Start polling
+      poll();
     });
   }
 

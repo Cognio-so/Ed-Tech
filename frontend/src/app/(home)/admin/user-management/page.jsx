@@ -252,22 +252,42 @@ export default function UserManagementPage() {
     }
   };
 
-  // Handle grade selection
+  // Handle grade selection - single selection for students, multiple for teachers
   const handleGradeToggle = (gradeName, formType) => {
     if (formType === "create") {
-      setCreateForm(prev => ({
-        ...prev,
-        grades: prev.grades.includes(gradeName)
-          ? prev.grades.filter(g => g !== gradeName)
-          : [...prev.grades, gradeName]
-      }));
+      setCreateForm(prev => {
+        // For students, allow only single grade selection
+        if (prev.role === "student") {
+          return {
+            ...prev,
+            grades: prev.grades.includes(gradeName) ? [] : [gradeName]
+          };
+        }
+        // For teachers, allow multiple grade selection
+        return {
+          ...prev,
+          grades: prev.grades.includes(gradeName)
+            ? prev.grades.filter(g => g !== gradeName)
+            : [...prev.grades, gradeName]
+        };
+      });
     } else {
-      setEditForm(prev => ({
-        ...prev,
-        grades: prev.grades.includes(gradeName)
-          ? prev.grades.filter(g => g !== gradeName)
-          : [...prev.grades, gradeName]
-      }));
+      setEditForm(prev => {
+        // For students, allow only single grade selection
+        if (prev.role === "student") {
+          return {
+            ...prev,
+            grades: prev.grades.includes(gradeName) ? [] : [gradeName]
+          };
+        }
+        // For teachers, allow multiple grade selection
+        return {
+          ...prev,
+          grades: prev.grades.includes(gradeName)
+            ? prev.grades.filter(g => g !== gradeName)
+            : [...prev.grades, gradeName]
+        };
+      });
     }
   };
 
@@ -675,9 +695,6 @@ export default function UserManagementPage() {
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <h3 className="font-semibold">{subject.name}</h3>
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Created: {new Date(subject.createdAt).toLocaleDateString()}
-                            </p>
                           </div>
                           <Button
                             variant="ghost"
@@ -728,9 +745,6 @@ export default function UserManagementPage() {
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <h3 className="font-semibold">{grade.name}</h3>
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Created: {new Date(grade.createdAt).toLocaleDateString()}
-                            </p>
                           </div>
                           <div className="flex gap-1">
                             <Button
@@ -891,38 +905,41 @@ export default function UserManagementPage() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="subjects">Subjects</Label>
-                  {loadingSubjectsGrades ? (
-                    <div className="flex items-center justify-center p-4">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      <span className="text-sm text-muted-foreground">Loading subjects...</span>
-                    </div>
-                  ) : availableSubjects.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
-                      {availableSubjects.map((sub) => (
-                        <div key={sub.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`create-subject-${sub.id}`}
-                            checked={createForm.subjects.includes(sub.name)}
-                            onCheckedChange={() => handleSubjectToggle(sub.name, "create")}
-                          />
-                          <label
-                            htmlFor={`create-subject-${sub.id}`}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            {sub.name}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                      <p className="text-sm text-muted-foreground">No subjects available</p>
-                      <p className="text-xs text-muted-foreground mt-1">Create subjects first</p>
-                    </div>
-                  )}
-                </div>
+                {/* Only show subjects for teachers, not students */}
+                {createForm.role === "teacher" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="subjects">Subjects</Label>
+                    {loadingSubjectsGrades ? (
+                      <div className="flex items-center justify-center p-4">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <span className="text-sm text-muted-foreground">Loading subjects...</span>
+                      </div>
+                    ) : availableSubjects.length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
+                        {availableSubjects.map((sub) => (
+                          <div key={sub.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`create-subject-${sub.id}`}
+                              checked={createForm.subjects.includes(sub.name)}
+                              onCheckedChange={() => handleSubjectToggle(sub.name, "create")}
+                            />
+                            <label
+                              htmlFor={`create-subject-${sub.id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                            >
+                              {sub.name}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                        <p className="text-sm text-muted-foreground">No subjects available</p>
+                        <p className="text-xs text-muted-foreground mt-1">Create subjects first</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
 
@@ -1031,38 +1048,41 @@ export default function UserManagementPage() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="subjects">Subjects</Label>
-                  {loadingSubjectsGrades ? (
-                    <div className="flex items-center justify-center p-4">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      <span className="text-sm text-muted-foreground">Loading subjects...</span>
-                    </div>
-                  ) : availableSubjects.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
-                      {availableSubjects.map((sub) => (
-                        <div key={sub.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`edit-subject-${sub.id}`}
-                            checked={editForm.subjects.includes(sub.name)}
-                            onCheckedChange={() => handleSubjectToggle(sub.name, "edit")}
-                          />
-                          <label
-                            htmlFor={`edit-subject-${sub.id}`}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            {sub.name}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                      <p className="text-sm text-muted-foreground">No subjects available</p>
-                      <p className="text-xs text-muted-foreground mt-1">Create subjects first</p>
-                    </div>
-                  )}
-                </div>
+                {/* Only show subjects for teachers, not students */}
+                {editForm.role === "teacher" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="subjects">Subjects</Label>
+                    {loadingSubjectsGrades ? (
+                      <div className="flex items-center justify-center p-4">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <span className="text-sm text-muted-foreground">Loading subjects...</span>
+                      </div>
+                    ) : availableSubjects.length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
+                        {availableSubjects.map((sub) => (
+                          <div key={sub.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`edit-subject-${sub.id}`}
+                              checked={editForm.subjects.includes(sub.name)}
+                              onCheckedChange={() => handleSubjectToggle(sub.name, "edit")}
+                            />
+                            <label
+                              htmlFor={`edit-subject-${sub.id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                            >
+                              {sub.name}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                        <p className="text-sm text-muted-foreground">No subjects available</p>
+                        <p className="text-xs text-muted-foreground mt-1">Create subjects first</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
 

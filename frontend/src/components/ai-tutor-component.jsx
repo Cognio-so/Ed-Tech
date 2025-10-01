@@ -40,7 +40,9 @@ import {
     AlertCircle, // NEW: Add this icon
     Upload, // NEW: Add this icon
     GraduationCap, // ADD: Use same icon as voice-coach
-    Volume2 // NEW: Add volume icon for voice selection
+    Volume2, // NEW: Add volume icon for voice selection
+    Copy, // NEW: Add copy icon
+    Download // NEW: Add download icon
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -104,6 +106,9 @@ const AiTutor = () => {
     
     // NEW: Voice gender selection state
     const [selectedVoiceGender, setSelectedVoiceGender] = useState('female');
+
+    // NEW: Add user speaking state
+    const [isUserSpeaking, setIsUserSpeaking] = useState(false);
 
     // Real student data state
     const [user, setUser] = useState(null);
@@ -676,6 +681,231 @@ const AiTutor = () => {
         setMessages(prev => [...prev, clearMessage]);
     };
 
+    // Add copy functionality
+    const handleCopyMessage = async (content) => {
+        try {
+            await navigator.clipboard.writeText(content);
+            toast.success('Message copied to clipboard!');
+        } catch (error) {
+            console.error('Failed to copy:', error);
+            toast.error('Failed to copy message');
+        }
+    };
+
+    // Add export functionality with format selection
+    const handleExportConversation = async () => {
+        if (messages.length <= 1) {
+            toast.error('No conversation to export');
+            return;
+        }
+
+        // Show format selection dialog
+        const format = await showExportFormatDialog();
+        if (!format) return; // User cancelled
+
+        try {
+            // Filter out system messages and create conversation data
+            const conversationMessages = messages.filter(msg => 
+                msg.type === 'user' || msg.type === 'ai'
+            );
+
+            // Create formatted conversation text
+            const conversationText = conversationMessages.map(msg => {
+                const timestamp = msg.timestamp.toLocaleString();
+                const role = msg.type === 'user' ? 'User' : 'AI Tutor';
+                return `[${timestamp}] ${role}:\n${msg.content}\n\n`;
+            }).join('');
+
+            if (format === 'pdf') {
+                await exportAsPDF(conversationText, conversationMessages);
+            } else if (format === 'doc') {
+                await exportAsDOC(conversationText, conversationMessages);
+            } else {
+                // Fallback to text export
+                await exportAsText(conversationText);
+            }
+            
+            toast.success(`Conversation exported as ${format.toUpperCase()} successfully!`);
+        } catch (error) {
+            console.error('Export failed:', error);
+            toast.error('Failed to export conversation');
+        }
+    };
+
+    // Show export format selection dialog
+    const showExportFormatDialog = () => {
+        return new Promise((resolve) => {
+            const dialog = document.createElement('div');
+            dialog.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            dialog.innerHTML = `
+                <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Export Conversation</h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">Choose the format for your conversation export:</p>
+                    <div class="space-y-3">
+                        <button class="w-full flex items-center p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-format="pdf">
+                            <div class="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center mr-3">
+                                <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="text-left">
+                                <div class="font-medium text-gray-900 dark:text-white">PDF Document</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400">Portable Document Format</div>
+                            </div>
+                        </button>
+                        <button class="w-full flex items-center p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-format="doc">
+                            <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center mr-3">
+                                <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="text-left">
+                                <div class="font-medium text-gray-900 dark:text-white">Word Document</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400">Microsoft Word Format</div>
+                            </div>
+                        </button>
+                        <button class="w-full flex items-center p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-format="txt">
+                            <div class="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center mr-3">
+                                <svg class="w-5 h-5 text-gray-600 dark:text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="text-left">
+                                <div class="font-medium text-gray-900 dark:text-white">Text File</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400">Plain Text Format</div>
+                            </div>
+                        </button>
+                    </div>
+                    <div class="flex justify-end space-x-3 mt-6">
+                        <button class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white" data-action="cancel">Cancel</button>
+                    </div>
+                </div>
+            `;
+
+            // Add event listeners
+            dialog.addEventListener('click', (e) => {
+                if (e.target.dataset.format) {
+                    document.body.removeChild(dialog);
+                    resolve(e.target.dataset.format);
+                } else if (e.target.dataset.action === 'cancel') {
+                    document.body.removeChild(dialog);
+                    resolve(null);
+                }
+            });
+
+            // Close on backdrop click
+            dialog.addEventListener('click', (e) => {
+                if (e.target === dialog) {
+                    document.body.removeChild(dialog);
+                    resolve(null);
+                }
+            });
+
+            document.body.appendChild(dialog);
+        });
+    };
+
+    // Export as PDF using jsPDF with Unicode support
+    const exportAsPDF = async (conversationText, conversationMessages) => {
+        // Load jsPDF dynamically
+        const { jsPDF } = await import('jspdf');
+        const doc = new jsPDF();
+        
+        // Set font
+        doc.setFont('helvetica');
+        
+        // Add title
+        doc.setFontSize(16);
+        doc.text('AI Tutor Conversation', 20, 20);
+        
+        // Add export date
+        doc.setFontSize(10);
+        doc.text(`Exported on: ${new Date().toLocaleDateString()}`, 20, 30);
+        
+        // Add line separator
+        doc.line(20, 35, 190, 35);
+        
+        // Add conversation content
+        doc.setFontSize(10);
+        let yPosition = 45;
+        const pageHeight = doc.internal.pageSize.height;
+        const margin = 20;
+        const maxWidth = 170;
+        
+        conversationMessages.forEach((msg, index) => {
+            const timestamp = msg.timestamp.toLocaleString();
+            const role = msg.type === 'user' ? 'User' : 'AI Tutor';
+            
+            // Clean the content to remove problematic characters
+            const cleanContent = msg.content
+                .replace(/[^\x00-\x7F]/g, '') // Remove non-ASCII characters
+                .replace(/[👋🎉🚀💡📚🎯⭐🌟💪🔥]/g, '') // Remove common emojis
+                .replace(/[^\x20-\x7E]/g, '') // Remove any remaining non-printable characters
+                .trim();
+            
+            const content = `${timestamp} - ${role}:\n${cleanContent}`;
+            
+            // Split text into lines that fit the page width
+            const lines = doc.splitTextToSize(content, maxWidth);
+            
+            // Check if we need a new page
+            if (yPosition + (lines.length * 5) > pageHeight - margin) {
+                doc.addPage();
+                yPosition = 20;
+            }
+            
+            // Add the text
+            doc.text(lines, margin, yPosition);
+            yPosition += (lines.length * 5) + 5;
+        });
+        
+        // Save the PDF
+        doc.save(`ai-tutor-conversation-${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
+    // Export as DOC (RTF format that can be opened in Word)
+    const exportAsDOC = async (conversationText, conversationMessages) => {
+        // Create RTF content
+        let rtfContent = `{\\rtf1\\ansi\\deff0 {\\fonttbl {\\f0 Times New Roman;}}
+{\\colortbl;\\red0\\green0\\blue0;\\red0\\green0\\blue255;\\red0\\green128\\blue0;}
+\\f0\\fs24
+{\\b AI Tutor Conversation}\\par
+Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
+
+        conversationMessages.forEach(msg => {
+            const timestamp = msg.timestamp.toLocaleString();
+            const role = msg.type === 'user' ? 'User' : 'AI Tutor';
+            rtfContent += `{\\b [${timestamp}] ${role}:}\\par`;
+            rtfContent += `${msg.content.replace(/\n/g, '\\par ')}\\par\\par`;
+        });
+
+        rtfContent += '}';
+
+        // Create blob and download
+        const blob = new Blob([rtfContent], { type: 'application/rtf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ai-tutor-conversation-${new Date().toISOString().split('T')[0]}.rtf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    // Export as text (fallback)
+    const exportAsText = async (conversationText) => {
+        const blob = new Blob([conversationText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ai-tutor-conversation-${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
     // UPDATED: Start voice session handler using RealtimeOpenAI (same approach as voice-coach)
     const startVoiceSessionHandler = async () => {
         if (isVoiceActive) {
@@ -692,6 +922,7 @@ const AiTutor = () => {
             setIsListening(false);
             setTranscription(''); // Reset transcription
             setIsSpeaking(false); // Reset speaking state
+            setIsUserSpeaking(false); // Reset user speaking state
             return;
         }
 
@@ -771,18 +1002,11 @@ const AiTutor = () => {
             const service = new RealtimeOpenAIService(apiKey);
             
             // Set up event handlers - same approach as voice-coach
-            // Remove lip sync callback, keep speaking state for video
-            // service.onLipSyncData = (data) => {
-            //     setLipSyncData(data);
-            //     // Determine if currently speaking based on lip sync intensity
-            //     const totalIntensity = Object.values(data).reduce((sum, val) => sum + val, 0);
-            //     setIsSpeaking(totalIntensity > 0.1);
-            // };
-
             // Add callback for when new response starts
             service.onResponseStart = () => {
                 setTranscription(''); // Reset transcript for new response
                 setIsSpeaking(true); // Start speaking animation
+                setIsUserSpeaking(false); // User is not speaking when AI starts
                 // Mark the last live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -800,6 +1024,7 @@ const AiTutor = () => {
             // Add callback for when response is complete
             service.onResponseComplete = () => {
                 setIsSpeaking(false); // Stop speaking animation
+                setIsUserSpeaking(false); // User is not speaking when AI stops
                 // Mark the current live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -814,6 +1039,15 @@ const AiTutor = () => {
                 });
             };
 
+            // NEW: Add callbacks for user speech start and stop
+            service.onUserSpeechStart = () => {
+                setIsUserSpeaking(true); // User started speaking
+            };
+
+            service.onUserSpeechStop = () => {
+                setIsUserSpeaking(false); // User stopped speaking
+            };
+
             // Handle AI response transcripts - exactly like voice-coach
             service.onTranscript = (delta) => {
                 setTranscription(prev => prev + delta);
@@ -822,6 +1056,7 @@ const AiTutor = () => {
             // Handle user input transcripts - exactly like voice-coach
             service.onUserTranscript = (userTranscript) => {
                 console.log('🎤 User said:', userTranscript);
+                // Remove setIsUserSpeaking(true) from here since it's handled by onUserSpeechStart
                 
                 // Add user message to chat
                 const userMessage = {
@@ -871,140 +1106,89 @@ const AiTutor = () => {
         }
     };
 
-    // Enhanced image rendering component - EXACTLY like voice-coach
-    const ImageMessage = ({ content }) => {
-        const imageMatch = content.match(/!\[.*?\]\((data:image\/[^)]+)\)/);
-        
-        if (imageMatch) {
-            const imageUrl = imageMatch[1];
-            return (
-                <div className="my-4 flex justify-center">
-                    <img 
-                        src={imageUrl}
-                        alt="Generated image"
-                        className="max-w-full h-auto rounded-lg shadow-lg border border-gray-200 dark:border-gray-600"
-                        style={{ maxHeight: '400px' }}
-                        onError={(e) => {
-                            console.error('Image failed to load:', e.target.src);
-                            e.target.style.display = 'none';
-                        }}
-                        onLoad={() => {
-                            console.log('Image loaded successfully');
-                        }}
-                    />
-                </div>
-            );
-        }
-        
-        // Fallback to markdown rendering
         return (
-            <div className="prose prose-sm max-w-none dark:prose-invert">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
-                    {content}
-                </ReactMarkdown>
-            </div>
-        );
-    };
-
-    // Update the renderMessageContent function - EXACTLY like voice-coach
-    const renderMessageContent = (message) => {
-        if (message.isImageResponse) {
-            return <ImageMessage content={message.content} />;
-        } else {
-            return (
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
-                        {message.content}
-                    </ReactMarkdown>
-                </div>
-            );
-        }
-    };
-
-    // For brevity, I'll include the essential parts of the render method
-    if (dataLoading) {
-        return (
-            <div className="h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900 flex items-center justify-center overflow-hidden">
-                <div className="text-center">
-                    <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-lg text-gray-600 dark:text-gray-400">Loading your learning data...</p>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100 dark:from-purple-900/20 dark:via-blue-900/20 dark:to-indigo-900/20">
-            {/* Header */}
-            <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/90 backdrop-blur-md"
-            >
-                <div className="w-full px-2 py-2">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                            <div className="relative">
-                                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center">
-                                    <Sparkle className="w-5 h-5 text-white" />
+            <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100 dark:from-purple-900/20 dark:via-blue-900/20 dark:to-indigo-900/20">
+                {/* Header */}
+                <motion.div
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/90 backdrop-blur-md"
+                >
+                    <div className="w-full px-2 py-2">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                                <div className="relative">
+                                    <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center">
+                                        <Sparkle className="w-5 h-5 text-white" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                                        AI Tutor
+                                    </h1>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                                        Your personalized learning companion
+                                    </p>
                                 </div>
                             </div>
-                            <div>
-                                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                                    AI Tutor
-                                </h1>
-                                <p className="text-sm text-gray-600 dark:text-gray-400">
-                                    Your personalized learning companion
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            {/* NEW: Voice Selection Dropdown */}
-                            <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
-                                <Volume2 className="h-4 w-4 text-blue-600" />
-                                <Select value={selectedVoiceGender} onValueChange={handleGenderChange}>
-                                    <SelectTrigger className="w-32 h-8 text-sm">
-                                        <SelectValue placeholder="Voice" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="female">👩 Female</SelectItem>
-                                        <SelectItem value="male">👨 Male</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            
-                            {/* NEW: Feedback Session Toggle */}
-                            {showFeedbackOption && teacherFeedback && teacherFeedback.length > 0 && (
+                            <div className="flex items-center space-x-2">
+                                {/* NEW: Voice Selection Dropdown */}
                                 <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
-                                    <label className="text-sm font-medium flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={useFeedbackSession}
-                                            onChange={(e) => setUseFeedbackSession(e.target.checked)}
-                                            className="rounded"
-                                        />
-                                        <MessageSquare className="h-4 w-4" />
-                                        Use Teacher Feedback ({teacherFeedback.length})
-                                    </label>
+                                    <Volume2 className="h-4 w-4 text-blue-600" />
+                                    <Select value={selectedVoiceGender} onValueChange={handleGenderChange}>
+                                        <SelectTrigger className="w-32 h-8 text-sm">
+                                            <SelectValue placeholder="Voice" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="female">👩 Female</SelectItem>
+                                            <SelectItem value="male">👨 Male</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
-                            )}
-                            
-                            {uploadedFiles.length > 0 && (
-                                <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                    📎 {uploadedFiles.length} file(s)
+                                
+                                {/* NEW: Feedback Session Toggle */}
+                                {showFeedbackOption && teacherFeedback && teacherFeedback.length > 0 && (
+                                    <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
+                                        <label className="text-sm font-medium flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={useFeedbackSession}
+                                                onChange={(e) => setUseFeedbackSession(e.target.checked)}
+                                                className="rounded"
+                                            />
+                                            <MessageSquare className="h-4 w-4" />
+                                            Use Teacher Feedback ({teacherFeedback.length})
+                                        </label>
+                                    </div>
+                                )}
+                                
+                                {uploadedFiles.length > 0 && (
+                                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                        📎 {uploadedFiles.length} file(s)
+                                    </Badge>
+                                )}
+                                <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse" />
+                                    Online
                                 </Badge>
-                            )}
-                            <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse" />
-                                Online
-                            </Badge>
-                            <Button variant="ghost" size="icon">
-                                <Settings className="w-5 h-5" />
-                            </Button>
+                                {/* Export button - made more visible */}
+                                <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={handleExportConversation}
+                                    title="Export conversation"
+                                    className="hover:bg-gray-100 dark:hover:bg-gray-800 border-gray-300 dark:border-gray-600"
+                                >
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Export
+                                </Button>
+                                <Button variant="ghost" size="icon">
+                                    <Settings className="w-5 h-5" />
+                                </Button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </motion.div>
+                </motion.div>
 
             <div className="w-full px-4 py-6">
                 <div className="w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1021,6 +1205,7 @@ const AiTutor = () => {
                                         isSpeaking={isSpeaking}
                                         isConnected={isVoiceActive}
                                         selectedGender={selectedVoiceGender} // NEW: Pass selected gender
+                                        isUserSpeaking={isUserSpeaking} // NEW: Pass user speaking state
                                     />
                                 </CardContent>
                             </Card>
@@ -1060,6 +1245,16 @@ const AiTutor = () => {
                                                                     : 'text-black dark:text-white'
                                                                 }`}>
                                                                 {renderMessageContent(message)}
+                                                                {/* Show typing indicator only for streaming messages */}
+                                                                {message.isStreaming && (
+                                                                    <div className="inline-block ml-2">
+                                                                        <div className="flex space-x-1">
+                                                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </motion.div>

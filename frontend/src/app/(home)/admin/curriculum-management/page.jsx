@@ -534,21 +534,30 @@ export default function CurriculumManagementPage() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Subject *</label>
-                <Input
-                  value={createForm.subject}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, subject: e.target.value }))}
-                  required
-                />
+                <Select value={createForm.subject} onValueChange={(value) => setCreateForm(prev => ({ ...prev, subject: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a subject" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueSubjects.map((subject) => (
+                      <SelectItem key={subject} value={subject}>{subject}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Grade *</label>
-              <Input
-                value={createForm.grade}
-                onChange={(e) => setCreateForm(prev => ({ ...prev, grade: e.target.value }))}
-                placeholder="e.g., Grade 6"
-                required
-              />
+              <Select value={createForm.grade} onValueChange={(value) => setCreateForm(prev => ({ ...prev, grade: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a grade" />
+                </SelectTrigger>
+                <SelectContent>
+                  {uniqueGrades.map((grade) => (
+                    <SelectItem key={grade} value={grade}>{grade}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">OCR File ID</label>
@@ -605,21 +614,30 @@ export default function CurriculumManagementPage() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Subject *</label>
-                <Input
-                  value={editForm.subject}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, subject: e.target.value }))}
-                  required
-                />
+                <Select value={editForm.subject} onValueChange={(value) => setEditForm(prev => ({ ...prev, subject: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a subject" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueSubjects.map((subject) => (
+                      <SelectItem key={subject} value={subject}>{subject}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Grade *</label>
-              <Input
-                value={editForm.grade}
-                onChange={(e) => setEditForm(prev => ({ ...prev, grade: e.target.value }))}
-                placeholder="e.g., Grade 6"
-                required
-              />
+              <Select value={editForm.grade} onValueChange={(value) => setEditForm(prev => ({ ...prev, grade: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a grade" />
+                </SelectTrigger>
+                <SelectContent>
+                  {uniqueGrades.map((grade) => (
+                    <SelectItem key={grade} value={grade}>{grade}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">OCR File ID</label>

@@ -35,6 +35,128 @@ function isDirectVideo(url) {
   return /\.(mp4|webm|ogg)(\?.*)?$/i.test(url || "");
 }
 
+// Enhanced helper to detect if URL is an image (including more formats)
+function isImageUrl(url) {
+  return /\.(jpg|jpeg|png|gif|bmp|webp|svg|tiff|ico)(\?.*)?$/i.test(url || "");
+}
+
+// Enhanced Image component with Shadcn typography styling
+const EnhancedImage = ({ src, alt, ...props }) => {
+  const [imageError, setImageError] = React.useState(false);
+  const [imageLoading, setImageLoading] = React.useState(true);
+  const [imageSrc, setImageSrc] = React.useState(src);
+
+  // Handle different image formats and URLs
+  React.useEffect(() => {
+    if (src) {
+      // Reset states when src changes
+      setImageLoading(true);
+      setImageError(false);
+      
+      // Handle data URLs (base64 images)
+      if (src.startsWith('data:')) {
+        setImageSrc(src);
+        return;
+      }
+      
+      // Handle relative URLs
+      if (src.startsWith('/') || src.startsWith('./')) {
+        setImageSrc(src);
+        return;
+      }
+      
+      // Handle absolute URLs
+      if (src.startsWith('http://') || src.startsWith('https://')) {
+        setImageSrc(src);
+        return;
+      }
+      
+      // Handle other cases
+      setImageSrc(src);
+    }
+  }, [src]);
+
+  const handleImageLoad = () => {
+    setImageLoading(false);
+    setImageError(false);
+  };
+
+  const handleImageError = () => {
+    setImageLoading(false);
+    setImageError(true);
+  };
+
+  if (imageError) {
+    return (
+      <div className="my-6 p-4 border border-red-200 rounded-lg bg-red-50 dark:bg-red-900/20 dark:border-red-800">
+        <p className="text-red-600 dark:text-red-400 text-sm font-medium">
+          Failed to load image: {alt || src}
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          URL: {imageSrc}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative my-6 w-full">
+      {imageLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted rounded-lg min-h-[200px]">
+          <div className="flex flex-col items-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
+            <p className="text-sm text-muted-foreground">Loading image...</p>
+          </div>
+        </div>
+      )}
+      <div className="relative overflow-hidden rounded-lg border bg-muted/50">
+        <img
+          src={imageSrc}
+          alt={alt || ""}
+          className={`w-full h-auto transition-opacity duration-300 ${
+            imageLoading ? 'opacity-0' : 'opacity-100'
+          }`}
+          loading="lazy"
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+          style={{ 
+            maxHeight: '500px',
+            objectFit: 'contain'
+          }}
+          {...props}
+        />
+        {alt && (
+          <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white p-2 text-sm">
+            {alt}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Enhanced text processing to detect and render images from URLs
+const processTextForImages = (text) => {
+  if (!text) return text;
+  
+  // Find all URLs in the text
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const urls = text.match(urlRegex) || [];
+  
+  let processedText = text;
+  
+  // Process each URL
+  urls.forEach(url => {
+    if (isImageUrl(url)) {
+      // Replace the URL with markdown image syntax
+      const imageMarkdown = `![Image](${url})`;
+      processedText = processedText.replace(url, imageMarkdown);
+    }
+  });
+  
+  return processedText;
+};
+
 export const MarkdownStyles = {
   // Headings (shadcn typography)
   h1: ({ node, ...props }) => (
@@ -69,9 +191,21 @@ export const MarkdownStyles = {
   ),
 
   // Text
-  p: ({ node, ...props }) => (
-    <p className="leading-7 [&:not(:first-child)]:mt-6" {...props} />
-  ),
+  p: ({ node, children, ...props }) => {
+    // Process text content to detect and convert image URLs
+    const processedChildren = React.Children.map(children, (child) => {
+      if (typeof child === 'string') {
+        return processTextForImages(child);
+      }
+      return child;
+    });
+    
+    return (
+      <p className="leading-7 [&:not(:first-child)]:mt-6" {...props}>
+        {processedChildren}
+      </p>
+    );
+  },
   strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
   em: ({ node, ...props }) => <em className="italic" {...props} />,
   hr: () => <hr className="my-6 border-muted" />,
@@ -81,21 +215,31 @@ export const MarkdownStyles = {
     <ul className="my-6 ml-6 list-disc [&>li]:mt-2" {...props} />
   ),
   ol: ({ node, ...props }) => (
-    <ol className="my-6 ml-6 list-decimal [&>li]:mt-2" {...props} />
+    <ol className="my-6 ml-decimal [&>li]:mt-2" {...props} />
   ),
-  li: ({ node, ordered, ...props }) => <li {...props} />,
+  li: ({ node, ordered, children, ...props }) => {
+    // Process list items for image URLs
+    const processedChildren = React.Children.map(children, (child) => {
+      if (typeof child === 'string') {
+        return processTextForImages(child);
+      }
+      return child;
+    });
+    
+    return <li {...props}>{processedChildren}</li>;
+  },
 
   // Blockquote
   blockquote: ({ node, ...props }) => (
     <blockquote className="mt-6 border-l-2 pl-6 italic text-muted-foreground" {...props} />
   ),
 
-  // Links (with video detection)
+  // Links (with video detection and image detection)
   a: ({ node, href, children, ...props }) => {
     const yt = getYouTubeEmbed(href);
     if (yt) {
       return (
-        <span className="block my-4 aspect-video w-full overflow-hidden rounded-lg border">
+        <div className="my-6 aspect-video w-full overflow-hidden rounded-lg border bg-muted">
           <iframe
             src={yt}
             className="h-full w-full"
@@ -103,13 +247,13 @@ export const MarkdownStyles = {
             allowFullScreen
             title="YouTube embed"
           />
-        </span>
+        </div>
       );
     }
     const vimeo = getVimeoEmbed(href);
     if (vimeo) {
       return (
-        <span className="block my-4 aspect-video w-full overflow-hidden rounded-lg border">
+        <div className="my-6 aspect-video w-full overflow-hidden rounded-lg border bg-muted">
           <iframe
             src={vimeo}
             className="h-full w-full"
@@ -117,17 +261,21 @@ export const MarkdownStyles = {
             allowFullScreen
             title="Vimeo embed"
           />
-        </span>
+        </div>
       );
     }
     if (isDirectVideo(href)) {
       return (
-        <span className="block my-4 w-full overflow-hidden rounded-lg border">
+        <div className="my-6 w-full overflow-hidden rounded-lg border bg-muted">
           <video controls className="w-full h-auto">
             <source src={href} />
           </video>
-        </span>
+        </div>
       );
+    }
+    // Check if the link is an image URL
+    if (isImageUrl(href)) {
+      return <EnhancedImage src={href} alt={children?.toString() || ""} />;
     }
     return (
       <a
@@ -142,16 +290,9 @@ export const MarkdownStyles = {
     );
   },
 
-  // Images
+  // Enhanced Images with Shadcn typography styling
   img: ({ node, src, alt, ...props }) => (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={alt || ""}
-      className="my-4 rounded-lg border max-w-full h-auto"
-      loading="lazy"
-      {...props}
-    />
+    <EnhancedImage src={src} alt={alt} {...props} />
   ),
 
   // Code blocks and inline code
@@ -192,7 +333,7 @@ export const MarkdownStyles = {
   th: ({ node, ...props }) => (
     <th className="border px-4 py-2 text-left font-bold" {...props} />
   ),
-  td: ({ node, align, ...props }) => (
+  td: ({ align, ...props }) => (
     <td
       className="border px-4 py-2 text-left"
       align={align}

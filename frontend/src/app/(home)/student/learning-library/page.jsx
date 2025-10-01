@@ -188,64 +188,20 @@ const LearningLibrary = () => {
 
   const getItemColor = (subject) => gradients[subject] || 'from-gray-300 to-gray-400'
 
-  const handleStartLearning = async (resource) => {
+  const handleReviewResource = (resource) => {
+    // Close learning dialog if it's open
+    setIsLearningDialogOpen(false)
+    setCurrentResource(null)
+    
+    setSelectedResource(resource)
+    setIsReviewDialogOpen(true)
+  }
+
+  const handleStartLearning = async (content) => {
     try {
-      // Check if content is completed
-      const isCompleted = resource.progress?.status === 'completed' || 
-                         resource.progress?.completedAt ||
-                         resource.progress?.percentage === 100 ||
-                         (resource.progress && resource.progress.status === 'completed');
-
-      if (isCompleted) {
-        // Don't show any dialog for completed content
-        // Just show a toast or do nothing
-        toast.success('Content already completed! 🎉');
-        return;
-      }
-
-      // For non-completed content, show learning dialog
-      const content = {
-        id: resource._id,
-        _id: resource._id,
-        title: resource.title,
-        subject: resource.subject,
-        grade: resource.grade,
-        topic: resource.topic,
-        description: resource.description,
-        content: resource.content,
-        generatedContent: resource.content,
-        contentData: resource.content,
-        assessmentContent: resource.content,
-        contentType: resource.resourceType,
-        type: (resource.resourceType === 'presentation' && resource.presentationUrl) 
-          ? 'slides' 
-          : resource.resourceType,
-        contentType: (resource.resourceType === 'presentation' && resource.presentationUrl) 
-          ? 'slides' 
-          : resource.resourceType,
-        // Include all the image and comic data
-        imageUrl: resource.imageUrl,
-        imageBase64: resource.imageBase64,
-        visualType: resource.visualType,
-        instructions: resource.instructions,
-        difficultyFlag: resource.difficultyFlag,
-        cloudinaryPublicId: resource.cloudinaryPublicId,
-        imageUrls: resource.imageUrls,
-        images: resource.images,
-        panels: resource.panels,
-        numPanels: resource.numPanels,
-        comicType: resource.comicType,
-        instruction: resource.instruction,
-        cloudinaryPublicIds: resource.cloudinaryPublicIds,
-        presentationUrl: resource.presentationUrl,
-        url: resource.url,
-        videoUrl: resource.videoUrl,
-        slidesCount: resource.slidesCount,
-        voiceName: resource.voiceName,
-        talkingPhotoName: resource.talkingPhotoName,
-        videoId: resource.videoId,
-        searchResults: resource.searchResults
-      }
+      // Close review dialog if it's open
+      setIsReviewDialogOpen(false)
+      setSelectedResource(null)
       
       setCurrentResource(content)
       setIsLearningDialogOpen(true)
@@ -267,11 +223,6 @@ const LearningLibrary = () => {
     // Reload resources to update progress
     loadResources()
     loadStats()
-  }
-
-  const handleReviewResource = (resource) => {
-    setSelectedResource(resource)
-    setIsReviewDialogOpen(true)
   }
 
   const getContentImage = (resource) => {
@@ -377,9 +328,15 @@ const LearningLibrary = () => {
                 </div>
                 {isCompleted && (
                   <div className="absolute right-2 top-2">
-                    <Badge className="bg-emerald-600 text-white border-0 flex items-center gap-1 shadow-lg">
-                      <CheckCircle className="h-3 w-3" /> Completed
-                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleReviewResource(resource)}
+                      className="bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 hover:border-emerald-700 shadow-lg"
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      Review
+                    </Button>
                   </div>
                 )}
                 <div className="absolute bottom-2 left-2">
@@ -438,11 +395,15 @@ const LearningLibrary = () => {
                     className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold text-sm shadow-lg hover:shadow-xl transition-all duration-300"
                     onClick={(e) => {
                       e.stopPropagation()
-                      handleStartLearning(resource)
+                      if (isCompleted) {
+                        handleReviewResource(resource)
+                      } else {
+                        handleStartLearning(resource)
+                      }
                     }}
                   >
                     <Play className="mr-2 h-3 w-3" />
-                    {isCompleted ? 'Completed' : 'Start Learning!'} 🚀  
+                    {isCompleted ? 'Review' : 'Start Learning!'} 🚀  
                   </Button>
                 </div>
               </CardContent>
@@ -681,7 +642,13 @@ const LearningLibrary = () => {
         onComplete={handleCompleteLearning}
       />
 
-      {/* Remove the Review Dialog completely - no more LibraryDialog for completed content */}
+      {/* Review Dialog for completed content */}
+      <LibraryDialog
+        isOpen={isReviewDialogOpen}
+        onClose={() => setIsReviewDialogOpen(false)}
+        content={selectedResource}
+        isReviewMode={true}
+      />
     </div>
   )
 }

@@ -84,7 +84,7 @@ const ImageForm = ({ onImageGenerated }) => {
         }
 
         setIsGenerating(true);
-        const loadingToast = toast.loading("Generating image...");
+        const loadingToast = toast.loading(`Generating ${formData.visualType}...`);
 
         try {
             const imageData = {
@@ -102,7 +102,7 @@ const ImageForm = ({ onImageGenerated }) => {
             toast.dismiss(loadingToast);
 
             if (result.success) {
-                toast.success("Image generated successfully!");
+                toast.success(`${formData.visualType.charAt(0).toUpperCase() + formData.visualType.slice(1)} generated successfully!`);
                 
                 setGeneratedImage({
                     title: formData.title,

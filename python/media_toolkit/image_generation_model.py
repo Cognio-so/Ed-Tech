@@ -48,22 +48,29 @@ class ImageGenerator:
             if key not in schema:
                 raise KeyError(f"The schema is missing the required key: '{key}'")
 
+        # Get visual type specific instructions
+        visual_type = schema['preferred_visual_type'].lower()
+        visual_type_instructions = self._get_visual_type_instructions(visual_type)
+
         # Construct a detailed meta-prompt for GPT-4o to generate a GPT-Image-1 prompt.
         # This instructs GPT-4o to act as a prompt engineering expert.
         gpt4o_prompt = (
             "You are an expert prompt engineer for an image generation model. "
             "Your task is to take the following schema and create a detailed, "
             "visually rich, and optimized prompt that generates a high-quality, "
-            "educational illustration with readable, properly positioned text labels suitable for a school-level science diagram. "
+            f"educational {visual_type} with readable, properly positioned text labels suitable for a school-level {schema['subject']} {visual_type}. "
             "The output must use GPT-Image-1 strengths in structured visual composition and label clarity.\n\n"
 
             "⚠️ Important constraints:\n"
             f"- All text labels must be in **{schema['language']}**.\n"
-            "- if subject is specified show the labels, show All labels, it should be rendered in **clean, black, sans-serif font (like Arial or Helvetica)**.\n"
-            "- if subject is specified show the labels Labels, it must be inside **white rectangular or circular callout boxes** connected with clear lines or arrows to the correct anatomical parts.\n"
+            "- All labels should be rendered in **clean, black, sans-serif font (like Arial or Helvetica)**.\n"
+            "- Labels must be inside **white rectangular or circular callout boxes** connected with clear lines or arrows to the correct parts.\n"
             "- Avoid any artistic distortion, cursive, handwriting, or stylized fonts.\n"
-            "- if subject is specified show the labels, it should be **concise and accurately spelled** without any distortions in label\n"
+            "- Labels should be **concise and accurately spelled** without any distortions.\n"
             "- Do not place labels diagonally or on complex textures; use **plain background zones** for clarity.\n\n"
+
+            f"🎯 **VISUAL TYPE SPECIFIC REQUIREMENTS:**\n"
+            f"{visual_type_instructions}\n\n"
 
             "Here is the schema:\n"
             f"- **Topic:** {schema['topic']}\n"
@@ -74,19 +81,19 @@ class ImageGenerator:
             f"- **Specific Instructions:** {schema['instructions']}\n\n"
 
             "Based on this schema, generate a prompt. The prompt must:\n"
-            "1. Be highly descriptive and provide rich visual.\n"
-            "2. Include all relevant parts of the system and their correct visual position.\n"
-            "3. Specify that each label must be written in a **clear, legible font** in a white box near the corresponding body part.\n"
+            "1. Be highly descriptive and provide rich visual details.\n"
+            "2. Include all relevant parts and their correct visual positions.\n"
+            "3. Specify that each label must be written in a **clear, legible font** in a white box near the corresponding part.\n"
             "4. Ensure the style is visually appealing and age-appropriate for the given grade.\n"
-            f"5. If the schema includes a difficulty flag set to {schema.get('difficulty_flag')}, increase the level of anatomical accuracy, shading, and depth.\n"
-            f"6. Explicitly list all labels that must appear for: {schema['topic']} if the subject is specified, and ensure they are in **{schema['language']}**.\n\n"
+            f"5. If the schema includes a difficulty flag set to {schema.get('difficulty_flag')}, increase the level of detail, accuracy, shading, and depth.\n"
+            f"6. Explicitly list all labels that must appear for: {schema['topic']} and ensure they are in **{schema['language']}**.\n"
+            f"7. **CRITICAL:** Follow the visual type specific requirements above to ensure the generated image is a proper {visual_type}.\n\n"
 
             "Final Output Prompt for gpt-image-1 should be natural, instructional, and not include markdown formatting."
         )
 
-
         if schema.get('difficulty_flag', 'false').lower() == 'true':
-            gpt4o_prompt += "\n- **Difficulty:** Advanced. The visual should be detailed and comprehensive."
+            gpt4o_prompt += f"\n- **Difficulty:** Advanced. The {visual_type} should be detailed and comprehensive with enhanced visual elements."
 
         print("Requesting prompt rephrasing from GPT-4o...")
 
@@ -113,6 +120,51 @@ class ImageGenerator:
         except Exception as e:
             print(f"An unexpected error occurred during prompt rephrasing: {e}")
             return None
+
+    def _get_visual_type_instructions(self, visual_type: str) -> str:
+        """
+        Get specific instructions based on the visual type.
+        
+        Args:
+            visual_type: The type of visual (chart, diagram, image)
+            
+        Returns:
+            String with specific instructions for the visual type
+        """
+        instructions = {
+            'chart': (
+                "**CHART REQUIREMENTS:**\n"
+                "- Create a data visualization with clear axes, labels, and data points\n"
+                "- Include proper chart elements: title, x-axis, y-axis, legend, data series\n"
+                "- Use appropriate chart type (bar, line, pie, scatter, etc.) based on the topic\n"
+                "- Ensure data is clearly represented with distinct colors and patterns\n"
+                "- Add grid lines or background elements for better readability\n"
+                "- Include numerical values and percentages where relevant\n"
+                "- Make it suitable for educational presentation and analysis"
+            ),
+            'diagram': (
+                "**DIAGRAM REQUIREMENTS:**\n"
+                "- Create a technical or scientific diagram with clear structural elements\n"
+                "- Include labeled parts, components, or processes with connecting lines/arrows\n"
+                "- Use clean, technical drawing style with precise geometric shapes\n"
+                "- Show relationships, flow, or hierarchy between different elements\n"
+                "- Include process steps, system components, or anatomical parts as needed\n"
+                "- Use consistent visual language and symbols throughout\n"
+                "- Make it suitable for educational explanation and understanding"
+            ),
+            'image': (
+                "**IMAGE REQUIREMENTS:**\n"
+                "- Create a general educational illustration or visual representation\n"
+                "- Focus on clear, engaging visual content that supports learning\n"
+                "- Include relevant visual elements, scenes, or concepts\n"
+                "- Use appropriate artistic style for the grade level and subject\n"
+                "- Ensure the image is informative and educational\n"
+                "- Include any necessary labels or annotations for clarity\n"
+                "- Make it visually appealing and suitable for classroom use"
+            )
+        }
+        
+        return instructions.get(visual_type, instructions['image'])
 
 
     def generate_image_from_schema(self, schema: dict) -> str:

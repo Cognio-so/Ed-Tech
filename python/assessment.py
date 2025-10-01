@@ -95,7 +95,6 @@ def get_user_input_from_terminal():
         "question_distribution": {},  # Will be calculated if needed
         "language": input("Enter the language for the test (English or Arabic): "),
         "test_duration": input("Enter the test duration (e.g., '45 minutes'): "),
-        "number_of_questions": int(input("Enter the number of questions: ")),
         "difficulty_level": input("Enter the difficulty level (Easy, Medium, Hard): "),
         "user_prompt": input("Enter optional instructions (or press Enter to skip): ")
     }
@@ -105,9 +104,9 @@ def get_user_input_from_terminal():
         
     # Calculate question distribution for mixed assessments
     if schema["assessment_type"] == "Mixed" and len(assessment_types) > 1:
-        total_questions = schema["number_of_questions"]
-        questions_per_type = total_questions // len(assessment_types)
-        remainder = total_questions % len(assessment_types)
+        # Default to 5 questions per type for mixed assessments
+        questions_per_type = 5
+        remainder = 0
         
         for i, q_type in enumerate(schema["question_types"]):
             schema["question_distribution"][q_type] = questions_per_type + (1 if i < remainder else 0)

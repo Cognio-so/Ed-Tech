@@ -13,18 +13,21 @@ export async function generateVideoFromPPTX(videoData) {
     }
 
     console.log('Starting video generation request:', videoData);
+    
+    // Start video generation (returns immediately with task_id)
     const result = await PythonApiClient.generateVideoPresentation(videoData);
 
     if (result.success) {
       return {
         success: true,
-        video: result,
-        message: "Video generation completed successfully"
+        task_id: result.task_id,
+        status: result.status,
+        message: result.message
       };
     } else {
       return {
         success: false,
-        error: result.error || "Failed to generate video"
+        error: result.error || "Failed to start video generation"
       };
     }
   } catch (error) {
@@ -49,6 +52,20 @@ export async function checkVideoGenerationStatus(taskId) {
     return {
       success: false,
       error: error.message || "Failed to check video status"
+    };
+  }
+}
+
+// NEW: Poll video status with timeout
+export async function pollVideoStatus(taskId) {
+  try {
+    const result = await PythonApiClient.pollVideoStatus(taskId);
+    return result;
+  } catch (error) {
+    console.error("Error polling video status:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to poll video status"
     };
   }
 }
