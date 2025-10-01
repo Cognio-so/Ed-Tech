@@ -12,12 +12,8 @@ export async function POST(request) {
       );
     }
 
-    // Handle data URLs - extract base64 if needed
-    const base64Data = base64Image.includes('data:') 
-      ? base64Image.split(',')[1]  // Extract base64 from data URL
-      : base64Image;               // Use as-is if already base64
-
-    const result = await uploadImageToCloudinary(base64Data, folder);
+    // Pass the full data URL to uploadImageToCloudinary - it will handle the formatting
+    const result = await uploadImageToCloudinary(base64Image, folder);
     
     if (result.success) {
       return NextResponse.json({

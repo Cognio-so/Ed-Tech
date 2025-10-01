@@ -11,7 +11,12 @@ export default cloudinary;
 // Helper function to upload base64 image to Cloudinary
 export async function uploadImageToCloudinary(base64Image, folder = 'ai-images') {
   try {
-    const result = await cloudinary.uploader.upload(base64Image, {
+    // Ensure the base64 data is properly formatted as a data URL
+    const dataUrl = base64Image.startsWith('data:') 
+      ? base64Image 
+      : `data:image/png;base64,${base64Image}`;
+    
+    const result = await cloudinary.uploader.upload(dataUrl, {
       folder: folder,
       resource_type: 'image',
       format: 'png',
