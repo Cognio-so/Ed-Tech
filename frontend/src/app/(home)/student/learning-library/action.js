@@ -35,7 +35,6 @@ export async function getAllStudentContent() {
     const { db } = await connectToDatabase();
     const usersCollection = db.collection('user');
     const lessonsCollection = db.collection('lessons');
-    const comicsCollection = db.collection('comics');
     const progressCollection = db.collection('progress');
 
     const user = await usersCollection.findOne(
@@ -53,6 +52,7 @@ export async function getAllStudentContent() {
 
     const normalizedGrades = normalizeGrades(user.grades);
 
+    // FIXED: Fetch ALL content from lessons collection only (not from individual collections)
     const lessons = await lessonsCollection
       .find({ 
         grade: { $in: normalizedGrades },
@@ -61,31 +61,7 @@ export async function getAllStudentContent() {
       .sort({ 'metadata.createdAt': -1 })
       .toArray();
 
-    const comics = await comicsCollection
-      .find({ 
-        grade: { $in: normalizedGrades },
-        status: 'completed'
-      })
-      .sort({ 'metadata.createdAt': -1 })
-      .toArray();
-
-    const comicsInLessons = await lessonsCollection
-      .find({ 
-        grade: { $in: normalizedGrades },
-        status: 'published',
-        $or: [
-          { contentType: 'comic' },
-          { resourceType: 'comic' },
-          { comicType: { $exists: true } }
-        ]
-      })
-      .sort({ 'metadata.createdAt': -1 })
-      .toArray();
-
-    const allContentIds = [
-      ...lessons.map(lesson => lesson._id),
-      ...comics.map(comic => comic._id)
-    ];
+    const allContentIds = lessons.map(lesson => lesson._id);
 
     const progressRecords = await progressCollection
       .find({ 
@@ -99,14 +75,24 @@ export async function getAllStudentContent() {
       progressMap[progress.contentId.toString()] = progress;
     });
 
+    // FIXED: Transform ALL lessons (including comics, images, videos, etc.) into a unified format
     const transformedLessons = lessons.map(lesson => {
       const progress = progressMap[lesson._id.toString()];
       
+      // Determine resource type based on contentType or content fields
       let resourceType = 'content';
-      if (lesson.assessmentId || lesson.assessmentContent || lesson.generatedContent) {
+      if (lesson.assessmentId || lesson.assessmentContent) {
         resourceType = 'assessment';
       } else if (lesson.contentType) {
-        resourceType = lesson.contentType;
+        resourceType = lesson.contentType; // This will be 'comic', 'image', 'video', 'slides', etc.
+      } else if (lesson.imageUrls && lesson.imageUrls.length > 0) {
+        resourceType = 'comic';
+      } else if (lesson.imageUrl) {
+        resourceType = 'image';
+      } else if (lesson.videoUrl) {
+        resourceType = 'video';
+      } else if (lesson.presentationUrl) {
+        resourceType = 'slides';
       }
 
       return {
@@ -145,6 +131,7 @@ export async function getAllStudentContent() {
           bookmarked: progress.metadata?.bookmarked || false
         } : null,
         
+        // Comic fields
         panels: lesson.panels,
         imageUrls: lesson.imageUrls,
         images: lesson.images,
@@ -153,6 +140,7 @@ export async function getAllStudentContent() {
         comicType: lesson.comicType,
         instruction: lesson.instruction,
         
+        // Image fields
         imageUrl: lesson.imageUrl,
         imageBase64: lesson.imageBase64,
         visualType: lesson.visualType,
@@ -160,6 +148,7 @@ export async function getAllStudentContent() {
         difficultyFlag: lesson.difficultyFlag,
         cloudinaryPublicId: lesson.cloudinaryPublicId,
         
+        // Slides/Presentation fields
         presentationUrl: lesson.presentationUrl,
         slideImages: lesson.slideImages,
         slidesCount: lesson.slidesCount || lesson.slideCount,
@@ -171,88 +160,27 @@ export async function getAllStudentContent() {
         taskId: lesson.taskId,
         taskStatus: lesson.taskStatus,
         
+        // Video fields
         videoUrl: lesson.videoUrl,
         thumbnailUrl: lesson.thumbnailUrl,
         voiceName: lesson.voiceName,
         talkingPhotoName: lesson.talkingPhotoName,
-        videoId: lesson.videoId
+        videoId: lesson.videoId,
+        voiceId: lesson.voiceId,
+        talkingPhotoId: lesson.talkingPhotoId,
+        
+        // Assessment fields
+        assessmentContent: lesson.assessmentContent,
+        assessmentId: lesson.assessmentId,
+        
+        // Web search fields
+        searchResults: lesson.searchResults,
+        searchQuery: lesson.searchQuery
       };
     });
 
-    const transformedComics = comics.map(comic => {
-      const progress = progressMap[comic._id.toString()];
-      
-      return {
-        _id: comic._id.toString(),
-        resourceId: comic._id.toString(),
-        teacherId: comic.userId?.toString(),
-        title: comic.title,
-        subject: comic.subject,
-        grade: comic.grade,
-        topic: comic.topic || comic.instruction,
-        description: comic.instruction,
-        content: comic.instruction || '',
-        resourceType: 'comic',
-        difficulty: 'medium',
-        language: comic.language || 'English',
-        estimatedTimeMinutes: 15,
-        rating: 4.5,
-        views: comic.metadata?.viewCount || 0,
-        likes: 0,
-        metadata: {
-          ...comic.metadata,
-          createdAt: comic.metadata?.createdAt?.toISOString?.() || comic.metadata?.createdAt,
-          updatedAt: comic.metadata?.updatedAt?.toISOString?.() || comic.metadata?.updatedAt
-        },
-        status: comic.status,
-        progress: progress ? {
-          currentStep: progress.progress?.currentStep || 0,
-          totalSteps: progress.progress?.totalSteps || 1,
-          percentage: progress.progress?.percentage || 0,
-          timeSpent: progress.progress?.timeSpent || 0,
-          lastAccessedAt: progress.progress?.lastAccessedAt?.toISOString?.() || progress.progress?.lastAccessedAt,
-          status: progress.status,
-          completedAt: progress.completionData?.completedAt?.toISOString?.() || progress.completionData?.completedAt,
-          score: progress.completionData?.score,
-          attempts: progress.metadata?.attempts || 0,
-          bookmarked: progress.metadata?.bookmarked || false
-        } : null,
-        
-        panels: comic.panels || [],
-        imageUrls: comic.imageUrls || [],
-        images: comic.images || [],
-        cloudinaryPublicIds: comic.cloudinaryPublicIds || [],
-        numPanels: comic.numPanels || 0,
-        comicType: comic.comicType || 'educational',
-        instruction: comic.instruction,
-        
-        imageUrl: comic.imageUrls?.[0] || null,
-        imageBase64: null,
-        visualType: 'comic',
-        instructions: comic.instruction,
-        difficultyFlag: 'medium',
-        cloudinaryPublicId: comic.cloudinaryPublicIds?.[0] || null,
-        
-        presentationUrl: null,
-        slideImages: null,
-        slidesCount: null,
-        slideCount: null,
-        template: null,
-        verbosity: null,
-        includeImages: null,
-        downloadUrl: null,
-        taskId: null,
-        taskStatus: null,
-        
-        videoUrl: null,
-        thumbnailUrl: null,
-        voiceName: null,
-        talkingPhotoName: null,
-        videoId: null
-      };
-    });
-
-    const allContent = [...transformedLessons, ...transformedComics].sort((a, b) => {
+    // FIXED: Return only transformed lessons (no separate comics array)
+    const allContent = transformedLessons.sort((a, b) => {
       const dateA = new Date(a.metadata?.createdAt || 0);
       const dateB = new Date(b.metadata?.createdAt || 0);
       return dateB - dateA;

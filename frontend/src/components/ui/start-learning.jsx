@@ -1079,17 +1079,72 @@ export default function StartLearning({
       case 'comic':
         // Check if this is a comic lesson
         if (content.resourceType === 'comic' || content.contentType === 'comic') {
-          // Try multiple sources for comic images
+          // Collect images from all possible sources and deduplicate
           let comicImages = [];
+          const seenUrls = new Set(); // Track seen URLs to avoid duplicates
           
-          if (content.panels && content.panels.length > 0) {
-            comicImages = content.panels.map(panel => panel.imageUrl || panel.imageBase64).filter(Boolean);
-          } else if (content.imageUrls && content.imageUrls.length > 0) {
-            comicImages = content.imageUrls;
-          } else if (content.images && content.images.length > 0) {
-            comicImages = content.images;
-          } else if (content.cloudinaryPublicIds && content.cloudinaryPublicIds.length > 0) {
-            comicImages = content.cloudinaryPublicIds.map(id => `https://res.cloudinary.com/demo/image/upload/${id}`);
+          // Helper function to add unique images
+          const addUniqueImages = (images) => {
+            if (Array.isArray(images)) {
+              images.forEach(img => {
+                if (img && !seenUrls.has(img)) {
+                  seenUrls.add(img);
+                  comicImages.push(img);
+                }
+              });
+            }
+          };
+          
+          // 1. Check for panels array (most common for comics)
+          if (content.panels && Array.isArray(content.panels) && content.panels.length > 0) {
+            const panelImages = content.panels
+              .map(panel => {
+                if (panel && typeof panel === 'object') {
+                  return panel.imageUrl || panel.imageBase64 || panel.cloudinaryPublicId;
+                }
+                return null;
+              })
+              .filter(Boolean);
+            addUniqueImages(panelImages);
+          }
+          
+          // 2. Check for imageUrls array (Cloudinary URLs)
+          if (content.imageUrls && Array.isArray(content.imageUrls) && content.imageUrls.length > 0) {
+            addUniqueImages(content.imageUrls);
+          }
+          
+          // 3. Check for images array
+          if (content.images && Array.isArray(content.images) && content.images.length > 0) {
+            addUniqueImages(content.images);
+          }
+          
+          // 4. Check for cloudinary public IDs and construct URLs
+          if (content.cloudinaryPublicIds && Array.isArray(content.cloudinaryPublicIds) && content.cloudinaryPublicIds.length > 0) {
+            const cloudinaryUrls = content.cloudinaryPublicIds
+              .filter(Boolean)
+              .map(id => {
+                // Handle both full URLs and just public IDs
+                if (id.startsWith('http')) {
+                  return id;
+                }
+                // Try different Cloudinary URL formats
+                return `https://res.cloudinary.com/demo/image/upload/${id}`;
+              });
+            addUniqueImages(cloudinaryUrls);
+          }
+          
+          // 5. Check if content itself contains base64 image data
+          if (content.content && typeof content.content === 'string' && content.content.includes('data:image')) {
+            const base64Matches = content.content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g);
+            if (base64Matches) {
+              addUniqueImages(base64Matches);
+            }
+          }
+          
+          // 6. Check for single imageUrl field
+          if (content.imageUrl && !seenUrls.has(content.imageUrl)) {
+            seenUrls.add(content.imageUrl);
+            comicImages.push(content.imageUrl);
           }
         
           if (comicImages.length === 0) {
@@ -1105,16 +1160,31 @@ export default function StartLearning({
 
           return (
             <div className="h-full flex flex-col">
+              <div className="text-center mb-4 flex-shrink-0">
+                <h3 className="text-lg font-semibold">{content.title}</h3>
+                <p className="text-sm text-muted-foreground">{content.topic || content.instruction || content.description}</p>
+                {content.numPanels && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {content.numPanels} panel{content.numPanels !== 1 ? 's' : ''}
+                  </p>
+                )}
+                {content.comicType && (
+                  <Badge variant="outline" className="mt-2">
+                    {content.comicType}
+                  </Badge>
+                )}
+              </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <CarouselWithControls
                   items={comicImages.map((url, i) => ({ url, index: i + 1 }))}
                   className="h-full"
                   renderItem={(p) => (
-                    <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-full">
+                    <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-full p-2">
                       <img 
                         src={p.url} 
                         alt={`Panel ${p.index}`} 
                         className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
+                        loading="lazy"
                         onError={(e) => {
                           e.target.style.display = 'none';
                           const fallbackDiv = document.createElement('div');
@@ -1126,7 +1196,7 @@ export default function StartLearning({
                               </svg>
                               <p class="text-sm">Panel ${p.index} failed to load</p>
                               <p class="text-xs text-muted-foreground mt-2">
-                                URL: ${p.url || 'Not provided'}
+                                URL: ${p.url ? p.url.substring(0, 50) + '...' : 'Not provided'}
                               </p>
                             </div>
                           `;
@@ -1169,15 +1239,45 @@ export default function StartLearning({
       case 'image':
         // Check if this is an image lesson
         if (content.resourceType === 'image' || content.contentType === 'image') {
+          // Find the best available image source
+          let imageUrl = null;
+          
+          // Priority order: imageUrl > cloudinaryPublicId > imageBase64 > content base64
+          if (content.imageUrl) {
+            imageUrl = content.imageUrl;
+          } else if (content.cloudinaryPublicId) {
+            if (content.cloudinaryPublicId.startsWith('http')) {
+              imageUrl = content.cloudinaryPublicId;
+            } else {
+              imageUrl = `https://res.cloudinary.com/demo/image/upload/${content.cloudinaryPublicId}`;
+            }
+          } else if (content.imageBase64) {
+            imageUrl = `data:image/png;base64,${content.imageBase64}`;
+          } else if (content.content && typeof content.content === 'string' && content.content.includes('data:image')) {
+            const base64Match = content.content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/);
+            if (base64Match) {
+              imageUrl = base64Match[0];
+            }
+          }
+
           return (
             <div className="h-full flex flex-col">
+              <div className="text-center mb-4 flex-shrink-0">
+                <h3 className="text-lg font-semibold">{content.title}</h3>
+                <p className="text-sm text-muted-foreground">{content.topic || content.instruction || content.description}</p>
+                {content.visualType && (
+                  <Badge variant="outline" className="mt-2">
+                    {content.visualType}
+                  </Badge>
+                )}
+              </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <div className="flex flex-col h-full">
-                  <div className="flex-1 min-h-0 flex items-center justify-center">
+                  <div className="flex-1 min-h-0 flex items-center justify-center p-4">
                     <div className="relative max-w-full max-h-full">
-                      {content.imageUrl ? (
+                      {imageUrl ? (
                         <img 
-                          src={content.imageUrl} 
+                          src={imageUrl} 
                           alt={content.title}
                           className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
                           loading="lazy"
@@ -1191,17 +1291,13 @@ export default function StartLearning({
                                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                                 </svg>
                                 <p class="text-sm">Image failed to load</p>
+                                <p class="text-xs text-muted-foreground mt-2">
+                                  URL: ${imageUrl ? imageUrl.substring(0, 50) + '...' : 'Not provided'}
+                                </p>
                               </div>
                             `;
                             e.target.parentNode.appendChild(fallbackDiv);
                           }}
-                        />
-                      ) : content.imageBase64 ? (
-                        <img 
-                          src={`data:image/png;base64,${content.imageBase64}`} 
-                          alt={content.title}
-                          className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
-                          loading="lazy"
                         />
                       ) : (
                         <div className="text-center py-8 text-foreground">

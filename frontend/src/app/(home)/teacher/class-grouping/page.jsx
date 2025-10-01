@@ -630,7 +630,7 @@ export default function ClassGroupingPage() {
                   value={feedbackFormData.focusAreas.join(', ')}
                   onChange={(e) => setFeedbackFormData({
                     ...feedbackFormData, 
-                    focusAreas: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                    focusAreas: e.target.value.split(',').filter(Boolean)
                   })}
                   placeholder="e.g., Algebra, Reading Comprehension (comma-separated)"
                   className="w-full"
@@ -643,7 +643,7 @@ export default function ClassGroupingPage() {
                   value={feedbackFormData.strengths.join(', ')}
                   onChange={(e) => setFeedbackFormData({
                     ...feedbackFormData, 
-                    strengths: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                    strengths: e.target.value.split(',').filter(Boolean)
                   })}
                   placeholder="e.g., Problem-solving, Critical thinking (comma-separated)"
                   className="w-full"
@@ -656,7 +656,7 @@ export default function ClassGroupingPage() {
                   value={feedbackFormData.improvements.join(', ')}
                   onChange={(e) => setFeedbackFormData({
                     ...feedbackFormData, 
-                    improvements: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                    improvements: e.target.value.split(',').filter(Boolean)
                   })}
                   placeholder="e.g., Time management, Attention to detail (comma-separated)"
                   className="w-full"

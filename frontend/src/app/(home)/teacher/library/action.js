@@ -337,7 +337,9 @@ export async function addContentToLesson(contentId, contentType, lessonData) {
       status: 'published'
     };
 
-    // **NEW: Add slide-specific fields for presentations**
+    // **FIXED: Add ALL media URL fields for each content type**
+
+    // For slides/presentations
     if (contentType === 'slides') {
       lessonDocument.presentationUrl = content.presentationUrl;
       lessonDocument.slideImages = content.slideImages;
@@ -349,6 +351,52 @@ export async function addContentToLesson(contentId, contentType, lessonData) {
       lessonDocument.downloadUrl = content.downloadUrl;
       lessonDocument.taskId = content.taskId;
       lessonDocument.taskStatus = content.taskStatus;
+    }
+
+    // For comics - ADD ALL COMIC URL FIELDS
+    if (contentType === 'comic') {
+      lessonDocument.imageUrls = content.imageUrls || [];
+      lessonDocument.cloudinaryPublicIds = content.cloudinaryPublicIds || [];
+      lessonDocument.panels = content.panels || [];
+      lessonDocument.numPanels = content.numPanels || 0;
+      lessonDocument.comicType = content.comicType || 'educational';
+      lessonDocument.instruction = content.instruction;
+      lessonDocument.panelTexts = content.panelTexts || [];
+    }
+
+    // For images - ADD ALL IMAGE URL FIELDS
+    if (contentType === 'image') {
+      lessonDocument.imageUrl = content.imageUrl;
+      lessonDocument.cloudinaryPublicId = content.cloudinaryPublicId;
+      lessonDocument.imageBase64 = content.imageBase64;
+      lessonDocument.visualType = content.visualType;
+      lessonDocument.instructions = content.instructions;
+      lessonDocument.difficultyFlag = content.difficultyFlag;
+    }
+
+    // For videos - ADD ALL VIDEO URL FIELDS
+    if (contentType === 'video') {
+      lessonDocument.videoUrl = content.videoUrl;
+      lessonDocument.thumbnailUrl = content.thumbnailUrl;
+      lessonDocument.voiceName = content.voiceName;
+      lessonDocument.talkingPhotoName = content.talkingPhotoName;
+      lessonDocument.videoId = content.videoId;
+      lessonDocument.slidesCount = content.slidesCount;
+      lessonDocument.voiceId = content.voiceId;
+      lessonDocument.talkingPhotoId = content.talkingPhotoId;
+      lessonDocument.presentationUrl = content.presentationUrl;
+    }
+
+    // For assessments
+    if (contentType === 'assessment') {
+      lessonDocument.assessmentContent = content.generatedContent || content.assessmentContent;
+      lessonDocument.assessmentId = content._id;
+    }
+
+    // For web searches
+    if (contentType === 'websearch') {
+      lessonDocument.searchResults = content.searchResults || content.generatedContent;
+      lessonDocument.searchQuery = content.searchQuery;
     }
 
     const result = await lessonsCollection.insertOne(lessonDocument);
