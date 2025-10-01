@@ -403,152 +403,152 @@ const ComicForm = ({ onComicGenerated }) => {
         </CardHeader>
         <CardContent className="p-6">
           <form onSubmit={handleGenerate} className="space-y-6">
-            {/* Instructions */}
-            <div className="space-y-2">
-              <Label htmlFor="instructions">Topic & Instructions *</Label>
-              <Textarea
-                id="instructions"
-                placeholder="e.g., Create a fun comic explaining photosynthesis for 5th graders with plant characters"
-                value={formData.instructions}
-                onChange={(e) => handleInputChange("instructions", e.target.value)}
+          {/* Instructions */}
+          <div className="space-y-2">
+            <Label htmlFor="instructions">Topic & Instructions *</Label>
+            <Textarea
+              id="instructions"
+              placeholder="e.g., Create a fun comic explaining photosynthesis for 5th graders with plant characters"
+              value={formData.instructions}
+              onChange={(e) => handleInputChange("instructions", e.target.value)}
                 className="min-h-[120px] resize-none dark:bg-secondary dark:text-white"
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                Describe the educational topic and any specific requirements for your comic
-              </p>
-            </div>
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              Describe the educational topic and any specific requirements for your comic
+            </p>
+          </div>
 
-            {/* Subject and Grade Level */}
+          {/* Subject and Grade Level */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="subject">Subject</Label>
-                {loadingUserData ? (
-                  <div className="flex items-center justify-center p-4">
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    <span className="text-sm text-muted-foreground">Loading subjects...</span>
-                  </div>
-                ) : userSubjects.length > 0 ? (
-                  <Select value={formData.subject} onValueChange={(value) => handleInputChange("subject", value)}>
+            <div className="space-y-2">
+              <Label htmlFor="subject">Subject</Label>
+              {loadingUserData ? (
+                <div className="flex items-center justify-center p-4">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <span className="text-sm text-muted-foreground">Loading subjects...</span>
+                </div>
+              ) : userSubjects.length > 0 ? (
+                <Select value={formData.subject} onValueChange={(value) => handleInputChange("subject", value)}>
                     <SelectTrigger className="dark:bg-secondary dark:text-white">
-                      <SelectValue placeholder="Select subject" />
-                    </SelectTrigger>
-                    <SelectContent className="dark:bg-secondary dark:text-white">
-                      {userSubjects.map((sub) => (
-                        <SelectItem key={sub} value={sub}>
-                          {sub.charAt(0).toUpperCase() + sub.slice(1)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                    <p className="text-sm text-muted-foreground">No subjects assigned to your account</p>
-                    <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign subjects</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="gradeLevel">Grade Level</Label>
-                {loadingUserData ? (
-                  <div className="flex items-center justify-center p-4">
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    <span className="text-sm text-muted-foreground">Loading grades...</span>
-                  </div>
-                ) : userGrades.length > 0 ? (
-                  <Select value={formData.gradeLevel} onValueChange={(value) => handleInputChange("gradeLevel", value)}>
-                    <SelectTrigger className="dark:bg-secondary dark:text-white">
-                      <SelectValue placeholder="Select grade" />
-                    </SelectTrigger>
-                    <SelectContent className="dark:bg-secondary dark:text-white">
-                      {userGrades.map((g) => (
-                        <SelectItem key={g} value={g}>
-                          {g === "kg1" ? "Kindergarten 1" : 
-                           g === "kg2" ? "Kindergarten 2" : 
-                           `${g}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                    <p className="text-sm text-muted-foreground">No grades assigned to your account</p>
-                    <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign grades</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Number of Panels and Language */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="numPanels">Number of Panels</Label>
-                <Select value={formData.numPanels.toString()} onValueChange={(value) => handleInputChange("numPanels", parseInt(value))}>
-                  <SelectTrigger className="dark:bg-secondary dark:text-white">
-                    <SelectValue placeholder="Select number of panels" />
+                    <SelectValue placeholder="Select subject" />
                   </SelectTrigger>
-                  <SelectContent className="dark:bg-secondary dark:text-white">
-                    {panelOptions.map((num) => (
-                      <SelectItem key={num} value={num.toString()}>
-                        {num} panel{num > 1 ? 's' : ''}
+                    <SelectContent className="dark:bg-secondary dark:text-white">
+                    {userSubjects.map((sub) => (
+                      <SelectItem key={sub} value={sub}>
+                        {sub.charAt(0).toUpperCase() + sub.slice(1)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="language">Language</Label>
-                <Select value={formData.language} onValueChange={(value) => handleInputChange("language", value)}>
-                  <SelectTrigger className="dark:bg-secondary dark:text-white">
-                    <SelectValue placeholder="Select language" />
-                  </SelectTrigger>
-                  <SelectContent className="dark:bg-secondary dark:text-white">
-                    {language.map((lang) => (
-                      <SelectItem key={lang} value={lang}>
-                        {lang}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-4">
-              {!isGenerating ? (
-                <Button
-                  type="submit"
-                  disabled={!canGenerate || isLoading}
-                  className="flex-1 bg-purple-600 hover:bg-purple-600/90 text-white shadow-lg"
-                  size="lg"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Starting...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-2" />
-                      Create Comic
-                    </>
-                  )}
-                </Button>
               ) : (
-                <Button
-                  type="button"
-                  onClick={handleStop}
-                  variant="outline"
-                  className="flex-1"
-                  size="lg"
-                >
-                  <Pause className="h-4 w-4 mr-2" />
-                  Stop Generation
-                </Button>
+                <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                  <p className="text-sm text-muted-foreground">No subjects assigned to your account</p>
+                  <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign subjects</p>
+                </div>
               )}
             </div>
+
+              <div className="space-y-2">
+              <Label htmlFor="gradeLevel">Grade Level</Label>
+              {loadingUserData ? (
+                <div className="flex items-center justify-center p-4">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <span className="text-sm text-muted-foreground">Loading grades...</span>
+                </div>
+              ) : userGrades.length > 0 ? (
+                <Select value={formData.gradeLevel} onValueChange={(value) => handleInputChange("gradeLevel", value)}>
+                    <SelectTrigger className="dark:bg-secondary dark:text-white">
+                    <SelectValue placeholder="Select grade" />
+                  </SelectTrigger>
+                    <SelectContent className="dark:bg-secondary dark:text-white">
+                    {userGrades.map((g) => (
+                      <SelectItem key={g} value={g}>
+                        {g === "kg1" ? "Kindergarten 1" : 
+                         g === "kg2" ? "Kindergarten 2" : 
+                         `${g}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                  <p className="text-sm text-muted-foreground">No grades assigned to your account</p>
+                  <p className="text-xs text-muted-foreground mt-1">Contact your administrator to assign grades</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Number of Panels and Language */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="numPanels">Number of Panels</Label>
+              <Select value={formData.numPanels.toString()} onValueChange={(value) => handleInputChange("numPanels", parseInt(value))}>
+                  <SelectTrigger className="dark:bg-secondary dark:text-white">
+                  <SelectValue placeholder="Select number of panels" />
+                </SelectTrigger>
+                  <SelectContent className="dark:bg-secondary dark:text-white">
+                  {panelOptions.map((num) => (
+                    <SelectItem key={num} value={num.toString()}>
+                      {num} panel{num > 1 ? 's' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="language">Language</Label>
+              <Select value={formData.language} onValueChange={(value) => handleInputChange("language", value)}>
+                  <SelectTrigger className="dark:bg-secondary dark:text-white">
+                  <SelectValue placeholder="Select language" />
+                </SelectTrigger>
+                  <SelectContent className="dark:bg-secondary dark:text-white">
+                  {language.map((lang) => (
+                    <SelectItem key={lang} value={lang}>
+                      {lang}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-4">
+            {!isGenerating ? (
+              <Button
+                type="submit"
+                disabled={!canGenerate || isLoading}
+                className="flex-1 bg-purple-600 hover:bg-purple-600/90 text-white shadow-lg"
+                size="lg"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Create Comic
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={handleStop}
+                variant="outline"
+                className="flex-1"
+                size="lg"
+              >
+                <Pause className="h-4 w-4 mr-2" />
+                Stop Generation
+              </Button>
+            )}
+          </div>
           </form>
         </CardContent>
       </Card>
@@ -621,8 +621,8 @@ const ComicForm = ({ onComicGenerated }) => {
                             <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed">
                               {getPanelText(p.index)}
                             </p>
-                          </div>
-                        </div>
+        </div>
+      </div>
                       )}
                     </div>
                   )}

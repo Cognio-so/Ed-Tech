@@ -114,6 +114,14 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
                      questionText.toLowerCase().includes('describe') ||
                      questionText.toLowerCase().includes('what is meant by') ||
                      questionText.toLowerCase().includes('how') ||
+                     questionText.toLowerCase().includes('solve for') ||
+                     questionText.toLowerCase().includes('simplify') ||
+                     questionText.toLowerCase().includes('what is the value') ||
+                     questionText.toLowerCase().includes('calculate') ||
+                     questionText.toLowerCase().includes('find') ||
+                     questionText.toLowerCase().includes('determine') ||
+                     questionText.toLowerCase().includes('show that') ||
+                     questionText.toLowerCase().includes('prove that') ||
                      questionText.includes('اشرح') ||
                      questionText.includes('وضح') ||
                      questionText.includes('ما المقصود')) {
