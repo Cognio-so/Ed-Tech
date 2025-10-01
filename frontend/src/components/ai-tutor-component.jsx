@@ -692,6 +692,69 @@ const AiTutor = () => {
         }
     };
 
+    // Enhanced image rendering component
+    const ImageMessage = ({ content }) => {
+        const imageMatch = content.match(/!\[.*?\]\((data:image\/[^)]+)\)/);
+        
+        if (imageMatch) {
+            const imageUrl = imageMatch[1];
+            return (
+                <div className="my-4 flex justify-center">
+                    <img 
+                        src={imageUrl}
+                        alt="Generated image"
+                        className="max-w-full h-auto rounded-lg shadow-lg border border-gray-200 dark:border-gray-600"
+                        style={{ maxHeight: '400px' }}
+                        onError={(e) => {
+                            console.error('Image failed to load:', e.target.src);
+                            e.target.style.display = 'none';
+                        }}
+                        onLoad={() => {
+                            console.log('Image loaded successfully');
+                        }}
+                    />
+                </div>
+            );
+        }
+        
+        return (
+            <div className="prose prose-sm max-w-none dark:prose-invert">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
+                    {content}
+                </ReactMarkdown>
+            </div>
+        );
+    };
+
+    // Update the renderMessageContent function to handle images properly
+    const renderMessageContent = (message) => {
+        if (message.isImageResponse) {
+            return <ImageMessage content={message.content} />;
+        } else {
+            return (
+                <div className="relative group">
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
+                            {message.content}
+                        </ReactMarkdown>
+                    </div>
+                    {/* Copy button - only show for AI messages */}
+                    {message.type === 'ai' && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCopyMessage(message.content)}
+                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-800"
+                            title="Copy message"
+                        >
+                            <Copy className="w-3 h-3" />
+                        </Button>
+                    )}
+                </div>
+            );
+        }
+    };
+
     // Add export functionality with format selection
     const handleExportConversation = async () => {
         if (messages.length <= 1) {
