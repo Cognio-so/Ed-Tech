@@ -186,7 +186,20 @@ class PPTXToHeyGenVideo:
         paths = []
         for i, slide in enumerate(prs.slides):
             path = os.path.join(temp_dir, f"slide_{i + 1}.png")
-            img = Image.new("RGB", (self.width, self.height), color=self.background_color.lstrip('#'))
+            
+            # Fix: Convert color to proper format for PIL
+            bg_color = self.background_color
+            if bg_color.startswith('#'):
+                # Already has # prefix
+                pass
+            elif len(bg_color) == 6 and all(c in '0123456789abcdefABCDEF' for c in bg_color):
+                # Hex without # prefix
+                bg_color = f"#{bg_color}"
+            else:
+                # Fallback to white if color format is invalid
+                bg_color = "#ffffff"
+            
+            img = Image.new("RGB", (self.width, self.height), color=bg_color)
             draw = ImageDraw.Draw(img)
             try:
                 font = ImageFont.truetype("arial.ttf", 24)
