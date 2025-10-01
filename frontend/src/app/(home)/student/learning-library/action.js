@@ -36,9 +36,6 @@ export async function getAllStudentContent() {
     const usersCollection = db.collection('user');
     const lessonsCollection = db.collection('lessons');
     const comicsCollection = db.collection('comics');
-    const imagesCollection = db.collection('images');
-    const videosCollection = db.collection('videos');
-    const assessmentsCollection = db.collection('assessments');
     const progressCollection = db.collection('progress');
 
     const user = await usersCollection.findOne(
@@ -56,55 +53,38 @@ export async function getAllStudentContent() {
 
     const normalizedGrades = normalizeGrades(user.grades);
 
-    // Fetch from all collections
-    const [lessons, comics, images, videos, assessments] = await Promise.all([
-      lessonsCollection
-        .find({ 
-          grade: { $in: normalizedGrades },
-          status: 'published'
-        })
-        .sort({ 'metadata.createdAt': -1 })
-        .toArray(),
-      
-      comicsCollection
-        .find({ 
-          grade: { $in: normalizedGrades },
-          status: 'completed'
-        })
-        .sort({ 'metadata.createdAt': -1 })
-        .toArray(),
-      
-      imagesCollection
-        .find({ 
-          grade: { $in: normalizedGrades },
-          status: 'completed'
-        })
-        .sort({ 'metadata.createdAt': -1 })
-        .toArray(),
-      
-      videosCollection
-        .find({ 
-          grade: { $in: normalizedGrades },
-          status: 'completed'
-        })
-        .sort({ 'metadata.createdAt': -1 })
-        .toArray(),
-      
-      assessmentsCollection
-        .find({ 
-          grade: { $in: normalizedGrades },
-          status: 'completed'
-        })
-        .sort({ 'metadata.createdAt': -1 })
-        .toArray()
-    ]);
+    const lessons = await lessonsCollection
+      .find({ 
+        grade: { $in: normalizedGrades },
+        status: 'published'
+      })
+      .sort({ 'metadata.createdAt': -1 })
+      .toArray();
+
+    const comics = await comicsCollection
+      .find({ 
+        grade: { $in: normalizedGrades },
+        status: 'completed'
+      })
+      .sort({ 'metadata.createdAt': -1 })
+      .toArray();
+
+    const comicsInLessons = await lessonsCollection
+      .find({ 
+        grade: { $in: normalizedGrades },
+        status: 'published',
+        $or: [
+          { contentType: 'comic' },
+          { resourceType: 'comic' },
+          { comicType: { $exists: true } }
+        ]
+      })
+      .sort({ 'metadata.createdAt': -1 })
+      .toArray();
 
     const allContentIds = [
       ...lessons.map(lesson => lesson._id),
-      ...comics.map(comic => comic._id),
-      ...images.map(image => image._id),
-      ...videos.map(video => video._id),
-      ...assessments.map(assessment => assessment._id)
+      ...comics.map(comic => comic._id)
     ];
 
     const progressRecords = await progressCollection
@@ -119,7 +99,6 @@ export async function getAllStudentContent() {
       progressMap[progress.contentId.toString()] = progress;
     });
 
-    // Transform lessons
     const transformedLessons = lessons.map(lesson => {
       const progress = progressMap[lesson._id.toString()];
       
@@ -166,7 +145,6 @@ export async function getAllStudentContent() {
           bookmarked: progress.metadata?.bookmarked || false
         } : null,
         
-        // Comic fields
         panels: lesson.panels,
         imageUrls: lesson.imageUrls,
         images: lesson.images,
@@ -175,7 +153,6 @@ export async function getAllStudentContent() {
         comicType: lesson.comicType,
         instruction: lesson.instruction,
         
-        // Image fields
         imageUrl: lesson.imageUrl,
         imageBase64: lesson.imageBase64,
         visualType: lesson.visualType,
@@ -183,7 +160,6 @@ export async function getAllStudentContent() {
         difficultyFlag: lesson.difficultyFlag,
         cloudinaryPublicId: lesson.cloudinaryPublicId,
         
-        // Slides fields
         presentationUrl: lesson.presentationUrl,
         slideImages: lesson.slideImages,
         slidesCount: lesson.slidesCount || lesson.slideCount,
@@ -195,7 +171,6 @@ export async function getAllStudentContent() {
         taskId: lesson.taskId,
         taskStatus: lesson.taskStatus,
         
-        // Video fields
         videoUrl: lesson.videoUrl,
         thumbnailUrl: lesson.thumbnailUrl,
         voiceName: lesson.voiceName,
@@ -204,7 +179,6 @@ export async function getAllStudentContent() {
       };
     });
 
-    // Transform comics
     const transformedComics = comics.map(comic => {
       const progress = progressMap[comic._id.toString()];
       
@@ -278,244 +252,7 @@ export async function getAllStudentContent() {
       };
     });
 
-    // Transform images
-    const transformedImages = images.map(image => {
-      const progress = progressMap[image._id.toString()];
-      
-      return {
-        _id: image._id.toString(),
-        resourceId: image._id.toString(),
-        teacherId: image.userId?.toString(),
-        title: image.title,
-        subject: image.subject,
-        grade: image.grade,
-        topic: image.topic || image.instruction,
-        description: image.instruction,
-        content: image.instruction || '',
-        resourceType: 'image',
-        difficulty: 'medium',
-        language: image.language || 'English',
-        estimatedTimeMinutes: 10,
-        rating: 4.5,
-        views: image.metadata?.viewCount || 0,
-        likes: 0,
-        metadata: {
-          ...image.metadata,
-          createdAt: image.metadata?.createdAt?.toISOString?.() || image.metadata?.createdAt,
-          updatedAt: image.metadata?.updatedAt?.toISOString?.() || image.metadata?.updatedAt
-        },
-        status: image.status,
-        progress: progress ? {
-          currentStep: progress.progress?.currentStep || 0,
-          totalSteps: progress.progress?.totalSteps || 1,
-          percentage: progress.progress?.percentage || 0,
-          timeSpent: progress.progress?.timeSpent || 0,
-          lastAccessedAt: progress.progress?.lastAccessedAt?.toISOString?.() || progress.progress?.lastAccessedAt,
-          status: progress.status,
-          completedAt: progress.completionData?.completedAt?.toISOString?.() || progress.completionData?.completedAt,
-          score: progress.completionData?.score,
-          attempts: progress.metadata?.attempts || 0,
-          bookmarked: progress.metadata?.bookmarked || false
-        } : null,
-        
-        // Image specific fields
-        imageUrl: image.imageUrl,
-        imageBase64: image.imageBase64,
-        visualType: image.visualType || 'image',
-        instructions: image.instruction,
-        difficultyFlag: image.difficultyFlag || 'medium',
-        cloudinaryPublicId: image.cloudinaryPublicId,
-        
-        // Set other fields to null
-        panels: null,
-        imageUrls: null,
-        images: null,
-        cloudinaryPublicIds: null,
-        numPanels: null,
-        comicType: null,
-        instruction: image.instruction,
-        
-        presentationUrl: null,
-        slideImages: null,
-        slidesCount: null,
-        slideCount: null,
-        template: null,
-        verbosity: null,
-        includeImages: null,
-        downloadUrl: null,
-        taskId: null,
-        taskStatus: null,
-        
-        videoUrl: null,
-        thumbnailUrl: null,
-        voiceName: null,
-        talkingPhotoName: null,
-        videoId: null
-      };
-    });
-
-    // Transform videos
-    const transformedVideos = videos.map(video => {
-      const progress = progressMap[video._id.toString()];
-      
-      return {
-        _id: video._id.toString(),
-        resourceId: video._id.toString(),
-        teacherId: video.userId?.toString(),
-        title: video.title,
-        subject: video.subject,
-        grade: video.grade,
-        topic: video.topic || video.instruction,
-        description: video.instruction,
-        content: video.instruction || '',
-        resourceType: 'video',
-        difficulty: 'medium',
-        language: video.language || 'English',
-        estimatedTimeMinutes: 20,
-        rating: 4.5,
-        views: video.metadata?.viewCount || 0,
-        likes: 0,
-        metadata: {
-          ...video.metadata,
-          createdAt: video.metadata?.createdAt?.toISOString?.() || video.metadata?.createdAt,
-          updatedAt: video.metadata?.updatedAt?.toISOString?.() || video.metadata?.updatedAt
-        },
-        status: video.status,
-        progress: progress ? {
-          currentStep: progress.progress?.currentStep || 0,
-          totalSteps: progress.progress?.totalSteps || 1,
-          percentage: progress.progress?.percentage || 0,
-          timeSpent: progress.progress?.timeSpent || 0,
-          lastAccessedAt: progress.progress?.lastAccessedAt?.toISOString?.() || progress.progress?.lastAccessedAt,
-          status: progress.status,
-          completedAt: progress.completionData?.completedAt?.toISOString?.() || progress.completionData?.completedAt,
-          score: progress.completionData?.score,
-          attempts: progress.metadata?.attempts || 0,
-          bookmarked: progress.metadata?.bookmarked || false
-        } : null,
-        
-        // Video specific fields
-        videoUrl: video.videoUrl,
-        thumbnailUrl: video.thumbnailUrl,
-        voiceName: video.voiceName,
-        talkingPhotoName: video.talkingPhotoName,
-        videoId: video.videoId,
-        
-        // Set other fields to null
-        panels: null,
-        imageUrls: null,
-        images: null,
-        cloudinaryPublicIds: null,
-        numPanels: null,
-        comicType: null,
-        instruction: video.instruction,
-        
-        imageUrl: null,
-        imageBase64: null,
-        visualType: null,
-        instructions: video.instruction,
-        difficultyFlag: null,
-        cloudinaryPublicId: null,
-        
-        presentationUrl: null,
-        slideImages: null,
-        slidesCount: null,
-        slideCount: null,
-        template: null,
-        verbosity: null,
-        includeImages: null,
-        downloadUrl: null,
-        taskId: null,
-        taskStatus: null
-      };
-    });
-
-    // Transform assessments
-    const transformedAssessments = assessments.map(assessment => {
-      const progress = progressMap[assessment._id.toString()];
-      
-      return {
-        _id: assessment._id.toString(),
-        resourceId: assessment._id.toString(),
-        teacherId: assessment.userId?.toString(),
-        title: assessment.title,
-        subject: assessment.subject,
-        grade: assessment.grade,
-        topic: assessment.topic || assessment.instruction,
-        description: assessment.instruction,
-        content: assessment.generatedContent || assessment.assessmentContent || assessment.instruction || '',
-        resourceType: 'assessment',
-        difficulty: assessment.difficulty || 'medium',
-        language: assessment.language || 'English',
-        estimatedTimeMinutes: 30,
-        rating: 4.5,
-        views: assessment.metadata?.viewCount || 0,
-        likes: 0,
-        metadata: {
-          ...assessment.metadata,
-          createdAt: assessment.metadata?.createdAt?.toISOString?.() || assessment.metadata?.createdAt,
-          updatedAt: assessment.metadata?.updatedAt?.toISOString?.() || assessment.metadata?.updatedAt
-        },
-        status: assessment.status,
-        progress: progress ? {
-          currentStep: progress.progress?.currentStep || 0,
-          totalSteps: progress.progress?.totalSteps || 1,
-          percentage: progress.progress?.percentage || 0,
-          timeSpent: progress.progress?.timeSpent || 0,
-          lastAccessedAt: progress.progress?.lastAccessedAt?.toISOString?.() || progress.progress?.lastAccessedAt,
-          status: progress.status,
-          completedAt: progress.completionData?.completedAt?.toISOString?.() || progress.completionData?.completedAt,
-          score: progress.completionData?.score,
-          attempts: progress.metadata?.attempts || 0,
-          bookmarked: progress.metadata?.bookmarked || false
-        } : null,
-        
-        // Assessment specific fields
-        assessmentContent: assessment.assessmentContent,
-        generatedContent: assessment.generatedContent,
-        instruction: assessment.instruction,
-        
-        // Set other fields to null
-        panels: null,
-        imageUrls: null,
-        images: null,
-        cloudinaryPublicIds: null,
-        numPanels: null,
-        comicType: null,
-        
-        imageUrl: null,
-        imageBase64: null,
-        visualType: null,
-        instructions: assessment.instruction,
-        difficultyFlag: null,
-        cloudinaryPublicId: null,
-        
-        presentationUrl: null,
-        slideImages: null,
-        slidesCount: null,
-        slideCount: null,
-        template: null,
-        verbosity: null,
-        includeImages: null,
-        downloadUrl: null,
-        taskId: null,
-        taskStatus: null,
-        
-        videoUrl: null,
-        thumbnailUrl: null,
-        voiceName: null,
-        talkingPhotoName: null,
-        videoId: null
-      };
-    });
-
-    const allContent = [
-      ...transformedLessons, 
-      ...transformedComics, 
-      ...transformedImages, 
-      ...transformedVideos, 
-      ...transformedAssessments
-    ].sort((a, b) => {
+    const allContent = [...transformedLessons, ...transformedComics].sort((a, b) => {
       const dateA = new Date(a.metadata?.createdAt || 0);
       const dateB = new Date(b.metadata?.createdAt || 0);
       return dateB - dateA;
