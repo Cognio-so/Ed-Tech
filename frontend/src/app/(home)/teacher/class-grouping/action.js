@@ -98,7 +98,8 @@ export async function getStudents() {
         performance,
         lastActive: student.lastLogin || student.createdAt,
         group: student.group || 'Group A', // Default group assignment
-        notes: student.notes || ''
+        notes: student.notes || '',
+        feedback: student.feedback || [] // NEW: Add feedback array
       };
     });
 
@@ -167,6 +168,164 @@ export async function updateStudentNotes(studentId, notes) {
     return {
       success: false,
       error: "Failed to update student notes"
+    };
+  }
+}
+
+export async function addStudentFeedback(studentId, feedbackData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('Unauthorized');
+    }
+
+    const { db } = await connectToDatabase();
+    
+    // Create feedback object with metadata
+    const feedback = {
+      id: `feedback_${Date.now()}`,
+      teacherId: session.user.id,
+      teacherName: session.user.name || session.user.email,
+      message: feedbackData.message,
+      topics: feedbackData.topics || [],
+      focusAreas: feedbackData.focusAreas || [],
+      strengths: feedbackData.strengths || [],
+      improvements: feedbackData.improvements || [],
+      priority: feedbackData.priority || 'medium',
+      createdAt: new Date(),
+      isActive: true
+    };
+    
+    // Add feedback to student's feedback array
+    await db.collection('user').updateOne(
+      { _id: new ObjectId(studentId) },
+      { 
+        $push: { feedback: feedback },
+        $set: { updatedAt: new Date() }
+      }
+    );
+    
+    return {
+      success: true,
+      message: "Student feedback added successfully",
+      feedback: feedback
+    };
+  } catch (error) {
+    console.error("Error adding student feedback:", error);
+    return {
+      success: false,
+      error: "Failed to add student feedback"
+    };
+  }
+}
+
+export async function getStudentFeedback(studentId) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('Unauthorized');
+    }
+
+    const { db } = await connectToDatabase();
+    
+    // Get student with feedback
+    const student = await db.collection('user').findOne(
+      { _id: new ObjectId(studentId) },
+      { projection: { feedback: 1, name: 1, email: 1 } }
+    );
+
+    if (!student) {
+      return {
+        success: false,
+        error: "Student not found"
+      };
+    }
+    
+    return {
+      success: true,
+      feedback: student.feedback || [],
+      student: {
+        name: student.name,
+        email: student.email
+      }
+    };
+  } catch (error) {
+    console.error("Error fetching student feedback:", error);
+    return {
+      success: false,
+      error: "Failed to fetch student feedback"
+    };
+  }
+}
+
+export async function updateStudentFeedback(studentId, feedbackId, updatedData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('Unauthorized');
+    }
+
+    const { db } = await connectToDatabase();
+    
+    // Update specific feedback item in array
+    await db.collection('user').updateOne(
+      { 
+        _id: new ObjectId(studentId),
+        'feedback.id': feedbackId
+      },
+      { 
+        $set: { 
+          'feedback.$.message': updatedData.message,
+          'feedback.$.topics': updatedData.topics || [],
+          'feedback.$.focusAreas': updatedData.focusAreas || [],
+          'feedback.$.strengths': updatedData.strengths || [],
+          'feedback.$.improvements': updatedData.improvements || [],
+          'feedback.$.priority': updatedData.priority || 'medium',
+          'feedback.$.updatedAt': new Date()
+        }
+      }
+    );
+    
+    return {
+      success: true,
+      message: "Feedback updated successfully"
+    };
+  } catch (error) {
+    console.error("Error updating student feedback:", error);
+    return {
+      success: false,
+      error: "Failed to update student feedback"
+    };
+  }
+}
+
+export async function deleteStudentFeedback(studentId, feedbackId) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error('Unauthorized');
+    }
+
+    const { db } = await connectToDatabase();
+    
+    // Remove feedback from array
+    await db.collection('user').updateOne(
+      { _id: new ObjectId(studentId) },
+      { 
+        $pull: { feedback: { id: feedbackId } },
+        $set: { updatedAt: new Date() }
+      }
+    );
+    
+    return {
+      success: true,
+      message: "Feedback deleted successfully"
+    };
+  } catch (error) {
+    console.error("Error deleting student feedback:", error);
+    return {
+      success: false,
+      error: "Failed to delete student feedback"
     };
   }
 }

@@ -814,7 +814,7 @@ class AsyncRAGTutor:
         return []
 
     @async_error_handler
-    async def _agent_executor_stream_async(self, query: str, formatted_time: str, image_path: Optional[str] = None, is_knowledge_base_ready: bool = False, student_details: Optional[Dict[str, Any]] = None, history: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
+    async def _agent_executor_stream_async(self, query: str, formatted_time: str, image_path: Optional[str] = None, is_knowledge_base_ready: bool = False, student_details: Optional[Dict[str, Any]] = None, history: Optional[List[Dict[str, Any]]] = None, teacher_feedback: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
         """Private method to invoke the tool-enabled LLM with a finalized query."""
         student_details_str = "No student details provided. Please ask the student for their name, class, and subjects."
         if student_details:
@@ -822,6 +822,22 @@ class AsyncRAGTutor:
                 student_details_str = json.dumps(student_details, indent=2)
             except TypeError:
                 student_details_str = str(student_details)
+
+        # NEW: Add teacher feedback context
+        feedback_context = ""
+        if teacher_feedback and len(teacher_feedback) > 0:
+            feedback_context = "\n\n**Teacher Feedback for this Student:**\n"
+            for fb in teacher_feedback:
+                feedback_context += f"\n- Date: {fb.get('createdAt', 'N/A')}\n"
+                feedback_context += f"  Message: {fb.get('message', 'N/A')}\n"
+                if fb.get('focusAreas'):
+                    feedback_context += f"  Focus Areas: {', '.join(fb.get('focusAreas', []))}\n"
+                if fb.get('strengths'):
+                    feedback_context += f"  Strengths: {', '.join(fb.get('strengths', []))}\n"
+                if fb.get('improvements'):
+                    feedback_context += f"  Improvements Needed: {', '.join(fb.get('improvements', []))}\n"
+                feedback_context += f"  Priority: {fb.get('priority', 'medium')}\n"
+            feedback_context += "\nPlease take this feedback into account when helping the student."
 
         # Search curriculum before generating the prompt
         curriculum_context = await self._search_curriculum_async(query, student_details)
@@ -837,7 +853,8 @@ class AsyncRAGTutor:
         system_prompt_text = system_prompt_template.format(
             current_time=formatted_time,
             student_details_schema=student_details_str,
-            curriculum_context=curriculum_context
+            curriculum_context=curriculum_context,
+            teacher_feedback_context=feedback_context  # NEW: Add feedback context
         )
         
         prompt_notes = []
@@ -985,6 +1002,7 @@ class AsyncRAGTutor:
             # MODIFICATION: Get history from the state
             history = state.get("history", [])
             student_details = state.get("student_details")
+            teacher_feedback = state.get("teacher_feedback")  # NEW: Get teacher feedback from state
             
             formatted_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
@@ -998,7 +1016,8 @@ class AsyncRAGTutor:
                 formatted_time=formatted_time,
                 is_knowledge_base_ready=(self.ensemble_retriever is not None),
                 student_details=student_details,
-                history=history
+                history=history,
+                teacher_feedback=teacher_feedback  # NEW: Pass feedback to agent executor
             ):
                 # Stream each chunk directly using the writer
                 writer(chunk)
@@ -1036,7 +1055,7 @@ class AsyncRAGTutor:
     
     # Update run_agent_async to use astream instead of ainvoke
     @async_error_handler
-    async def run_agent_async(self, query: str, history: List[Dict[str, Any]], image_storage_key: Optional[str] = None, is_knowledge_base_ready: bool = False, uploaded_files: Optional[List[str]] = None, student_details: Optional[Dict[str, Any]] = None) -> AsyncGenerator[str, None]:
+    async def run_agent_async(self, query: str, history: List[Dict[str, Any]], image_storage_key: Optional[str] = None, is_knowledge_base_ready: bool = False, uploaded_files: Optional[List[str]] = None, student_details: Optional[Dict[str, Any]] = None, teacher_feedback: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[str, None]:
         """Run the agent with a query and history, using the orchestrator graph with streaming."""
 
         self.turn_count += 1
@@ -1076,7 +1095,8 @@ class AsyncRAGTutor:
             initial_state = {
                 "messages": messages,
                 "student_details": student_details,
-                "history": history
+                "history": history,
+                "teacher_feedback": teacher_feedback  # NEW: Pass feedback to state
             }
 
             # Use astream with custom stream mode for streaming response

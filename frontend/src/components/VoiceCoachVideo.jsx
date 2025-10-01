@@ -1,15 +1,12 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { User, Users } from 'lucide-react';
 
 const VoiceCoachVideo = ({ 
     isSpeaking = false, 
     isConnected = false,
-    onFirstLoad = false 
+    selectedGender = 'female' // NEW: Receive gender from parent
 }) => {
-    const [selectedGender, setSelectedGender] = useState('female');
     const [hasPlayedIntro, setHasPlayedIntro] = useState(false);
     
     const mutedVideoRef = useRef(null);
@@ -56,35 +53,22 @@ const VoiceCoachVideo = ({
         }
     }, [isSpeaking, isConnected]);
 
-    const handleGenderChange = (gender) => {
-        setSelectedGender(gender);
-        setHasPlayedIntro(false);
-        
+    // NEW: Update video sources when gender changes
+    useEffect(() => {
         const mutedVideo = mutedVideoRef.current;
         const unmutedVideo = unmutedVideoRef.current;
         
         if (mutedVideo) {
-            mutedVideo.src = videoSources[gender].muted;
-            mutedVideo.load(); 
-            console.log('Loading muted video:', videoSources[gender].muted);
+            mutedVideo.src = videoSources[selectedGender].muted;
+            mutedVideo.load();
         }
         
         if (unmutedVideo) {
-            unmutedVideo.src = videoSources[gender].unmuted;
-            unmutedVideo.load(); 
-            unmutedVideo.currentTime = 0;
-            unmutedVideo.style.display = 'block';
+            unmutedVideo.src = videoSources[selectedGender].unmuted;
+            unmutedVideo.load();
         }
-        
-        // Play intro video again when gender changes
-        setTimeout(() => {
-            if (unmutedVideo) {
-                unmutedVideo.play().catch(console.error);
-            }
-        }, 200); 
-    };
+    }, [selectedGender]);
 
-    
     const handleUnmutedVideoEnd = () => {
         console.log('Intro video ended');
         setHasPlayedIntro(true);
@@ -99,36 +83,6 @@ const VoiceCoachVideo = ({
 
     return (
         <div className="relative w-[400px] h-[550px] overflow-hidden bg-transparent rounded-md">
-            {/* Gender Selection */}
-            <div className="absolute top-2 right-2 z-20 flex space-x-1 bg-black/20 backdrop-blur-sm rounded-lg p-1">
-                <Button
-                    size="sm"
-                    variant={selectedGender === 'female' ? 'default' : 'outline'}
-                    onClick={() => handleGenderChange('female')}
-                    className={`w-10 h-10 p-0 rounded-full ${
-                        selectedGender === 'female' 
-                            ? 'bg-purple-500 hover:bg-purple-600 text-white' 
-                            : 'bg-white/80 hover:bg-white text-gray-700 border-2 border-white'
-                    }`}
-                    title="Female Teacher"
-                >
-                    <User className="w-4 h-4" />
-                </Button>
-                <Button
-                    size="sm"
-                    variant={selectedGender === 'male' ? 'default' : 'outline'}
-                    onClick={() => handleGenderChange('male')}
-                    className={`w-10 h-10 p-0 rounded-full ${
-                        selectedGender === 'male' 
-                            ? 'bg-blue-500 hover:bg-blue-600 text-white' 
-                            : 'bg-white/80 hover:bg-white text-gray-700 border-2 border-white'
-                    }`}
-                    title="Male Teacher"
-                >
-                    <Users className="w-4 h-4" />
-                </Button>
-            </div>
-
             {/* Muted Video */}
             <video
                 ref={mutedVideoRef}

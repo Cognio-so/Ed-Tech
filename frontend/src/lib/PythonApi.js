@@ -178,7 +178,7 @@ class PythonApiClient {
   }
 
   // Chatbot streaming endpoint - FIXED VERSION with data transformation
-  async startChatbotStream(sessionId, query, studentData, files = [], history = [], webSearchEnabled = true) {
+  async startChatbotStream(sessionId, query, studentData, files = [], history = [], webSearchEnabled = true, useFeedback = false) {
     const url = `${this.baseUrl}/chatbot_endpoint`;
     
     // Transform student data to match Python backend schema
@@ -195,7 +195,9 @@ class PythonApiClient {
       assessments: studentData.assessments,
       lessons: studentData.lessons,
       resources: studentData.resources,
-      analytics: studentData.analytics
+      analytics: studentData.analytics,
+      // NEW: Include teacher feedback if available
+      teacher_feedback: studentData.teacher_feedback || null
     };
 
     // Extract file names from File objects for context
@@ -207,7 +209,8 @@ class PythonApiClient {
       history: history,
       web_search_enabled: true, // Always enable web search
       student_data: transformedStudentData,
-      uploaded_files: uploadedFileNames  // NEW: Pass uploaded file names for context
+      uploaded_files: uploadedFileNames,
+      use_feedback: useFeedback // NEW: Add feedback flag
     };
 
     try {

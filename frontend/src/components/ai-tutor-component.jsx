@@ -34,12 +34,19 @@ import {
     User as UserIcon,
     FileText,
     Mic,
-    MicOff
+    MicOff,
+    MessageSquare, // NEW: Add this icon
+    Plus, // NEW: Add this icon
+    AlertCircle, // NEW: Add this icon
+    Upload, // NEW: Add this icon
+    GraduationCap, // ADD: Use same icon as voice-coach
+    Volume2 // NEW: Add volume icon for voice selection
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import PythonApi from '@/lib/PythonApi';
 import { toast } from 'sonner';
+import { MarkdownStyles } from '@/components/Markdown'; // FIXED: Use imported MarkdownStyles
 import { 
     uploadDocuments, 
     createAiTutorSession,
@@ -53,19 +60,7 @@ import { RealtimeOpenAIService } from '@/lib/realtimeOpenAI';
 
 // Import the Video component instead of 3D model
 import dynamic from 'next/dynamic';
-
-// Comment out the 3D component
-// const LipSyncTeacher3D = dynamic(() => import('./LipSyncTeacher3D'), { 
-//     ssr: false,
-//     loading: () => (
-//         <div className="w-full h-[500px] flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/20 dark:to-pink-900/20 rounded-2xl">
-//             <div className="text-center">
-//                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-//                 <p className="text-sm text-gray-600 dark:text-gray-400">Loading 3D Teacher...</p>
-//             </div>
-//         </div>
-//     )
-// });
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Import the new Video component
 const VoiceCoachVideo = dynamic(() => import('./VoiceCoachVideo'), { 
@@ -87,7 +82,7 @@ const AiTutor = () => {
             type: 'ai',
             content: "Hi there! 👋 I'm your AI Tutor Buddy! I'm here to help you learn and understand your homework. What would you like to work on today?",
             timestamp: new Date(),
-            avatar: <Sparkle className="w-4 h-4 text-yellow-500" />
+            avatar: <GraduationCap className="w-4 h-4 text-blue-500" /> // CHANGED: Use GraduationCap
         }
     ]);
     const [inputValue, setInputValue] = useState('');
@@ -106,6 +101,9 @@ const AiTutor = () => {
     
     // NEW: Video state instead of lip sync
     const [isSpeaking, setIsSpeaking] = useState(false);
+    
+    // NEW: Voice gender selection state
+    const [selectedVoiceGender, setSelectedVoiceGender] = useState('female');
 
     // Real student data state
     const [user, setUser] = useState(null);
@@ -118,6 +116,11 @@ const AiTutor = () => {
         userProgress: []
     });
     const [dataLoading, setDataLoading] = useState(true);
+
+    // NEW: Teacher feedback state
+    const [teacherFeedback, setTeacherFeedback] = useState(null);
+    const [showFeedbackOption, setShowFeedbackOption] = useState(false);
+    const [useFeedbackSession, setUseFeedbackSession] = useState(false);
 
     // FIXED: Initialize audio context when component mounts
     useEffect(() => {
@@ -133,35 +136,17 @@ const AiTutor = () => {
         initAudioContext();
     }, []);
 
-    // FIXED: Improved autoscrolling with proper timing
-    const scrollToBottom = () => {
-        setTimeout(() => {
-            if (messagesEndRef.current) {
-                messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-            }
-        }, 100);
-    };
+    // REMOVED: Auto-scrolling functionality
 
-    // FIXED: Scroll to bottom when messages change or loading state changes
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages, isLoading]);
-
-    // FIXED: Handle transcript updates - exactly like voice-coach
+    // FIXED: Handle transcript updates - prevent duplicate messages
     useEffect(() => {
         if (transcription) {
             setMessages(prev => {
                 const newMessages = [...prev];
                 const lastMessage = newMessages[newMessages.length - 1];
                 
-                if (lastMessage && lastMessage.type === 'ai' && lastMessage.isLive) {
-                    // Update existing live message
-                    newMessages[newMessages.length - 1] = { 
-                        ...lastMessage, 
-                        content: transcription,
-                        id: lastMessage.id // Keep the same ID
-                    };
-                } else {
+                // FIXED: Only create new message if there's no existing live AI message
+                if (!lastMessage || lastMessage.type !== 'ai' || !lastMessage.isLive) {
                     // Add new live message
                     newMessages.push({ 
                         id: Date.now() + Math.random(),
@@ -169,8 +154,15 @@ const AiTutor = () => {
                         content: transcription, 
                         isLive: true,
                         timestamp: new Date(),
-                        avatar: <Sparkle className="w-4 h-4 text-yellow-500" />
+                        avatar: <GraduationCap className="w-4 h-4 text-blue-500" />
                     });
+                } else {
+                    // Update existing live message
+                    newMessages[newMessages.length - 1] = { 
+                        ...lastMessage, 
+                        content: transcription,
+                        id: lastMessage.id // Keep the same ID
+                    };
                 }
                 
                 return newMessages;
@@ -247,6 +239,27 @@ const AiTutor = () => {
 
         fetchStudentData();
     }, []);
+
+    // NEW: Fetch teacher feedback when user data is loaded
+    useEffect(() => {
+        if (user?._id) {
+            const fetchFeedback = async () => {
+                try {
+                    const response = await fetch(`/api/student/feedback/${user._id}`);
+                    const data = await response.json();
+                    
+                    if (data.success && data.feedback && data.feedback.length > 0) {
+                        setTeacherFeedback(data.feedback);
+                        setShowFeedbackOption(true);
+                    }
+                } catch (error) {
+                    console.error('Error fetching feedback:', error);
+                }
+            };
+            
+            fetchFeedback();
+        }
+    }, [user?._id]);
 
     // Initialize session when user data is loaded
     useEffect(() => {
@@ -394,7 +407,9 @@ const AiTutor = () => {
                 assessments: studentData.assessments || [],
                 lessons: studentData.lessons || [],
                 resources: studentData.resources || [],
-                analytics: studentData.analytics || []
+                analytics: studentData.analytics || [],
+                // NEW: Include teacher feedback if user chose to use it
+                teacher_feedback: useFeedbackSession ? teacherFeedback : null
             };
 
             // Make direct fetch request to Python backend for streaming
@@ -407,7 +422,8 @@ const AiTutor = () => {
                 })),
                 web_search_enabled: true,
                 student_data: enhancedStudentData,
-                uploaded_files: uploadedFiles.map(f => f.name) // Just file names, not objects
+                uploaded_files: uploadedFiles.map(f => f.name), // Just file names, not objects
+                use_feedback: useFeedbackSession,
             };
 
             console.log('Sending payload to Python backend:', payload);
@@ -429,7 +445,7 @@ const AiTutor = () => {
                 type: 'ai',
                 content: '',
                 timestamp: new Date(),
-                avatar: <Sparkle className="w-4 h-4 text-yellow-500" />,
+                avatar: <GraduationCap className="w-4 h-4 text-blue-500" />,
                 isStreaming: true,
                 isImageResponse: false
             };
@@ -564,7 +580,7 @@ const AiTutor = () => {
                     type: 'ai',
                     content: `❌ Error: ${error.message}`,
                     timestamp: new Date(),
-                    avatar: <Sparkle className="w-4 h-4 text-red-500" />
+                    avatar: <AlertCircle className="w-4 h-4 text-red-500" />
                 };
                 setMessages(prev => [...prev, errorMessage]);
             }
@@ -611,7 +627,7 @@ const AiTutor = () => {
                         type: 'ai',
                         content: `✅ Successfully uploaded ${files.length} document(s)! I can now help you with questions about these files.`,
                         timestamp: new Date(),
-                        avatar: <Sparkle className="w-4 h-4 text-yellow-500" />
+                        avatar: <Upload className="w-4 h-4 text-green-500" />
                     };
                     setMessages(prev => [...prev, uploadMessage]);
                     
@@ -634,7 +650,7 @@ const AiTutor = () => {
                     type: 'ai',
                     content: `❌ Failed to upload documents: ${error.message}`,
                     timestamp: new Date(),
-                    avatar: <Sparkle className="w-4 h-4 text-red-500" />
+                    avatar: <AlertCircle className="w-4 h-4 text-red-500" />
                 };
                 setMessages(prev => [...prev, errorMessage]);
             } finally {
@@ -655,7 +671,7 @@ const AiTutor = () => {
             type: 'ai',
             content: "🗑️ Cleared all uploaded documents. You can upload new ones anytime!",
             timestamp: new Date(),
-            avatar: <Sparkle className="w-4 h-4 text-blue-500" />
+            avatar: <Trash2 className="w-4 h-4 text-blue-500" />
         };
         setMessages(prev => [...prev, clearMessage]);
     };
@@ -736,7 +752,14 @@ const AiTutor = () => {
                 // Session context
                 sessionId: sessionId,
                 uploadedFiles: uploadedFiles.map(f => f.name),
-                conversationHistory: messages.slice(-10) // Last 10 messages for context
+                conversationHistory: messages.slice(-10), // Last 10 messages for context
+                
+                // NEW: Include teacher feedback if user chose to use it
+                teacher_feedback: useFeedbackSession ? teacherFeedback : null,
+                use_feedback: useFeedbackSession,
+                
+                // NEW: Include voice gender selection
+                voiceGender: selectedVoiceGender
             };
 
             // Initialize RealtimeOpenAI service
@@ -812,8 +835,8 @@ const AiTutor = () => {
                 setMessages(prev => [...prev, userMessage]);
             };
 
-            // Connect to RealtimeOpenAI with student data and userType
-            await service.connect(studentContext, 'student');
+            // Connect to RealtimeOpenAI with student data, userType, and voice gender
+            await service.connect(studentContext, 'student', selectedVoiceGender);
             
             setRealtimeService(service);
             setIsVoiceActive(true);
@@ -838,73 +861,14 @@ const AiTutor = () => {
         }
     };
 
-    // Markdown styles for the chat messages
-    const MarkdownStyles = {
-        h1: ({ node, ...props }) => (
-            <h1 className="text-lg font-bold mb-2" {...props} />
-        ),
-        h2: ({ node, ...props }) => (
-            <h2 className="text-base font-semibold mb-2" {...props} />
-        ),
-        h3: ({ node, ...props }) => (
-            <h3 className="text-sm font-semibold mb-1" {...props} />
-        ),
-        p: ({ node, ...props }) => (
-            <p className="mb-2 last:mb-0" {...props} />
-        ),
-        ul: ({ node, ...props }) => (
-            <ul 
-                className="mb-2 space-y-1 ml-4" 
-                style={{ listStyleType: 'disc', paddingLeft: '1rem' }}
-                {...props} 
-            />
-        ),
-        ol: ({ node, ...props }) => (
-            <ol 
-                className="mb-2 space-y-1 ml-4" 
-                style={{ listStyleType: 'decimal', paddingLeft: '1rem' }}
-                {...props} 
-            />
-        ),
-        li: ({ node, ...props }) => (
-            <li className="mb-1 leading-relaxed" style={{ display: 'list-item' }} {...props} />
-        ),
-        strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
-        em: ({ node, ...props }) => <em className="italic" {...props} />,
-        code: ({ node, inline, ...props }) => (
-            inline ?
-                <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-sm" {...props} /> :
-                <code className="block bg-gray-200 dark:bg-gray-700 p-2 rounded text-sm overflow-x-auto" {...props} />
-        ),
-        pre: ({ node, ...props }) => (
-            <pre className="bg-gray-200 dark:bg-gray-700 p-2 rounded text-sm overflow-x-auto mb-2" {...props} />
-        ),
-        blockquote: ({ node, ...props }) => (
-            <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic mb-2" {...props} />
-        ),
-        img: ({ node, src, alt, ...props }) => {
-            if (!src || src.trim() === '') {
-                console.warn('Empty image src detected, skipping render');
-                return null;
-            }
-            
-            return (
-                <img 
-                    src={src}
-                    alt={alt || 'Generated image'}
-                    className="max-w-full h-auto rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 my-4"
-                    style={{ maxHeight: '400px' }}
-                    onError={(e) => {
-                        console.error('Image failed to load:', e.target.src);
-                        e.target.style.display = 'none';
-                    }}
-                    onLoad={() => {
-                        console.log('Image loaded successfully:', src);
-                    }}
-                    {...props}
-                />
-            );
-        },
+    // NEW: Handle gender change from VoiceCoachVideo
+    const handleGenderChange = (gender) => {
+        setSelectedVoiceGender(gender);
+        
+        // If already connected, update the voice in real-time
+        if (isVoiceActive && realtimeService) {
+            realtimeService.updateVoice(gender);
+        }
     };
 
     // Enhanced image rendering component - EXACTLY like voice-coach
@@ -995,6 +959,36 @@ const AiTutor = () => {
                             </div>
                         </div>
                         <div className="flex items-center space-x-2">
+                            {/* NEW: Voice Selection Dropdown */}
+                            <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
+                                <Volume2 className="h-4 w-4 text-blue-600" />
+                                <Select value={selectedVoiceGender} onValueChange={handleGenderChange}>
+                                    <SelectTrigger className="w-32 h-8 text-sm">
+                                        <SelectValue placeholder="Voice" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="female">👩 Female</SelectItem>
+                                        <SelectItem value="male">👨 Male</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            
+                            {/* NEW: Feedback Session Toggle */}
+                            {showFeedbackOption && teacherFeedback && teacherFeedback.length > 0 && (
+                                <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
+                                    <label className="text-sm font-medium flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={useFeedbackSession}
+                                            onChange={(e) => setUseFeedbackSession(e.target.checked)}
+                                            className="rounded"
+                                        />
+                                        <MessageSquare className="h-4 w-4" />
+                                        Use Teacher Feedback ({teacherFeedback.length})
+                                    </label>
+                                </div>
+                            )}
+                            
                             {uploadedFiles.length > 0 && (
                                 <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                                     📎 {uploadedFiles.length} file(s)
@@ -1026,6 +1020,7 @@ const AiTutor = () => {
                                     <VoiceCoachVideo 
                                         isSpeaking={isSpeaking}
                                         isConnected={isVoiceActive}
+                                        selectedGender={selectedVoiceGender} // NEW: Pass selected gender
                                     />
                                 </CardContent>
                             </Card>
@@ -1071,24 +1066,7 @@ const AiTutor = () => {
                                                 ))}
                                             </AnimatePresence>
 
-                                            {isLoading && (
-                                                <motion.div
-                                                    initial={{ opacity: 0, y: 20 }}
-                                                    animate={{ opacity: 1, y: 0 }}
-                                                    className="flex justify-start"
-                                                >
-                                                    <div className="flex items-start space-x-3">
-                                                        <Avatar className="w-8 h-8 flex-shrink-0">
-                                                            <AvatarFallback className="text-lg">
-                                                                <Sparkle className="w-4 h-4 text-yellow-500" />
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                        <div className="text-black dark:text-white text-sm animate-pulse">
-                                                            ⚪
-                                                        </div>
-                                                    </div>
-                                                </motion.div>
-                                            )}
+                                            {/* REMOVED: Loading indicator to prevent duplicate with streaming message */}
                                         </div>
                                         <div ref={messagesEndRef} className="h-4" />
                                     </ScrollArea>

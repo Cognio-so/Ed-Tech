@@ -176,6 +176,7 @@ class ChatbotRequest(BaseModel):
     web_search_enabled: bool = Field(True, description="Enable or disable web search functionality for the tutor.")  # Changed default to True
     student_data: Optional[StudentData] = Field(None, description="Comprehensive student data for personalized learning")
     uploaded_files: Optional[List[str]] = Field([], description="List of uploaded file names for context")
+    use_feedback: bool = Field(False, description="Whether to use teacher feedback in this session")  # NEW
 
 @app.post("/chatbot_endpoint")
 async def chatbot_endpoint(request: ChatbotRequest):
@@ -188,34 +189,36 @@ async def chatbot_endpoint(request: ChatbotRequest):
         logger.info(f"Chatbot endpoint called with session_id: {request.session_id}")
         logger.info(f"Query: {request.query}")
         logger.info(f"Student data: {request.student_data}")
+        logger.info(f"Use feedback: {request.use_feedback}")
         
         session_id = request.session_id
         
-        # Get or create a tutor instance for the session
         if session_id not in tutor_sessions:
             logger.info(f"Creating new AI Tutor session: {session_id}")
             tutor_config = RAGTutorConfig.from_env()
-            tutor_config.web_search_enabled = True  # Always enable web search
+            tutor_config.web_search_enabled = True
             tutor_sessions[session_id] = AsyncRAGTutor(storage_manager=storage_manager, config=tutor_config)
         
         tutor = tutor_sessions[session_id]
 
-        # Always enable web search for the tutor
         tutor.update_web_search_status(True)
 
-        # --- Enhanced Query Processing with Student Data ---
         if not request.query:
             logger.error("No query provided in request")
             raise HTTPException(status_code=400, detail="A 'query' is required.")
 
-        # Prepare enhanced context with student data
         enhanced_query = request.query
         enhanced_history = request.history.copy()
+        
+        # NEW: Extract teacher feedback if available
+        teacher_feedback = None
+        if request.use_feedback and request.student_data:
+            teacher_feedback = request.student_data.model_dump().get('teacher_feedback')
+            logger.info(f"Using teacher feedback: {len(teacher_feedback) if teacher_feedback else 0} items")
         
         if request.student_data:
             student_data = request.student_data
             
-            # Create personalized context based on student data
             personalization_context = f"""
             Student Information:
             - Name: {student_data.name}
@@ -237,7 +240,14 @@ async def chatbot_endpoint(request: ChatbotRequest):
             - Performance Score: {student_data.learning_stats.get('averageScore', 'N/A') if student_data.learning_stats else 'N/A'}
             """
             
-            # Add personalization context to the query
+            # NEW: Add feedback context if available
+            if teacher_feedback and len(teacher_feedback) > 0:
+                personalization_context += "\n\nTeacher Feedback:\n"
+                for fb in teacher_feedback:
+                    personalization_context += f"- {fb.get('message', 'No message')}\n"
+                    if fb.get('focusAreas'):
+                        personalization_context += f"  Focus on: {', '.join(fb.get('focusAreas', []))}\n"
+            
             enhanced_query = f"""
             {personalization_context}
             
@@ -249,14 +259,15 @@ async def chatbot_endpoint(request: ChatbotRequest):
         
         is_kb_ready = tutor.ensemble_retriever is not None
         
-        # FIXED: Pass all parameters including uploaded_files to match Student_AI_tutor.py run_agent_async signature
+        # NEW: Pass teacher_feedback to run_agent_async
         response_generator = tutor.run_agent_async(
             query=enhanced_query,
             history=enhanced_history,
-            image_storage_key=None,  # No image upload in this flow
+            image_storage_key=None,
             is_knowledge_base_ready=is_kb_ready,
             uploaded_files=request.uploaded_files,
-            student_details=request.student_data.model_dump() if request.student_data else None
+            student_details=request.student_data.model_dump() if request.student_data else None,
+            teacher_feedback=teacher_feedback  # NEW
         )
 
         async def event_stream():
@@ -1123,7 +1134,8 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
             image_storage_key=None,
             is_knowledge_base_ready=is_kb_ready,
             uploaded_files=request.uploaded_files,
-            teaching_data=teacher_data  # Pass the full data but let the tutor handle it efficiently
+            teaching_data=teacher_data,  # Pass the full data but let the tutor handle it efficiently
+            teacher_feedback=feedback_data # NEW: Pass feedback to the tutor
         )
 
         async def event_stream():

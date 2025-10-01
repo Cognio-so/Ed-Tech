@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import Image from 'next/image';
 import {
     Send,
@@ -39,7 +40,8 @@ import {
     GraduationCap,
     BookOpen,
     Users,
-    TrendingUp
+    TrendingUp,
+    Volume2 // NEW: Add volume icon for voice selection
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -125,6 +127,9 @@ const VoiceCoach = () => {
     // NEW: Video state instead of lip sync
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isFirstLoad, setIsFirstLoad] = useState(true);
+    
+    // NEW: Voice gender selection state
+    const [selectedVoiceGender, setSelectedVoiceGender] = useState('female');
 
     // Get API key from environment or localStorage
     const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || (typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') : '');
@@ -458,7 +463,7 @@ const VoiceCoach = () => {
                 }
             };
 
-            await openAIServiceRef.current.connect(teacherDataForAI);
+            await openAIServiceRef.current.connect(teacherDataForAI, 'teacher', selectedVoiceGender);
             
             setIsConnected(true);
             setIsFirstLoad(false); // Trigger intro video
@@ -511,6 +516,21 @@ const VoiceCoach = () => {
             
         } catch (error) {
             setError(`Disconnect error: ${error.message}`);
+        }
+    };
+
+    // NEW: Handle gender change from VoiceCoachVideo
+    const handleGenderChange = (gender) => {
+        console.log(`🎤 VoiceCoach: Received gender change to ${gender}`);
+        console.log(`🔍 VoiceCoach: isConnected = ${isConnected}, openAIServiceRef.current = ${!!openAIServiceRef.current}`);
+        setSelectedVoiceGender(gender);
+        
+        // If already connected, update the voice in real-time
+        if (isConnected && openAIServiceRef.current) {
+            console.log(`🔄 VoiceCoach: Updating voice for connected service`);
+            openAIServiceRef.current.updateVoice(gender);
+        } else {
+            console.log(`ℹ️ VoiceCoach: Service not connected, voice will be set on next connection`);
         }
     };
 
@@ -713,6 +733,20 @@ const VoiceCoach = () => {
                             </div>
                         </div>
                         <div className="flex items-center space-x-2">
+                            {/* NEW: Voice Selection Dropdown */}
+                            <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
+                                <Volume2 className="h-4 w-4 text-blue-600" />
+                                <Select value={selectedVoiceGender} onValueChange={handleGenderChange}>
+                                    <SelectTrigger className="w-32 h-8 text-sm">
+                                        <SelectValue placeholder="Voice" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="female">👩 Female</SelectItem>
+                                        <SelectItem value="male">👨 Male</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            
                             {uploadedFiles.length > 0 && (
                                 <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                                     📎 {uploadedFiles.length} file(s)
@@ -744,6 +778,7 @@ const VoiceCoach = () => {
                                     <VoiceCoachVideo 
                                         isSpeaking={isSpeaking}
                                         isConnected={isConnected}
+                                        selectedGender={selectedVoiceGender} // NEW: Pass selected gender
                                     />
                                 </CardContent>
 

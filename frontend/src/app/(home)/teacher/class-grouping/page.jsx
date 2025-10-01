@@ -24,10 +24,12 @@ import {
   BookOpen,
   BarChart3,
   PieChart,
-  Activity
+  Activity,
+  MessageSquare, // NEW: Add this icon
+  Plus, // NEW: Add this icon
 } from "lucide-react";
 import { toast } from "sonner";
-import { getStudents, updateStudentGroup, updateStudentNotes, getClassStatistics } from "./action";
+import { getStudents, updateStudentGroup, updateStudentNotes, getClassStatistics, addStudentFeedback, getStudentFeedback, deleteStudentFeedback } from "./action"; // NEW: Import feedback functions
 import { authClient } from "@/lib/auth-client";
 import Loading from "./loading";
 
@@ -41,6 +43,16 @@ export default function ClassGroupingPage() {
   const [selectedGrade, setSelectedGrade] = useState("all");
   const [selectedGroup, setSelectedGroup] = useState("all");
   const [activeTab, setActiveTab] = useState("all");
+  const [selectedStudent, setSelectedStudent] = useState(null); // NEW: For feedback dialog
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false); // NEW: For feedback dialog
+  const [feedbackFormData, setFeedbackFormData] = useState({ // NEW: Feedback form data
+    message: '',
+    topics: [],
+    focusAreas: [],
+    strengths: [],
+    improvements: [],
+    priority: 'medium'
+  });
 
   // Get user session
   useEffect(() => {
@@ -165,6 +177,42 @@ export default function ClassGroupingPage() {
 
   const getUniqueGroups = () => {
     return [...new Set(students.map(student => student.group))];
+  };
+
+  // NEW: Handle adding feedback
+  const handleAddFeedback = async (student) => {
+    setSelectedStudent(student);
+    setFeedbackDialogOpen(true);
+    setFeedbackFormData({
+      message: '',
+      topics: [],
+      focusAreas: [],
+      strengths: [],
+      improvements: [],
+      priority: 'medium'
+    });
+  };
+
+  // NEW: Submit feedback
+  const handleSubmitFeedback = async () => {
+    if (!selectedStudent || !feedbackFormData.message.trim()) {
+      toast.error("Please provide feedback message");
+      return;
+    }
+
+    try {
+      const result = await addStudentFeedback(selectedStudent._id, feedbackFormData);
+      if (result.success) {
+        toast.success("Feedback added successfully");
+        setFeedbackDialogOpen(false);
+        await loadData(); // Reload data to show updated feedback
+      } else {
+        toast.error(result.error || "Failed to add feedback");
+      }
+    } catch (error) {
+      console.error("Error submitting feedback:", error);
+      toast.error("Failed to submit feedback");
+    }
   };
 
   if (loading) {
@@ -327,6 +375,36 @@ export default function ClassGroupingPage() {
                       <p className="text-muted-foreground">Performance</p>
                       <p className="font-medium">{student.performance.overall}%</p>
                     </div>
+                  </div>
+
+                  {/* NEW: Feedback Section */}
+                  <div className="pt-4 border-t">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4" />
+                        Feedback ({student.feedback?.length || 0})
+                      </p>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleAddFeedback(student)}
+                        className="flex items-center gap-1"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add
+                      </Button>
+                    </div>
+                    
+                    {student.feedback && student.feedback.length > 0 && (
+                      <div className="max-h-24 overflow-y-auto space-y-1">
+                        {student.feedback.slice(-2).reverse().map((fb, idx) => (
+                          <div key={idx} className="text-xs bg-muted p-2 rounded">
+                            <p className="font-medium">{new Date(fb.createdAt).toLocaleDateString()}</p>
+                            <p className="text-muted-foreground truncate">{fb.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -527,6 +605,89 @@ export default function ClassGroupingPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* NEW: Feedback Dialog */}
+      {feedbackDialogOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold mb-4">Add Feedback for {selectedStudent?.name}</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Feedback Message *</label>
+                <textarea
+                  value={feedbackFormData.message}
+                  onChange={(e) => setFeedbackFormData({...feedbackFormData, message: e.target.value})}
+                  className="w-full border rounded p-2 min-h-[100px]"
+                  placeholder="Provide detailed feedback for the student..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Focus Areas</label>
+                <Input
+                  value={feedbackFormData.focusAreas.join(', ')}
+                  onChange={(e) => setFeedbackFormData({
+                    ...feedbackFormData, 
+                    focusAreas: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                  })}
+                  placeholder="e.g., Algebra, Reading Comprehension (comma-separated)"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Strengths</label>
+                <Input
+                  value={feedbackFormData.strengths.join(', ')}
+                  onChange={(e) => setFeedbackFormData({
+                    ...feedbackFormData, 
+                    strengths: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                  })}
+                  placeholder="e.g., Problem-solving, Critical thinking (comma-separated)"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Areas for Improvement</label>
+                <Input
+                  value={feedbackFormData.improvements.join(', ')}
+                  onChange={(e) => setFeedbackFormData({
+                    ...feedbackFormData, 
+                    improvements: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                  })}
+                  placeholder="e.g., Time management, Attention to detail (comma-separated)"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Priority</label>
+                <Select 
+                  value={feedbackFormData.priority} 
+                  onValueChange={(value) => setFeedbackFormData({...feedbackFormData, priority: value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <Button variant="outline" onClick={() => setFeedbackDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSubmitFeedback}>
+                Submit Feedback
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
