@@ -475,3 +475,131 @@ export async function getUserAssignedGradesAndSubjects() {
     };
   }
 }
+
+// NEW: Function to upload base64 comic images to Cloudinary and save
+export async function uploadBase64ComicImagesAndSave(comicData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const { db } = await connectToDatabase();
+    const collection = db.collection("comics");
+
+    // Create a title from the instruction (first 50 characters)
+    const title = comicData.instructions 
+      ? comicData.instructions.substring(0, 50) + (comicData.instructions.length > 50 ? '...' : '')
+      : 'Untitled Comic';
+
+    // Validate that we have images to upload
+    if (!comicData.images || comicData.images.length === 0) {
+      throw new Error("No images provided for saving");
+    }
+
+    console.log(`Starting upload of ${comicData.images.length} comic panels to Cloudinary...`);
+
+    // Upload all comic panel images to Cloudinary in parallel for better performance
+    const uploadPromises = comicData.images.map(async (imageData, index) => {
+      try {
+        // Handle data URLs - extract base64 if needed
+        const base64Data = imageData.includes('data:') 
+          ? imageData.split(',')[1]  // Extract base64 from data URL
+          : imageData;               // Use as-is if already base64
+        
+        // Upload base64 image to Cloudinary
+        const uploadResult = await uploadImageToCloudinary(base64Data, 'ai-comics');
+        
+        if (uploadResult.success) {
+          console.log(`Successfully uploaded panel ${index + 1} to Cloudinary`);
+          return {
+            index,
+            url: uploadResult.url,
+            publicId: uploadResult.publicId
+          };
+        } else {
+          console.error(`Failed to upload panel ${index + 1}:`, uploadResult.error);
+          throw new Error(`Failed to upload panel ${index + 1} to Cloudinary: ${uploadResult.error}`);
+        }
+      } catch (error) {
+        console.error(`Error uploading panel ${index + 1}:`, error);
+        throw error;
+      }
+    });
+
+    // Wait for all uploads to complete
+    const uploadResults = await Promise.all(uploadPromises);
+    
+    // Sort results by index to maintain order
+    uploadResults.sort((a, b) => a.index - b.index);
+    
+    const uploadedImageUrls = uploadResults.map(result => result.url);
+    const cloudinaryPublicIds = uploadResults.map(result => result.publicId);
+
+    console.log(`Successfully uploaded all ${uploadedImageUrls.length} panels to Cloudinary`);
+
+    const comicDoc = {
+      userId: new ObjectId(session.user.id),
+      title: title,
+      instruction: comicData.instructions,
+      subject: comicData.subject || "General",
+      grade: comicData.gradeLevel,
+      language: comicData.language || "English",
+      numPanels: comicData.numPanels || uploadedImageUrls.length,
+      comicType: comicData.comicType || "educational",
+      imageUrls: uploadedImageUrls, // Cloudinary URLs
+      cloudinaryPublicIds: cloudinaryPublicIds, // Store Cloudinary public IDs
+      panelTexts: comicData.panelTexts || [], // Store panel texts separately
+      metadata: {
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        tags: [comicData.subject, comicData.gradeLevel, comicData.language],
+        isPublic: false,
+        downloadCount: 0,
+        viewCount: 0
+      },
+      status: "completed"
+    };
+
+    const result = await collection.insertOne(comicDoc);
+    
+    // Properly serialize the comic object for client components
+    const serializedComic = {
+      _id: result.insertedId.toString(),
+      userId: session.user.id,
+      title: title,
+      instruction: comicData.instructions,
+      subject: comicData.subject || "General",
+      grade: comicData.gradeLevel,
+      language: comicData.language || "English",
+      numPanels: comicData.numPanels || uploadedImageUrls.length,
+      comicType: comicData.comicType || "educational",
+      imageUrls: uploadedImageUrls,
+      cloudinaryPublicIds: cloudinaryPublicIds,
+      panelTexts: comicData.panelTexts || [],
+      metadata: {
+        createdAt: comicDoc.metadata.createdAt.toISOString(),
+        updatedAt: comicDoc.metadata.updatedAt.toISOString(),
+        tags: [comicData.subject, comicData.gradeLevel, comicData.language],
+        isPublic: false,
+        downloadCount: 0,
+        viewCount: 0
+      },
+      status: "completed",
+      createdAt: comicDoc.metadata.createdAt.toISOString(),
+      updatedAt: comicDoc.metadata.updatedAt.toISOString()
+    };
+    
+    console.log(`Comic saved successfully with ID: ${result.insertedId.toString()}`);
+    
+    return {
+      success: true,
+      message: "Comic saved successfully",
+      id: result.insertedId.toString(),
+      comic: serializedComic
+    };
+  } catch (error) {
+    console.error("Save comic error:", error);
+    throw new Error(error.message || "Failed to save comic");
+  }
+}

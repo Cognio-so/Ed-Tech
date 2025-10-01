@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { CarouselWithControls } from "@/components/ui/carousel";
 import { toast } from "sonner";
 import ComicForm from "./comic-form";
-import { generateComic, saveComicWithCloudinaryUrls } from "./action";
+import { generateComic, saveComicWithCloudinaryUrls, uploadBase64ComicImagesAndSave } from "./action";
 import { authClient } from "@/lib/auth-client";
 import PythonApiClient from "@/lib/PythonApi";
 
@@ -212,15 +212,14 @@ export default function ComicPage() {
 
     setIsSaving(true);
     try {
-      // Prepare comic data with Cloudinary URLs and separate texts
+      // Prepare comic data with base64 images for Cloudinary upload
       const comicData = {
         instructions: currentFormData.instructions,
         subject: currentFormData.subject,
         gradeLevel: currentFormData.gradeLevel,
         numPanels: currentFormData.numPanels,
         language: currentFormData.language,
-        imageUrls: comicImages.map(img => img.url), // Cloudinary URLs only
-        cloudinaryPublicIds: [], // Will be populated by the function
+        images: comicImages.map(img => img.url), // Base64 data URLs for upload
         panelTexts: comicTexts.map(text => ({ // Include panel texts
           index: text.index,
           text: text.text
@@ -228,8 +227,8 @@ export default function ComicPage() {
         comicType: 'educational'
       };
 
-      // Use the NEW function that only saves Cloudinary URLs
-      const result = await saveComicWithCloudinaryUrls(comicData);
+      // Use the NEW function that uploads base64 to Cloudinary first
+      const result = await uploadBase64ComicImagesAndSave(comicData);
       if (result.success) {
         setComicImages([]);
         setComicTexts([]); // Clear texts
