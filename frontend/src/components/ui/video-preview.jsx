@@ -185,7 +185,7 @@ const VideoPreview = ({
             </h4>
 
             {videoUrl && !previewError ? (
-              <div className="relative bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+              <div className="relative bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden w-full max-w-4xl mx-auto" style={{ aspectRatio: '16/9' }}>
                 <video
                   src={videoUrl}
                   controls
