@@ -618,8 +618,9 @@ export default function ClassGroupingPage() {
                 <textarea
                   value={feedbackFormData.message}
                   onChange={(e) => setFeedbackFormData({...feedbackFormData, message: e.target.value})}
-                  className="w-full border rounded p-2 min-h-[100px]"
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 min-h-[100px] resize-vertical focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Provide detailed feedback for the student..."
+                  style={{ whiteSpace: 'pre-wrap' }}
                 />
               </div>
 
@@ -632,6 +633,7 @@ export default function ClassGroupingPage() {
                     focusAreas: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
                   })}
                   placeholder="e.g., Algebra, Reading Comprehension (comma-separated)"
+                  className="w-full"
                 />
               </div>
 
@@ -644,6 +646,7 @@ export default function ClassGroupingPage() {
                     strengths: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
                   })}
                   placeholder="e.g., Problem-solving, Critical thinking (comma-separated)"
+                  className="w-full"
                 />
               </div>
 
@@ -656,6 +659,7 @@ export default function ClassGroupingPage() {
                     improvements: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
                   })}
                   placeholder="e.g., Time management, Attention to detail (comma-separated)"
+                  className="w-full"
                 />
               </div>
 
