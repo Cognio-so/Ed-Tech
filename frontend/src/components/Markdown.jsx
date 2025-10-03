@@ -68,10 +68,6 @@ function isDirectVideo(url) {
 
 // Enhanced helper to detect if URL is an image (including more formats)
 function isImageUrl(url) {
-  // Add validation to reject obvious fake URLs
-  if (!url || url.includes('example.com') || url.includes('placeholder') || url.includes('fake')) {
-    return false;
-  }
   return /\.(jpg|jpeg|png|gif|bmp|webp|svg|tiff|ico)(\?.*)?$/i.test(url || "");
 }
 
