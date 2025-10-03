@@ -98,7 +98,7 @@ export async function getUserById(userId) {
   }
 }
 
-// Create new user
+// Create new user - UPDATED
 export async function createUser(formData) {
   try {
     const { db } = await connectToDatabase();
@@ -110,6 +110,7 @@ export async function createUser(formData) {
     const role = formData.get("role");
     const gradesData = formData.get("grades");
     const subjectsData = formData.get("subjects");
+    const gradeSubjectPairsData = formData.get("gradeSubjectPairs");
     
     // Validate required fields
     if (!name || !email || !password || !role) {
@@ -122,9 +123,11 @@ export async function createUser(formData) {
       throw new Error("User with this email already exists");
     }
     
-    // Parse grades and subjects if provided
+    // Parse grades, subjects, and grade-subject pairs
     let grades = [];
     let subjects = [];
+    let gradeSubjectPairs = [];
+    
     if (gradesData) {
       try {
         grades = JSON.parse(gradesData);
@@ -137,6 +140,13 @@ export async function createUser(formData) {
         subjects = JSON.parse(subjectsData);
       } catch (e) {
         console.error("Error parsing subjects:", e);
+      }
+    }
+    if (gradeSubjectPairsData) {
+      try {
+        gradeSubjectPairs = JSON.parse(gradeSubjectPairsData);
+      } catch (e) {
+        console.error("Error parsing grade-subject pairs:", e);
       }
     }
     
@@ -154,14 +164,15 @@ export async function createUser(formData) {
       throw new Error(result.error.message || "Failed to create user");
     }
     
-    // Update user with grades and subjects if provided
-    if (grades.length > 0 || subjects.length > 0) {
+    // Update user with grades, subjects, and grade-subject pairs
+    if (grades.length > 0 || subjects.length > 0 || gradeSubjectPairs.length > 0) {
       await usersCollection.updateOne(
         { email },
         {
           $set: {
             grades: grades,
             subjects: subjects,
+            gradeSubjectPairs: gradeSubjectPairs,
             updatedAt: new Date()
           }
         }
@@ -176,7 +187,7 @@ export async function createUser(formData) {
   }
 }
 
-// Update user
+// Update user - UPDATED
 export async function updateUser(userId, formData) {
   try {
     const { db } = await connectToDatabase();
@@ -188,6 +199,7 @@ export async function updateUser(userId, formData) {
     const emailVerified = formData.get("emailVerified") === "true";
     const gradesData = formData.get("grades");
     const subjectsData = formData.get("subjects");
+    const gradeSubjectPairsData = formData.get("gradeSubjectPairs");
     
     // Validate required fields
     if (!name || !email || !role) {
@@ -203,9 +215,11 @@ export async function updateUser(userId, formData) {
       throw new Error("Email is already taken by another user");
     }
     
-    // Parse grades and subjects if provided
+    // Parse grades, subjects, and grade-subject pairs
     let grades = [];
     let subjects = [];
+    let gradeSubjectPairs = [];
+    
     if (gradesData) {
       try {
         grades = JSON.parse(gradesData);
@@ -220,6 +234,13 @@ export async function updateUser(userId, formData) {
         console.error("Error parsing subjects:", e);
       }
     }
+    if (gradeSubjectPairsData) {
+      try {
+        gradeSubjectPairs = JSON.parse(gradeSubjectPairsData);
+      } catch (e) {
+        console.error("Error parsing grade-subject pairs:", e);
+      }
+    }
     
     // Update user
     const result = await usersCollection.updateOne(
@@ -232,6 +253,7 @@ export async function updateUser(userId, formData) {
           emailVerified,
           grades: grades,
           subjects: subjects,
+          gradeSubjectPairs: gradeSubjectPairs,
           updatedAt: new Date()
         }
       }
@@ -345,7 +367,7 @@ export async function getUserStats() {
   }
 }
 
-// Get all subjects and grades from curriculum collection
+// Get all subjects and grades from curriculum collection - UPDATED to return grade-subject pairs
 export async function getSubjectsAndGrades() {
   try {
     const { db } = await connectToDatabase();
@@ -354,36 +376,57 @@ export async function getSubjectsAndGrades() {
     // Fetch all curriculum documents
     const curriculumDocs = await curriculumCollection.find({}).toArray();
     
-    // Extract unique subjects and grades from curriculum
-    const subjectsSet = new Set();
+    // Create grade-subject pairs from curriculum
+    const gradeSubjectPairs = [];
     const gradesSet = new Set();
+    const subjectsSet = new Set();
     
     curriculumDocs.forEach(doc => {
-      if (doc.subject && doc.subject.trim()) {
-        subjectsSet.add(doc.subject.trim());
-      }
-      if (doc.grade && doc.grade.trim()) {
-        gradesSet.add(doc.grade.trim());
+      if (doc.subject && doc.subject.trim() && doc.grade && doc.grade.trim()) {
+        const grade = doc.grade.trim();
+        const subject = doc.subject.trim();
+        
+        gradesSet.add(grade);
+        subjectsSet.add(subject);
+        
+        // Create grade-subject pair
+        const pairId = `${grade}_${subject}`;
+        if (!gradeSubjectPairs.find(pair => pair.id === pairId)) {
+          gradeSubjectPairs.push({
+            id: pairId,
+            grade: grade,
+            subject: subject,
+            displayName: `${subject} (${grade})`,
+            createdAt: new Date('2024-01-01')
+          });
+        }
       }
     });
     
-    // Convert sets to arrays and create objects with IDs
+    // Convert sets to arrays for backward compatibility
     const subjects = Array.from(subjectsSet).map((subject, index) => ({
-      id: `subject_${index}`, // Generate a simple ID since we're extracting from curriculum
+      id: `subject_${index}`,
       name: subject,
-      createdAt: new Date('2024-01-01') // Use a static date to avoid hydration mismatch
+      createdAt: new Date('2024-01-01')
     })).sort((a, b) => a.name.localeCompare(b.name));
     
     const grades = Array.from(gradesSet).map((grade, index) => ({
-      id: `grade_${index}`, // Generate a simple ID since we're extracting from curriculum
+      id: `grade_${index}`,
       name: grade,
-      createdAt: new Date('2024-01-01') // Use a static date to avoid hydration mismatch
+      createdAt: new Date('2024-01-01')
     })).sort((a, b) => a.name.localeCompare(b.name));
     
     return {
       success: true,
       subjects,
-      grades
+      grades,
+      gradeSubjectPairs: gradeSubjectPairs.sort((a, b) => {
+        // Sort by grade first, then by subject
+        if (a.grade !== b.grade) {
+          return a.grade.localeCompare(b.grade);
+        }
+        return a.subject.localeCompare(b.subject);
+      })
     };
   } catch (error) {
     console.error("Error fetching subjects and grades from curriculum:", error);
@@ -391,7 +434,42 @@ export async function getSubjectsAndGrades() {
       success: false,
       subjects: [],
       grades: [],
+      gradeSubjectPairs: [],
       error: error.message || "Failed to fetch subjects and grades from curriculum"
+    };
+  }
+}
+
+// Get subjects for a specific grade
+export async function getSubjectsForGrade(grade) {
+  try {
+    const { db } = await connectToDatabase();
+    const curriculumCollection = db.collection("curriculum");
+    
+    // Find all subjects for the given grade
+    const curriculumDocs = await curriculumCollection.find({ 
+      grade: { $regex: new RegExp(`^${grade}$`, 'i') } 
+    }).toArray();
+    
+    const subjects = [...new Set(curriculumDocs.map(doc => doc.subject.trim()))]
+      .filter(subject => subject)
+      .sort((a, b) => a.localeCompare(b));
+    
+    return {
+      success: true,
+      subjects: subjects.map((subject, index) => ({
+        id: `${grade}_${subject}`,
+        name: subject,
+        grade: grade,
+        displayName: `${subject} (${grade})`
+      }))
+    };
+  } catch (error) {
+    console.error("Error fetching subjects for grade:", error);
+    return {
+      success: false,
+      subjects: [],
+      error: error.message || "Failed to fetch subjects for grade"
     };
   }
 }

@@ -3,6 +3,37 @@
 import React from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import 'katex/dist/katex.min.css';
+import { InlineMath, BlockMath } from 'react-katex';
+
+// Enhanced text processing to detect and render mathematical equations
+const processTextForMath = (text) => {
+  if (!text) return text;
+  
+  // Split text by math delimiters and process each part
+  const parts = text.split(/(\\?\([^)]+\)|\\?\[[^\]]+\])/g);
+  
+  return parts.map((part, index) => {
+    // Check for inline math: \( ... \)
+    if (part.match(/^\\?\(([^)]+)\)$/)) {
+      const mathContent = part.replace(/^\\?\(/, '').replace(/\)$/, '');
+      return (
+        <InlineMath key={index} math={mathContent} />
+      );
+    }
+    
+    // Check for display math: \[ ... \]
+    if (part.match(/^\\?\[([^\]]+)\]$/)) {
+      const mathContent = part.replace(/^\\?\[/, '').replace(/\]$/, '');
+      return (
+        <BlockMath key={index} math={mathContent} />
+      );
+    }
+    
+    // Regular text
+    return part;
+  });
+};
 
 // Helpers to embed video links
 function getYouTubeEmbed(url) {
@@ -37,6 +68,10 @@ function isDirectVideo(url) {
 
 // Enhanced helper to detect if URL is an image (including more formats)
 function isImageUrl(url) {
+  // Add validation to reject obvious fake URLs
+  if (!url || url.includes('example.com') || url.includes('placeholder') || url.includes('fake')) {
+    return false;
+  }
   return /\.(jpg|jpeg|png|gif|bmp|webp|svg|tiff|ico)(\?.*)?$/i.test(url || "");
 }
 
@@ -190,12 +225,13 @@ export const MarkdownStyles = {
     <h6 className="text-base font-semibold tracking-tight mt-3" {...props} />
   ),
 
-  // Text
+  // Text with math processing
   p: ({ node, children, ...props }) => {
-    // Process text content to detect and convert image URLs
+    // Process text content to detect and convert image URLs and math
     const processedChildren = React.Children.map(children, (child) => {
       if (typeof child === 'string') {
-        return processTextForImages(child);
+        let processed = processTextForImages(child);
+        return processTextForMath(processed);
       }
       return child;
     });
@@ -210,7 +246,7 @@ export const MarkdownStyles = {
   em: ({ node, ...props }) => <em className="italic" {...props} />,
   hr: () => <hr className="my-6 border-muted" />,
 
-  // Lists
+  // Lists with math processing
   ul: ({ node, ...props }) => (
     <ul className="my-6 ml-6 list-disc [&>li]:mt-2" {...props} />
   ),
@@ -218,21 +254,38 @@ export const MarkdownStyles = {
     <ol className="my-6 ml-decimal [&>li]:mt-2" {...props} />
   ),
   li: ({ node, ordered, children, ...props }) => {
-    // Process list items for image URLs
+    // Process list items for image URLs and math
     const processedChildren = React.Children.map(children, (child) => {
       if (typeof child === 'string') {
-        return processTextForImages(child);
+        let processed = processTextForImages(child);
+        return processTextForMath(processed);
       }
       return child;
     });
     
-    return <li {...props}>{processedChildren}</li>;
+    return (
+      <li {...props}>
+        {processedChildren}
+      </li>
+    );
   },
 
-  // Blockquote
-  blockquote: ({ node, ...props }) => (
-    <blockquote className="mt-6 border-l-2 pl-6 italic text-muted-foreground" {...props} />
-  ),
+  // Blockquote with math processing
+  blockquote: ({ node, children, ...props }) => {
+    const processedChildren = React.Children.map(children, (child) => {
+      if (typeof child === 'string') {
+        let processed = processTextForImages(child);
+        return processTextForMath(processed);
+      }
+      return child;
+    });
+    
+    return (
+      <blockquote className="mt-6 border-l-2 pl-6 italic text-muted-foreground" {...props}>
+        {processedChildren}
+      </blockquote>
+    );
+  },
 
   // Links (with video detection and image detection)
   a: ({ node, href, children, ...props }) => {

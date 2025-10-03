@@ -6,7 +6,7 @@ const VoiceCoachVideo = ({
     isSpeaking = false, 
     isConnected = false,
     selectedGender = 'female', // NEW: Receive gender from parent
-    isUserSpeaking = false // NEW: Add missing prop
+    isUserSpeaking = false // NEW: Add missing prop (kept for compatibility but not used)
 }) => {
     const [hasPlayedIntro, setHasPlayedIntro] = useState(false);
     
@@ -24,19 +24,19 @@ const VoiceCoachVideo = ({
         }
     };
 
-    // Handle muted video playback based on connection and user speaking
+    // SIMPLIFIED: Handle muted video playback based ONLY on connection
     useEffect(() => {
         const mutedVideo = mutedVideoRef.current;
         if (!mutedVideo) return;
 
-        if (isConnected && !isUserSpeaking) {
-            // Play when connected and user is not speaking
+        if (isConnected) {
+            // Play when connected
             mutedVideo.play().catch(console.error);
         } else {
-            // Pause when disconnected or user is speaking
+            // Pause when disconnected
             mutedVideo.pause();
         }
-    }, [isConnected, isUserSpeaking]);
+    }, [isConnected]);
 
     // REMOVED: The unmuted video useEffect that was playing during connection
     // The unmuted video should only play during intro, not during connection
@@ -60,16 +60,7 @@ const VoiceCoachVideo = ({
         return () => clearTimeout(timer);
     }, []); 
 
-    useEffect(() => {
-        const mutedVideo = mutedVideoRef.current;
-        if (!mutedVideo) return;
-
-        if (isSpeaking && isConnected) {
-            mutedVideo.play().catch(console.error);
-        } else {
-            mutedVideo.pause();
-        }
-    }, [isSpeaking, isConnected]);
+    // REMOVED: The isSpeaking useEffect - no longer needed
 
     // NEW: Update video sources when gender changes
     useEffect(() => {
@@ -110,7 +101,7 @@ const VoiceCoachVideo = ({
                 playsInline
                 preload="metadata"
                 style={{
-                    opacity: isConnected && !isUserSpeaking ? 1 : 0.7,
+                    opacity: isConnected ? 1 : 0.7,
                     transition: 'opacity 0.3s ease',
                     zIndex: hasPlayedIntro ? 1 : 0,
                     display: hasPlayedIntro ? 'block' : 'none'

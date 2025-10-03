@@ -84,7 +84,10 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
                                (line.includes('؟') && line.length > 10) || // Arabic question mark
                                (line.includes('?') && line.length > 10) || // English question mark
                                line.match(/^السؤال/) || // Arabic "Question"
-                               line.match(/^Question/); // English "Question"
+                               line.match(/^Question/) || // English "Question"
+                               line.match(/^\*\*\d+\./) || // **1. Question format
+                               line.match(/^\*\*[A-Z]\./) || // **A. Question format
+                               line.match(/^\*\*[أ-ي]\./); // **Arabic. Question format
 
         if (isQuestionStart) {
           // Save previous question if exists
@@ -92,49 +95,101 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
             questions.push(currentQuestion);
           }
           
-          // Start new question
-          const questionText = line.replace(/^(\d+\.|[A-Z]\.|[أ-ي]\.|السؤال\s*\d*:?\s*|Question\s*\d*:?\s*)/, '');
+          // Start new question - handle markdown bold format
+          let questionText = line;
+          
+          // Remove markdown bold formatting
+          if (line.startsWith('**') && line.endsWith('**')) {
+            questionText = line.slice(2, -2); // Remove ** from start and end
+          } else if (line.startsWith('**')) {
+            questionText = line.slice(2); // Remove ** from start
+          }
+          
+          // Extract question number and text
+          const numberMatch = questionText.match(/^(\d+)\./);
+          const letterMatch = questionText.match(/^([A-Z])\./);
+          const arabicMatch = questionText.match(/^([أ-ي])\./);
+          
+          let questionNumber = questionCounter.toString();
+          let cleanQuestionText = questionText;
+          
+          if (numberMatch) {
+            questionNumber = numberMatch[1];
+            cleanQuestionText = questionText.replace(/^\d+\.\s*/, '');
+          } else if (letterMatch) {
+            questionNumber = letterMatch[1];
+            cleanQuestionText = questionText.replace(/^[A-Z]\.\s*/, '');
+          } else if (arabicMatch) {
+            questionNumber = arabicMatch[1];
+            cleanQuestionText = questionText.replace(/^[أ-ي]\.\s*/, '');
+          } else {
+            cleanQuestionText = questionText.replace(/^(السؤال\s*\d*:?\s*|Question\s*\d*:?\s*)/, '');
+          }
+          
           currentQuestion = {
-            number: questionCounter.toString(),
-            text: questionText,
+            number: questionNumber,
+            text: cleanQuestionText,
             type: 'unknown',
             options: []
           };
           questionCounter++;
 
           // Check if this is a True/False question
-          if (questionText.toLowerCase().includes('true or false') || 
-              questionText.toLowerCase().includes('true/false') ||
-              questionText.includes('صح أم خطأ') ||
-              questionText.includes('صحيح أم خاطئ')) {
+          if (cleanQuestionText.toLowerCase().includes('true or false') || 
+              cleanQuestionText.toLowerCase().includes('true/false') ||
+              cleanQuestionText.includes('صح أم خطأ') ||
+              cleanQuestionText.includes('صحيح أم خاطئ')) {
             currentQuestion.type = 'true_false';
             currentQuestion.options = ['True', 'False'];
-          } else if (questionText.toLowerCase().includes('briefly explain') ||
-                     questionText.toLowerCase().includes('explain') ||
-                     questionText.toLowerCase().includes('describe') ||
-                     questionText.toLowerCase().includes('what is meant by') ||
-                     questionText.toLowerCase().includes('how') ||
-                     questionText.toLowerCase().includes('solve for') ||
-                     questionText.toLowerCase().includes('simplify') ||
-                     questionText.toLowerCase().includes('what is the value') ||
-                     questionText.toLowerCase().includes('calculate') ||
-                     questionText.toLowerCase().includes('find') ||
-                     questionText.toLowerCase().includes('determine') ||
-                     questionText.toLowerCase().includes('show that') ||
-                     questionText.toLowerCase().includes('prove that') ||
-                     questionText.includes('اشرح') ||
-                     questionText.includes('وضح') ||
-                     questionText.includes('ما المقصود')) {
+          } else if (cleanQuestionText.toLowerCase().includes('briefly explain') ||
+                     cleanQuestionText.toLowerCase().includes('explain') ||
+                     cleanQuestionText.toLowerCase().includes('describe') ||
+                     cleanQuestionText.toLowerCase().includes('what is meant by') ||
+                     cleanQuestionText.toLowerCase().includes('how') ||
+                     cleanQuestionText.toLowerCase().includes('solve for') ||
+                     cleanQuestionText.toLowerCase().includes('simplify') ||
+                     cleanQuestionText.toLowerCase().includes('what is the value') ||
+                     cleanQuestionText.toLowerCase().includes('calculate') ||
+                     cleanQuestionText.toLowerCase().includes('find') ||
+                     cleanQuestionText.toLowerCase().includes('determine') ||
+                     cleanQuestionText.toLowerCase().includes('show that') ||
+                     cleanQuestionText.toLowerCase().includes('prove that') ||
+                     cleanQuestionText.includes('اشرح') ||
+                     cleanQuestionText.includes('وضح') ||
+                     cleanQuestionText.includes('ما المقصود')) {
             currentQuestion.type = 'short_answer';
           } else {
             currentQuestion.type = 'mcq';
           }
-        } else if (currentQuestion && line.match(/^[A-D]\)/)) {
-          // This is an option for the current MCQ question
-          currentQuestion.options.push(line);
-        } else if (currentQuestion && currentQuestion.type === 'short_answer' && line && !line.match(/^(\d+\.|[A-Z]\.|[أ-ي]\.|السؤال|Question)/)) {
-          // This might be additional text for the short answer question
-          currentQuestion.text += ' ' + line;
+        } else if (currentQuestion) {
+          // FIXED: Handle multiple option formats
+          const optionPatterns = [
+            /^[A-D]\)/,           // A), B), C), D)
+            /^[A-D]\./,           // A., B., C., D.
+            /^[A-D]\s/,           // A , B , C , D 
+            /^[A-D]:/,            // A:, B:, C:, D:
+            /^[1-4]\)/,           // 1), 2), 3), 4)
+            /^[1-4]\./,           // 1., 2., 3., 4.
+            /^[1-4]\s/,           // 1 , 2 , 3 , 4 
+            /^[1-4]:/,            // 1:, 2:, 3:, 4:
+            /^[أ-ي]\)/,           // Arabic letters with )
+            /^[أ-ي]\./,           // Arabic letters with .
+            /^[أ-ي]\s/,           // Arabic letters with space
+            /^[أ-ي]:/,            // Arabic letters with :
+            /^-\s/,               // - (dash with space)
+            /^\*\s/,              // * (asterisk with space)
+            /^•\s/,               // • (bullet with space)
+          ];
+
+          const isOption = optionPatterns.some(pattern => pattern.test(line));
+          
+          if (isOption) {
+            // This is an option for the current MCQ question
+            currentQuestion.options.push(line);
+          } else if (currentQuestion.type === 'short_answer' && line && !line.match(/^(\d+\.|[A-Z]\.|[أ-ي]\.|السؤال|Question)/)) {
+            // This might be additional text for the short answer question
+            currentQuestion.text += ' ' + line;
+          }
         }
       }
     }
@@ -635,6 +690,87 @@ const AssessmentReview = ({ assessment, studentAnswers, score, correctAnswers, t
   );
 };
 
+// Add this component before the main StartLearning component
+const QuizWithInputs = ({ content, onAnswerChange, studentAnswers }) => {
+  const [answers, setAnswers] = useState(studentAnswers || {});
+  
+  const handleInputChange = (questionId, value) => {
+    const newAnswers = { ...answers, [questionId]: value };
+    setAnswers(newAnswers);
+    if (onAnswerChange) {
+      onAnswerChange(questionId, value);
+    }
+  };
+
+  // Process content to replace [Provide your answer here] with input fields
+  const processContent = (content) => {
+    const lines = content.split('\n');
+    let questionCounter = 0;
+    let processedContent = '';
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      if (line.includes('[Provide your answer here]')) {
+        questionCounter++;
+        const questionId = `question_${questionCounter}`;
+        
+        // Add the line without the placeholder
+        processedContent += line.replace('[Provide your answer here]', '') + '\n';
+        
+        // Add a special marker for input field
+        processedContent += `<!--INPUT_FIELD_${questionId}-->` + '\n';
+      } else {
+        processedContent += line + '\n';
+      }
+    }
+    
+    return { processedContent, questionCounter };
+  };
+
+  const { processedContent, questionCounter } = processContent(content);
+
+  // Custom markdown component that handles input fields
+  const CustomMarkdown = ({ content }) => {
+    const parts = content.split(/(<!--INPUT_FIELD_question_\d+-->)/g);
+    
+    return (
+      <div className="space-y-4">
+        {parts.map((part, index) => {
+          if (part.match(/<!--INPUT_FIELD_question_(\d+)-->/)) {
+            const questionId = part.match(/<!--INPUT_FIELD_question_(\d+)-->/)[1];
+            const fullQuestionId = `question_${questionId}`;
+            
+            return (
+              <div key={index} className="my-4">
+                <Textarea
+                  placeholder="Type your answer here..."
+                  value={answers[fullQuestionId] || ''}
+                  onChange={(e) => handleInputChange(fullQuestionId, e.target.value)}
+                  className="min-h-[100px] w-full"
+                />
+              </div>
+            );
+          } else if (part.trim()) {
+            return (
+              <ReactMarkdown 
+                key={index} 
+                remarkPlugins={[remarkGfm]} 
+                components={MarkdownStyles}
+              >
+                {part}
+              </ReactMarkdown>
+            );
+          }
+          return null;
+        })}
+      </div>
+    );
+  };
+
+  return <CustomMarkdown content={processedContent} />;
+};
+
 export default function StartLearning({ 
   isOpen, 
   onClose, 
@@ -768,35 +904,38 @@ export default function StartLearning({
     const contentId = content.id || content._id;
     const contentType = content.type;
     
-
-    const timeSpent = Math.round((Date.now() - startTime) / 60000); // minutes
+    // Calculate time spent in this session
+    const sessionTimeSpent = Math.round((Date.now() - startTime) / 60000); // minutes
+    
+    // Get existing time spent from previous sessions
+    const existingTimeSpent = progress.timeSpent || 0;
+    
     const newProgress = {
       currentStep: step,
       totalSteps: progress.totalSteps,
       percentage: Math.round((step / progress.totalSteps) * 100),
-      timeSpent: progress.timeSpent + timeSpent,
+      timeSpent: existingTimeSpent + sessionTimeSpent,
       lastAccessedAt: new Date()
     };
 
     setProgress(newProgress);
 
-    // Update progress in database
+    // Update progress in database - FIXED: Use correct API endpoint
     try {
-      const response = await fetch('/api/student/progress', {
+      const response = await fetch('/api/student/learning-library/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contentId: contentId,
-          contentType: contentType,
-          contentTitle: content.title,
-          subject: content.subject,
-          grade: content.grade,
-          status: completed ? 'completed' : 'in_progress',
-          progress: newProgress,
-          completionData: completed ? {
-            completedAt: new Date(),
-            timeToComplete: newProgress.timeSpent
-          } : null
+          completionData: {
+            contentType: contentType,
+            contentTitle: content.title,
+            subject: content.subject,
+            grade: content.grade,
+            timeSpent: newProgress.timeSpent,
+            timeToComplete: sessionTimeSpent,
+            status: completed ? 'completed' : 'in_progress'
+          }
         })
       });
 
@@ -1355,6 +1494,135 @@ export default function StartLearning({
             />
           </div>
         );
+      
+      case 'worksheet':
+      case 'quiz':
+        // Check if this is a proper interactive worksheet/quiz or just content
+        const hasInteractiveQuestions = (content) => {
+          if (!content) return false;
+          
+          console.log('=== CHECKING INTERACTIVE QUESTIONS ===');
+          console.log('Content to check:', content.substring(0, 500));
+          
+          // Look for question patterns - including markdown bold format
+          const questionPatterns = [
+            /^\d+\./,                    // 1. Question
+            /^[A-Z]\./,                  // A. Question  
+            /^Question\s*\d*:?/i,        // Question 1:
+            /^السؤال\s*\d*:?/i,          // Arabic Question
+            /^\*\*\d+\./,                // **1. Question format
+            /^\*\*[A-Z]\./,              // **A. Question format
+            /^\*\*[أ-ي]\./,              // **Arabic. Question format
+          ];
+          
+          // Look for MULTIPLE CHOICE option patterns (A), B), C), D) format)
+          const optionPatterns = [
+            /^[A-D]\)/,                  // A), B), C), D)
+            /^[A-D]\./,                  // A., B., C., D.
+            /^[أ-ي]\)/,                  // Arabic letters with )
+            /^[أ-ي]\./,                  // Arabic letters with .
+          ];
+          
+          const lines = content.split('\n');
+          let hasQuestions = false;
+          let hasMultipleChoiceOptions = false;
+          let hasAnswerKey = false;
+          
+          console.log('Total lines to check:', lines.length);
+          
+          for (let i = 0; i < lines.length; i++) {
+            const trimmedLine = lines[i].trim();
+            console.log(`Line ${i}:`, trimmedLine);
+            
+            if (questionPatterns.some(pattern => pattern.test(trimmedLine))) {
+              hasQuestions = true;
+              console.log('Found question at line', i, ':', trimmedLine);
+            }
+            
+            // Only count as options if they're actual multiple choice options (A), B), C), D))
+            if (optionPatterns.some(pattern => pattern.test(trimmedLine))) {
+              hasMultipleChoiceOptions = true;
+              console.log('Found multiple choice option at line', i, ':', trimmedLine);
+            }
+            
+            // Check for answer key sections - if present, treat as traditional quiz content
+            if (trimmedLine.includes('Answer Key') || 
+                trimmedLine.includes('**Answer Key**') || 
+                trimmedLine.includes('**Answers**') || 
+                trimmedLine.includes('**Solutions**') ||
+                trimmedLine.includes('**Multiple Choice Answers**') ||
+                trimmedLine.includes('**Short Answer Explanations**') ||
+                trimmedLine.includes('**Problem Solving Explanations**') ||
+                trimmedLine.includes('### Answer Key') ||
+                trimmedLine.includes('## Answer Key') ||
+                trimmedLine.includes('# Answer Key')) {
+              hasAnswerKey = true;
+              console.log('Found answer key section at line', i, ':', trimmedLine);
+            }
+          }
+          
+          console.log('Has questions:', hasQuestions);
+          console.log('Has multiple choice options:', hasMultipleChoiceOptions);
+          console.log('Has answer key:', hasAnswerKey);
+          console.log('Is interactive (has both questions AND multiple choice options AND no answer key):', hasQuestions && hasMultipleChoiceOptions && !hasAnswerKey);
+          
+          // Only treat as interactive if it has BOTH questions AND multiple choice options AND NO answer key
+          // If it has an answer key, it's a traditional quiz that should be displayed as content
+          return hasQuestions && hasMultipleChoiceOptions && !hasAnswerKey;
+        };
+        
+        const contentToCheck = content.content || content.generatedContent || content.assessmentContent || '';
+        
+        if (hasInteractiveQuestions(contentToCheck)) {
+          console.log('Treating as interactive assessment');
+          // Handle as interactive assessment
+          return (
+            <div className="h-full overflow-hidden">
+              <InteractiveAssessment
+                assessment={content}
+                onAnswerChange={handleAnswerChange}
+                studentAnswers={studentAnswers}
+                onSubmit={handleAssessmentSubmit}
+                hideSolutions={true}
+              />
+            </div>
+          );
+        } else {
+          console.log('Treating as content with markdown (traditional quiz format)');
+          // Handle as content with markdown rendering and input fields
+          return (
+            <div className="h-full flex flex-col">
+              <div className="text-center mb-4 flex-shrink-0">
+                <h3 className="text-lg font-semibold">{content.title}</h3>
+                <p className="text-sm text-muted-foreground">{content.topic}</p>
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto">
+                <div className="prose prose-sm dark:prose-invert max-w-none pr-4">
+                  <QuizWithInputs 
+                    content={content.content || content.generatedContent || content.assessmentContent || ''}
+                    onAnswerChange={handleAnswerChange}
+                    studentAnswers={studentAnswers}
+                  />
+                </div>
+              </div>
+              <div className="mt-4 flex justify-center flex-shrink-0">
+                <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Completing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Mark as Complete
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          );
+        }
       
       case 'external':
       case 'websearch':

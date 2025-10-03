@@ -73,7 +73,8 @@ export default function UserManagementPage() {
     password: "",
     role: "student",
     grades: [],
-    subjects: []
+    subjects: [],
+    gradeSubjectPairs: [] // New field for grade-subject pairs
   });
   const [editForm, setEditForm] = useState({
     name: "",
@@ -81,12 +82,14 @@ export default function UserManagementPage() {
     role: "student",
     emailVerified: false,
     grades: [],
-    subjects: []
+    subjects: [],
+    gradeSubjectPairs: [] // New field for grade-subject pairs
   });
 
   // Subject and Grade management states
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [availableGrades, setAvailableGrades] = useState([]);
+  const [gradeSubjectPairs, setGradeSubjectPairs] = useState([]);
   const [loadingSubjectsGrades, setLoadingSubjectsGrades] = useState(true);
   const [createSubjectForm, setCreateSubjectForm] = useState({
     name: ""
@@ -119,6 +122,7 @@ export default function UserManagementPage() {
       if (subjectsGradesData.success) {
         setAvailableSubjects(subjectsGradesData.subjects);
         setAvailableGrades(subjectsGradesData.grades);
+        setGradeSubjectPairs(subjectsGradesData.gradeSubjectPairs || []);
       }
     } catch (error) {
       toast.error("Failed to fetch data");
@@ -133,7 +137,7 @@ export default function UserManagementPage() {
     fetchData();
   }, [currentPage, searchTerm, roleFilter]);
 
-  // Handle create user
+  // Handle create user - UPDATED
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
@@ -142,15 +146,42 @@ export default function UserManagementPage() {
       formData.append("email", createForm.email);
       formData.append("password", createForm.password);
       formData.append("role", createForm.role);
-      formData.append("grades", JSON.stringify(createForm.grades));
-      formData.append("subjects", JSON.stringify(createForm.subjects));
+      
+      // For students, use grades array
+      if (createForm.role === "student") {
+        formData.append("grades", JSON.stringify(createForm.grades));
+        formData.append("subjects", JSON.stringify([]));
+      }
+      
+      // For teachers, use grade-subject pairs
+      if (createForm.role === "teacher") {
+        // Extract grades and subjects from grade-subject pairs
+        const selectedPairs = gradeSubjectPairs.filter(pair => 
+          createForm.gradeSubjectPairs.includes(pair.id)
+        );
+        
+        const grades = [...new Set(selectedPairs.map(pair => pair.grade))];
+        const subjects = [...new Set(selectedPairs.map(pair => pair.subject))];
+        
+        formData.append("grades", JSON.stringify(grades));
+        formData.append("subjects", JSON.stringify(subjects));
+        formData.append("gradeSubjectPairs", JSON.stringify(createForm.gradeSubjectPairs));
+      }
 
       const result = await createUser(formData);
       
       if (result.success) {
         toast.success(result.message);
         setCreateDialogOpen(false);
-        setCreateForm({ name: "", email: "", password: "", role: "student", grades: [], subjects: [] });
+        setCreateForm({ 
+          name: "", 
+          email: "", 
+          password: "", 
+          role: "student", 
+          grades: [], 
+          subjects: [],
+          gradeSubjectPairs: []
+        });
         fetchData();
       } else {
         toast.error(result.message);
@@ -160,7 +191,7 @@ export default function UserManagementPage() {
     }
   };
 
-  // Handle update user
+  // Handle update user - UPDATED
   const handleUpdateUser = async (e) => {
     e.preventDefault();
     try {
@@ -169,8 +200,27 @@ export default function UserManagementPage() {
       formData.append("email", editForm.email);
       formData.append("role", editForm.role);
       formData.append("emailVerified", editForm.emailVerified.toString());
-      formData.append("grades", JSON.stringify(editForm.grades));
-      formData.append("subjects", JSON.stringify(editForm.subjects));
+      
+      // For students, use grades array
+      if (editForm.role === "student") {
+        formData.append("grades", JSON.stringify(editForm.grades));
+        formData.append("subjects", JSON.stringify([]));
+      }
+      
+      // For teachers, use grade-subject pairs
+      if (editForm.role === "teacher") {
+        // Extract grades and subjects from grade-subject pairs
+        const selectedPairs = gradeSubjectPairs.filter(pair => 
+          editForm.gradeSubjectPairs.includes(pair.id)
+        );
+        
+        const grades = [...new Set(selectedPairs.map(pair => pair.grade))];
+        const subjects = [...new Set(selectedPairs.map(pair => pair.subject))];
+        
+        formData.append("grades", JSON.stringify(grades));
+        formData.append("subjects", JSON.stringify(subjects));
+        formData.append("gradeSubjectPairs", JSON.stringify(editForm.gradeSubjectPairs));
+      }
 
       const result = await updateUser(selectedUser.id, formData);
       
@@ -214,7 +264,8 @@ export default function UserManagementPage() {
         role: userData.role,
         emailVerified: userData.emailVerified,
         grades: userData.grades || [],
-        subjects: userData.subjects || []
+        subjects: userData.subjects || [],
+        gradeSubjectPairs: userData.gradeSubjectPairs || []
       });
       setEditDialogOpen(true);
     } catch (error) {
@@ -288,6 +339,25 @@ export default function UserManagementPage() {
             : [...prev.grades, gradeName]
         };
       });
+    }
+  };
+
+  // Handle grade-subject pair selection
+  const handleGradeSubjectPairToggle = (pair, formType) => {
+    if (formType === "create") {
+      setCreateForm(prev => ({
+        ...prev,
+        gradeSubjectPairs: prev.gradeSubjectPairs.includes(pair.id)
+          ? prev.gradeSubjectPairs.filter(p => p !== pair.id)
+          : [...prev.gradeSubjectPairs, pair.id]
+      }));
+    } else {
+      setEditForm(prev => ({
+        ...prev,
+        gradeSubjectPairs: prev.gradeSubjectPairs.includes(pair.id)
+          ? prev.gradeSubjectPairs.filter(p => p !== pair.id)
+          : [...prev.gradeSubjectPairs, pair.id]
+      }));
     }
   };
 
@@ -812,7 +882,7 @@ export default function UserManagementPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Create User Dialog */}
+      {/* Create User Dialog - UPDATED */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-[90vw] max-h-[90vh] sm:max-w-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -870,72 +940,99 @@ export default function UserManagementPage() {
             {/* Grades and Subjects - Only show for students and teachers */}
             {(createForm.role === "student" || createForm.role === "teacher") && (
               <>
-                <div className="space-y-2">
-                  <Label htmlFor="grades">Grades</Label>
-                  {loadingSubjectsGrades ? (
-                    <div className="flex items-center justify-center p-4">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      <span className="text-sm text-muted-foreground">Loading grades...</span>
-                    </div>
-                  ) : availableGrades.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
-                      {availableGrades
-                        .sort((a, b) => a.name.localeCompare(b.name))
-                        .map((g) => (
-                        <div key={g.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`create-grade-${g.id}`}
-                            checked={createForm.grades.includes(g.name)}
-                            onCheckedChange={() => handleGradeToggle(g.name, "create")}
-                          />
-                          <label
-                            htmlFor={`create-grade-${g.id}`}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            {g.name}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                      <p className="text-sm text-muted-foreground">No grades available</p>
-                      <p className="text-xs text-muted-foreground mt-1">Create grades first</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Only show subjects for teachers, not students */}
-                {createForm.role === "teacher" && (
+                {/* For students - show grades only */}
+                {createForm.role === "student" && (
                   <div className="space-y-2">
-                    <Label htmlFor="subjects">Subjects</Label>
+                    <Label htmlFor="grades">Grade</Label>
                     {loadingSubjectsGrades ? (
                       <div className="flex items-center justify-center p-4">
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        <span className="text-sm text-muted-foreground">Loading subjects...</span>
+                        <span className="text-sm text-muted-foreground">Loading grades...</span>
                       </div>
-                    ) : availableSubjects.length > 0 ? (
+                    ) : availableGrades.length > 0 ? (
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
-                        {availableSubjects.map((sub) => (
-                          <div key={sub.id} className="flex items-center space-x-2">
+                        {availableGrades
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((g) => (
+                          <div key={g.id} className="flex items-center space-x-2">
                             <Checkbox
-                              id={`create-subject-${sub.id}`}
-                              checked={createForm.subjects.includes(sub.name)}
-                              onCheckedChange={() => handleSubjectToggle(sub.name, "create")}
+                              id={`create-grade-${g.id}`}
+                              checked={createForm.grades.includes(g.name)}
+                              onCheckedChange={() => handleGradeToggle(g.name, "create")}
                             />
                             <label
-                              htmlFor={`create-subject-${sub.id}`}
+                              htmlFor={`create-grade-${g.id}`}
                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                             >
-                              {sub.name}
+                              {g.name}
                             </label>
                           </div>
                         ))}
                       </div>
                     ) : (
                       <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                        <p className="text-sm text-muted-foreground">No subjects available</p>
-                        <p className="text-xs text-muted-foreground mt-1">Create subjects first</p>
+                        <p className="text-sm text-muted-foreground">No grades available</p>
+                        <p className="text-xs text-muted-foreground mt-1">Create grades first</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* For teachers - show grade-subject pairs */}
+                {createForm.role === "teacher" && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Teaching Assignments</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Select the grades and subjects this teacher will teach
+                      </p>
+                    </div>
+                    
+                    {loadingSubjectsGrades ? (
+                      <div className="flex items-center justify-center p-4">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <span className="text-sm text-muted-foreground">Loading options...</span>
+                      </div>
+                    ) : gradeSubjectPairs.length > 0 ? (
+                      <div className="space-y-3">
+                        {/* Group by grade for better organization */}
+                        {availableGrades
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((grade) => {
+                            const subjectsForGrade = gradeSubjectPairs.filter(pair => pair.grade === grade.name);
+                            if (subjectsForGrade.length === 0) return null;
+                            
+                            return (
+                              <div key={grade.id} className="border rounded-lg p-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <School className="h-4 w-4 text-primary" />
+                                  <h4 className="font-medium text-sm">{grade.name}</h4>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                  {subjectsForGrade.map((pair) => (
+                                    <div key={pair.id} className="flex items-center space-x-2">
+                                      <Checkbox
+                                        id={`create-pair-${pair.id}`}
+                                        checked={createForm.gradeSubjectPairs.includes(pair.id)}
+                                        onCheckedChange={() => handleGradeSubjectPairToggle(pair, "create")}
+                                      />
+                                      <label
+                                        htmlFor={`create-pair-${pair.id}`}
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                                      >
+                                        {pair.subject}
+                                      </label>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    ) : (
+                      <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                        <p className="text-sm text-muted-foreground">No teaching assignments available</p>
+                        <p className="text-xs text-muted-foreground mt-1">Add curriculum data first</p>
                       </div>
                     )}
                   </div>
@@ -953,7 +1050,7 @@ export default function UserManagementPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit User Dialog */}
+      {/* Edit User Dialog - UPDATED */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-[90vw] max-h-[90vh] sm:max-w-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -1013,72 +1110,99 @@ export default function UserManagementPage() {
             {/* Grades and Subjects - Only show for students and teachers */}
             {(editForm.role === "student" || editForm.role === "teacher") && (
               <>
-                <div className="space-y-2">
-                  <Label htmlFor="grades">Grades</Label>
-                  {loadingSubjectsGrades ? (
-                    <div className="flex items-center justify-center p-4">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      <span className="text-sm text-muted-foreground">Loading grades...</span>
-                    </div>
-                  ) : availableGrades.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
-                      {availableGrades
-                        .sort((a, b) => a.name.localeCompare(b.name))
-                        .map((g) => (
-                        <div key={g.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`edit-grade-${g.id}`}
-                            checked={editForm.grades.includes(g.name)}
-                            onCheckedChange={() => handleGradeToggle(g.name, "edit")}
-                          />
-                          <label
-                            htmlFor={`edit-grade-${g.id}`}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                          >
-                            {g.name}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                      <p className="text-sm text-muted-foreground">No grades available</p>
-                      <p className="text-xs text-muted-foreground mt-1">Create grades first</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Only show subjects for teachers, not students */}
-                {editForm.role === "teacher" && (
+                {/* For students - show grades only */}
+                {editForm.role === "student" && (
                   <div className="space-y-2">
-                    <Label htmlFor="subjects">Subjects</Label>
+                    <Label htmlFor="grades">Grade</Label>
                     {loadingSubjectsGrades ? (
                       <div className="flex items-center justify-center p-4">
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        <span className="text-sm text-muted-foreground">Loading subjects...</span>
+                        <span className="text-sm text-muted-foreground">Loading grades...</span>
                       </div>
-                    ) : availableSubjects.length > 0 ? (
+                    ) : availableGrades.length > 0 ? (
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
-                        {availableSubjects.map((sub) => (
-                          <div key={sub.id} className="flex items-center space-x-2">
+                        {availableGrades
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((g) => (
+                          <div key={g.id} className="flex items-center space-x-2">
                             <Checkbox
-                              id={`edit-subject-${sub.id}`}
-                              checked={editForm.subjects.includes(sub.name)}
-                              onCheckedChange={() => handleSubjectToggle(sub.name, "edit")}
+                              id={`edit-grade-${g.id}`}
+                              checked={editForm.grades.includes(g.name)}
+                              onCheckedChange={() => handleGradeToggle(g.name, "edit")}
                             />
                             <label
-                              htmlFor={`edit-subject-${sub.id}`}
+                              htmlFor={`edit-grade-${g.id}`}
                               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                             >
-                              {sub.name}
+                              {g.name}
                             </label>
                           </div>
                         ))}
                       </div>
                     ) : (
                       <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                        <p className="text-sm text-muted-foreground">No subjects available</p>
-                        <p className="text-xs text-muted-foreground mt-1">Create subjects first</p>
+                        <p className="text-sm text-muted-foreground">No grades available</p>
+                        <p className="text-xs text-muted-foreground mt-1">Create grades first</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* For teachers - show grade-subject pairs */}
+                {editForm.role === "teacher" && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Teaching Assignments</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Select the grades and subjects this teacher will teach
+                      </p>
+                    </div>
+                    
+                    {loadingSubjectsGrades ? (
+                      <div className="flex items-center justify-center p-4">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <span className="text-sm text-muted-foreground">Loading options...</span>
+                      </div>
+                    ) : gradeSubjectPairs.length > 0 ? (
+                      <div className="space-y-3">
+                        {/* Group by grade for better organization */}
+                        {availableGrades
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((grade) => {
+                            const subjectsForGrade = gradeSubjectPairs.filter(pair => pair.grade === grade.name);
+                            if (subjectsForGrade.length === 0) return null;
+                            
+                            return (
+                              <div key={grade.id} className="border rounded-lg p-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <School className="h-4 w-4 text-primary" />
+                                  <h4 className="font-medium text-sm">{grade.name}</h4>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                  {subjectsForGrade.map((pair) => (
+                                    <div key={pair.id} className="flex items-center space-x-2">
+                                      <Checkbox
+                                        id={`edit-pair-${pair.id}`}
+                                        checked={editForm.gradeSubjectPairs.includes(pair.id)}
+                                        onCheckedChange={() => handleGradeSubjectPairToggle(pair, "edit")}
+                                      />
+                                      <label
+                                        htmlFor={`edit-pair-${pair.id}`}
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                                      >
+                                        {pair.subject}
+                                      </label>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    ) : (
+                      <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                        <p className="text-sm text-muted-foreground">No teaching assignments available</p>
+                        <p className="text-xs text-muted-foreground mt-1">Add curriculum data first</p>
                       </div>
                     )}
                   </div>

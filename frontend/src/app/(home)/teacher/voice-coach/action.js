@@ -487,7 +487,7 @@ export async function createVoiceCoachSession(formData) {
   }
 }
 
-// Save voice coach chat session
+// FIXED: Save voice coach chat session with proper conversation data structure
 export async function saveVoiceCoachChatSession(formData) {
   try {
     const session = await getServerSession();
@@ -495,8 +495,83 @@ export async function saveVoiceCoachChatSession(formData) {
       return { success: false, error: "Unauthorized" };
     }
 
-    const sessionId = formData.get('sessionId');
-    const messages = JSON.parse(formData.get('messages'));
+    const conversationData = JSON.parse(formData.get('conversationData'));
+    console.log('Saving Voice Coach conversation data for user:', session.user.id);
+    
+    const { db } = await connectToDatabase();
+
+    const conversation = {
+      teacherId: new ObjectId(session.user.id),
+      sessionId: conversationData.sessionId,
+      title: conversationData.title || `Voice Coach Chat - ${new Date().toLocaleDateString()}`,
+      sessionType: conversationData.sessionType || 'text',
+      messages: conversationData.messages || [],
+      uploadedFiles: conversationData.uploadedFiles || [],
+      teacherData: conversationData.teacherData || {},
+      conversationStats: {
+        totalMessages: conversationData.messages?.length || 0,
+        userMessages: conversationData.messages?.filter(m => m.role === 'user').length || 0,
+        aiMessages: conversationData.messages?.filter(m => m.role === 'assistant').length || 0,
+        totalDuration: conversationData.totalDuration || 0,
+        topicsDiscussed: conversationData.topicsDiscussed || [],
+        difficultyLevel: conversationData.difficultyLevel || 'medium',
+        learningOutcomes: conversationData.learningOutcomes || []
+      },
+      metadata: {
+        createdAt: conversationData.metadata?.createdAt ? new Date(conversationData.metadata.createdAt) : new Date(),
+        updatedAt: new Date(),
+        lastMessageAt: new Date(),
+        isActive: conversationData.metadata?.isActive !== false,
+        tags: conversationData.metadata?.tags || []
+      }
+    };
+
+    // Check if conversation already exists
+    const existingConversation = await db.collection('teacher_conversations')
+      .findOne({ sessionId: conversationData.sessionId });
+
+    let result;
+    if (existingConversation) {
+      // Update existing conversation
+      result = await db.collection('teacher_conversations')
+        .updateOne(
+          { sessionId: conversationData.sessionId },
+          { $set: conversation }
+        );
+    } else {
+      // Create new conversation
+      result = await db.collection('teacher_conversations')
+        .insertOne(conversation);
+    }
+
+    revalidatePath('/teacher/voice-coach');
+    return { 
+      success: true, 
+      conversationId: (result.insertedId || existingConversation._id).toString() 
+    };
+  } catch (error) {
+    console.error('Error saving Voice Coach conversation:', error);
+    return { success: false, error: "Failed to save conversation" };
+  }
+}
+
+/**
+ * Save Voice Coach conversation to history
+ * @param {Object} formData - Form data containing conversation data
+ * @returns {Promise<Object>} - Save result
+ */
+export async function saveVoiceCoachConversation(formData) {
+  try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      return {
+        success: false,
+        error: "Unauthorized"
+      };
+    }
+
+    const sessionId = formData.get("sessionId");
+    const messages = JSON.parse(formData.get("messages"));
     const sessionType = formData.get('sessionType');
 
     const { db } = await connectToDatabase();
@@ -525,116 +600,6 @@ export async function saveVoiceCoachChatSession(formData) {
     return {
       success: false,
       error: error.message || "Failed to save Voice Coach session"
-    };
-  }
-}
-
-/**
- * Save Voice Coach conversation to history
- * @param {Object} formData - Form data containing conversation data
- * @returns {Promise<Object>} - Save result
- */
-export async function saveVoiceCoachConversation(formData) {
-  try {
-    const session = await getServerSession();
-    if (!session?.user?.id) {
-      return {
-        success: false,
-        error: "Unauthorized"
-      };
-    }
-
-    const sessionId = formData.get("sessionId");
-    const messages = JSON.parse(formData.get("messages") || "[]");
-    const sessionType = formData.get("sessionType") || "text";
-    const title = formData.get("title") || `Voice Coach Session ${new Date().toLocaleDateString()}`;
-    const uploadedFiles = JSON.parse(formData.get("uploadedFiles") || "[]");
-    const teacherData = JSON.parse(formData.get("teacherData") || "{}");
-    const studentContext = JSON.parse(formData.get("studentContext") || "{}");
-
-    if (!sessionId || !messages.length) {
-      return {
-        success: false,
-        error: "Session ID and messages are required"
-      };
-    }
-
-    const { db } = await connectToDatabase();
-    
-    // Calculate conversation stats
-    const userMessages = messages.filter(m => m.role === 'user').length;
-    const aiMessages = messages.filter(m => m.role === 'assistant').length;
-    const totalDuration = messages.length > 0 ? 
-      (new Date(messages[messages.length - 1].timestamp) - new Date(messages[0].timestamp)) / 60000 : 0;
-
-    const conversationData = {
-      teacherId: new ObjectId(session.user.id),
-      sessionId: sessionId,
-      title: title,
-      sessionType: sessionType,
-      messages: messages.map(msg => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-        timestamp: new Date(msg.timestamp),
-        isImageResponse: msg.isImageResponse || false,
-        metadata: {
-          messageType: msg.metadata?.messageType || 'text',
-          fileAttachments: msg.metadata?.fileAttachments || [],
-          processingTime: msg.metadata?.processingTime || 0
-        }
-      })),
-      uploadedFiles: uploadedFiles.map(file => ({
-        filename: file.filename,
-        originalName: file.originalName,
-        fileType: file.fileType,
-        uploadTime: new Date(file.uploadTime)
-      })),
-      teacherData: {
-        grades: teacherData.grades || [],
-        subjects: teacherData.subjects || [],
-        teachingExperience: teacherData.teachingExperience || "intermediate",
-        preferences: teacherData.preferences || {},
-        analytics: teacherData.analytics || {}
-      },
-      studentContext: {
-        students: studentContext.students || [],
-        classPerformance: studentContext.classPerformance || {},
-        learningInsights: studentContext.learningInsights || {}
-      },
-      conversationStats: {
-        totalMessages: messages.length,
-        userMessages: userMessages,
-        aiMessages: aiMessages,
-        totalDuration: Math.round(totalDuration),
-        topicsDiscussed: [], // Could be extracted from conversation content
-        difficultyLevel: "medium",
-        teachingOutcomes: [] // Could be extracted from conversation content
-      },
-      metadata: {
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        lastMessageAt: new Date(),
-        isActive: false,
-        tags: []
-      }
-    };
-
-    await db.collection('teacherConversations').insertOne(conversationData);
-
-    // Revalidate the history page to show updated data
-    revalidatePath("/teacher/history");
-
-    return {
-      success: true,
-      message: "Voice Coach conversation saved successfully",
-      conversationId: conversationData._id
-    };
-  } catch (error) {
-    console.error("Error in saveVoiceCoachConversation:", error);
-    return {
-      success: false,
-      error: error.message || "Failed to save conversation"
     };
   }
 }

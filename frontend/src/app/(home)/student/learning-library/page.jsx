@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Progress } from '@/components/ui/progress'
 import { Play, FileText, Gamepad2, Film, ExternalLink, Search, Star, Sparkles, BookOpen, Image as ImageIcon, Loader2, RefreshCw, CheckCircle, X, Clock, Users, Bookmark, Share2, Heart, Eye, BarChart3, Award, Target, Zap, Calendar, EyeIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import {  getAllStudentContent,  updateLessonViewCount, getLessonStats } from './action'
+import { clientAPI } from './api' // Import from the new api.js file
 import LearningDialog from '@/components/ui/start-learning'
 import LibraryDialog from '@/components/ui/library-dialog';
 
@@ -38,10 +38,12 @@ const typeCharacters = {
   slides: '📄',
   video: '🎥', 
   comic: '📖',
-  image: '��️',
+  image: '🖼️',
   content: '📝',
-  assessment: '��',
-  external: '��'
+  assessment: '🎯',
+  worksheet: '📝',
+  quiz: '❓',
+  external: '🔗'
 }
 
 // Add placeholder images for different content types
@@ -52,6 +54,8 @@ const contentPlaceholders = {
   image: 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?w=400&h=300&fit=crop&crop=center',
   content: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=300&fit=crop&crop=center',
   assessment: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=300&fit=crop&crop=center',
+  worksheet: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=300&fit=crop&crop=center',
+  quiz: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=300&fit=crop&crop=center',
   external: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=300&fit=crop&crop=center',
   websearch: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400&h=300&fit=crop&crop=center'
 }
@@ -114,7 +118,7 @@ const LearningLibrary = () => {
 
   const loadResources = async () => {
     try {
-      const result = await getAllStudentContent()
+      const result = await clientAPI.getAllStudentContent()
       
       if (result.success) {
         setResources(result.lessons)
@@ -137,7 +141,7 @@ const LearningLibrary = () => {
 
   const loadStats = async () => {
     try {
-      const result = await getLessonStats()
+      const result = await clientAPI.getLessonStats()
       if (result.success) {
         setStats(result.stats)
       }
@@ -218,11 +222,17 @@ const LearningLibrary = () => {
     loadResources()
   }
 
-  const handleCompleteLearning = (result) => {
-    toast.success('Resource completed successfully! 🎉')
-    // Reload resources to update progress
-    loadResources()
-    loadStats()
+  const handleCompleteLearning = async (result) => {
+    try {
+      await clientAPI.updateStudentProgress(result.contentId, result.completionData)
+      toast.success('Resource completed successfully! 🎉')
+      // Reload resources to update progress
+      loadResources()
+      loadStats()
+    } catch (error) {
+      console.error('Error completing learning:', error)
+      toast.error('Failed to complete learning')
+    }
   }
 
   const getContentImage = (resource) => {
@@ -277,6 +287,10 @@ const LearningLibrary = () => {
         return contentPlaceholders.content;
       
       case 'assessment':
+        return contentPlaceholders.assessment;
+      
+      case 'worksheet':
+      case 'quiz':
         return contentPlaceholders.assessment;
       
       default:
@@ -423,6 +437,8 @@ const LearningLibrary = () => {
       case 'image': return <ImageIcon className="mr-1 h-4 w-4" />
       case 'content': return <FileText className="mr-1 h-4 w-4" />
       case 'assessment': return <Gamepad2 className="mr-1 h-4 w-4" />
+      case 'worksheet': return <FileText className="mr-1 h-4 w-4" />
+      case 'quiz': return <Gamepad2 className="mr-1 h-4 w-4" />
       case 'external': return <ExternalLink className="mr-1 h-4 w-4" />
       default: return <FileText className="mr-1 h-4 w-4" />
     }
@@ -481,7 +497,7 @@ const LearningLibrary = () => {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="flex flex-wrap justify-start gap-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-lg p-3">
-            {['all', 'slides', 'video', 'comic', 'image', 'content', 'assessment', 'external'].map((tab, index) => (
+            {['all', 'slides', 'video', 'comic', 'image', 'content', 'assessment', 'worksheet', 'quiz', 'external'].map((tab, index) => (
               <TabsTrigger 
                 key={tab}
                 value={tab} 
@@ -493,6 +509,8 @@ const LearningLibrary = () => {
                   index === 4 ? 'data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-400 data-[state=active]:to-orange-500' :
                   index === 5 ? 'data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-400 data-[state=active]:to-blue-500' :
                   index === 6 ? 'data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-400 data-[state=active]:to-pink-500' :
+                  index === 7 ? 'data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-400 data-[state=active]:to-teal-500' :
+                  index === 8 ? 'data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-400 data-[state=active]:to-indigo-500' :
                   'data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-400 data-[state=active]:to-pink-500'
                 }`}
               >
@@ -502,7 +520,7 @@ const LearningLibrary = () => {
             ))}
           </TabsList>
 
-          {['all', 'slides', 'video', 'comic', 'image', 'content', 'assessment'].map(tab => (
+          {['all', 'slides', 'video', 'comic', 'image', 'content', 'assessment', 'worksheet', 'quiz'].map(tab => (
             <TabsContent key={tab} value={tab}>
               {filteredResources.length === 0 ? (
                 <motion.div 

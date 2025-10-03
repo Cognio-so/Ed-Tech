@@ -151,6 +151,7 @@ class StudentData(BaseModel):
     email: str = Field(..., description="Student's email address")
     name: str = Field(..., description="Student's name")
     grade: str = Field(..., description="Student's grade level")
+    subject: Optional[str] = Field(None, description="Student's selected subject")  # NEW: Add subject field
     progress: Optional[Dict[str, Any]] = Field({}, description="Student's learning progress")
     achievements: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = Field([], description="Student's achievements")
     learning_stats: Optional[Dict[str, Any]] = Field({}, description="Student's learning statistics")
@@ -223,6 +224,7 @@ async def chatbot_endpoint(request: ChatbotRequest):
             Student Information:
             - Name: {student_data.name}
             - Grade: {student_data.grade}
+            - Subject: {student_data.subject or 'Not specified'}  # NEW: Add subject information
             - Email: {student_data.email}
             
             Learning Progress:
@@ -255,7 +257,7 @@ async def chatbot_endpoint(request: ChatbotRequest):
             
             """
             
-            logger.info(f"Enhanced query with student data for {student_data.name} (Grade {student_data.grade})")
+            logger.info(f"Enhanced query with student data for {student_data.name} (Grade {student_data.grade}, Subject: {student_data.subject})")
         
         is_kb_ready = tutor.ensemble_retriever is not None
         

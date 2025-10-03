@@ -241,6 +241,23 @@ export default function LibraryDialog({
           </div>
         );
       
+      case 'worksheet':
+      case 'quiz':
+        // Handle worksheet and quiz as traditional content with markdown rendering
+        const worksheetQuizContent = content.content || content.generatedContent || content.assessmentContent || content.instruction || '';
+        
+        return (
+          <div className="h-full overflow-hidden">
+            <div className="h-full overflow-auto p-4">
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownStyles}>
+                  {worksheetQuizContent}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        );
+      
       case 'slides':
         return (
           <div className="h-full overflow-hidden">
@@ -582,9 +599,6 @@ export default function LibraryDialog({
                     Completed
                   </Badge>
                 )}
-                <Button variant="ghost" size="sm" onClick={onClose}>
-                  <X className="h-4 w-4" />
-                </Button>
               </div>
             </DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">

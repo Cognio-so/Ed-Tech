@@ -185,6 +185,7 @@ class PythonApiClient {
       email: studentData.email,
       name: studentData.name,
       grade: studentData.grade,
+      subject: studentData.subject, // NEW: Add subject field
       progress: studentData.progress,
       // Fix: Ensure achievements is always a list
       achievements: Array.isArray(studentData.achievements) ? studentData.achievements : 

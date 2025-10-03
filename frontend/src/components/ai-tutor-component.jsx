@@ -42,7 +42,8 @@ import {
     GraduationCap, // ADD: Use same icon as voice-coach
     Volume2, // NEW: Add volume icon for voice selection
     Copy, // NEW: Add copy icon
-    Download // NEW: Add download icon
+    Download, // NEW: Add download icon
+    BookOpen // Add BookOpen icon for subject
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -107,8 +108,8 @@ const AiTutor = () => {
     // NEW: Voice gender selection state
     const [selectedVoiceGender, setSelectedVoiceGender] = useState('female');
 
-    // NEW: Add user speaking state
-    const [isUserSpeaking, setIsUserSpeaking] = useState(false);
+    // NEW: Add subject selection state
+    const [selectedSubject, setSelectedSubject] = useState('');
 
     // Real student data state
     const [user, setUser] = useState(null);
@@ -126,6 +127,9 @@ const AiTutor = () => {
     const [teacherFeedback, setTeacherFeedback] = useState(null);
     const [showFeedbackOption, setShowFeedbackOption] = useState(false);
     const [useFeedbackSession, setUseFeedbackSession] = useState(false);
+
+    // NEW: Add subjects state
+    const [availableSubjects, setAvailableSubjects] = useState([]);
 
     // FIXED: Initialize audio context when component mounts
     useEffect(() => {
@@ -266,6 +270,35 @@ const AiTutor = () => {
         }
     }, [user?._id]);
 
+    // NEW: Get subjects based on grade
+    const getSubjectsForGrade = async (grade) => {
+        try {
+            const response = await fetch(`/api/student/learning-library/subjects?grade=${grade}`);
+            const data = await response.json();
+            if (data.success) {
+                return data.subjects;
+            }
+            return [];
+        } catch (error) {
+            console.error('Error fetching subjects:', error);
+            return [];
+        }
+    };
+
+    // NEW: Set default subject when user data is loaded
+    useEffect(() => {
+        if (user?.grade && !selectedSubject) {
+            const fetchSubjects = async () => {
+                const subjects = await getSubjectsForGrade(user.grade);
+                setAvailableSubjects(subjects);
+                if (subjects.length > 0) {
+                    setSelectedSubject(subjects[0]);
+                }
+            };
+            fetchSubjects();
+        }
+    }, [user?.grade, selectedSubject]);
+
     // Initialize session when user data is loaded
     useEffect(() => {
         if (user && !dataLoading) {
@@ -305,14 +338,14 @@ const AiTutor = () => {
         };
     }, [realtimeService]);
 
-    // Save conversation to history
-    const saveConversationToHistory = async (messages, sessionType = 'text') => {
+    // FIXED: Save conversation to history with proper state management
+    const saveConversationToHistory = async (messagesToSave, sessionType = 'text') => {
         try {
             const conversationData = {
                 sessionId: sessionId,
                 title: `AI Tutor Chat - ${new Date().toLocaleDateString()}`,
                 sessionType: sessionType,
-                messages: messages.map(msg => ({
+                messages: messagesToSave.map(msg => ({
                     id: msg.id.toString(),
                     role: msg.type === 'user' ? 'user' : 'assistant',
                     content: msg.content,
@@ -338,9 +371,9 @@ const AiTutor = () => {
                     learningStats: studentData.learningStats
                 },
                 conversationStats: {
-                    totalMessages: messages.length,
-                    userMessages: messages.filter(m => m.type === 'user').length,
-                    aiMessages: messages.filter(m => m.type === 'ai').length,
+                    totalMessages: messagesToSave.length,
+                    userMessages: messagesToSave.filter(m => m.type === 'user').length,
+                    aiMessages: messagesToSave.filter(m => m.type === 'ai').length,
                     totalDuration: 0,
                     topicsDiscussed: [],
                     difficultyLevel: 'medium',
@@ -361,7 +394,7 @@ const AiTutor = () => {
             const result = await saveStudentConversation(formData);
             
             if (result.success) {
-                console.log('Conversation saved to history');
+                console.log('Conversation saved to history successfully');
             } else {
                 console.error('Failed to save conversation:', result.error);
             }
@@ -400,6 +433,7 @@ const AiTutor = () => {
                 email: user.email || 'student@example.com',
                 name: user.name || 'Student',
                 grade: user.grade || '8',
+                subject: selectedSubject || 'English', // NEW: Add selected subject
                 progress: {
                     totalResources: studentData.progress?.length || 0,
                     completedResources: studentData.progress?.filter(p => p.status === 'completed').length || 0,
@@ -538,21 +572,25 @@ const AiTutor = () => {
                                         : msg
                                 ));
                             } else if (data.type === 'done') {
-                                setMessages(prev => prev.map(msg => 
-                                    msg.id === streamingMessage.id 
-                                        ? { ...msg, isStreaming: false }
-                                        : msg
-                                ));
-                                
-                                // Save conversation to history asynchronously (don't block UI)
-                                setTimeout(async () => {
-                                    try {
-                                        const updatedMessages = [...messages, userMessage, streamingMessage];
-                                        await saveConversationToHistory(updatedMessages, 'text');
-                                    } catch (error) {
-                                        console.error('Failed to save conversation:', error);
-                                    }
-                                }, 0);
+                                // FIXED: Update the streaming message to mark as complete
+                                setMessages(prev => {
+                                    const updatedMessages = prev.map(msg => 
+                                        msg.id === streamingMessage.id 
+                                            ? { ...msg, isStreaming: false }
+                                            : msg
+                                    );
+                                    
+                                    // FIXED: Save conversation immediately with the complete message
+                                    setTimeout(async () => {
+                                        try {
+                                            await saveConversationToHistory(updatedMessages, 'text');
+                                        } catch (error) {
+                                            console.error('Failed to save conversation:', error);
+                                        }
+                                    }, 100); // Small delay to ensure state is updated
+                                    
+                                    return updatedMessages;
+                                });
                             } else if (data.type === 'error') {
                                 throw new Error(data.message || 'Unknown error');
                             }
@@ -985,7 +1023,6 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
             setIsListening(false);
             setTranscription(''); // Reset transcription
             setIsSpeaking(false); // Reset speaking state
-            setIsUserSpeaking(false); // Reset user speaking state
             return;
         }
 
@@ -1018,6 +1055,7 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
                 studentId: user._id,
                 email: user.email,
                 grade: user.grade || '8',
+                subject: selectedSubject || 'English', // NEW: Add selected subject
                 subjects: user.subjects || ['Mathematics', 'Science', 'English'],
                 role: 'student',
                 
@@ -1069,7 +1107,6 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
             service.onResponseStart = () => {
                 setTranscription(''); // Reset transcript for new response
                 setIsSpeaking(true); // Start speaking animation
-                setIsUserSpeaking(false); // User is not speaking when AI starts
                 // Mark the last live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -1087,7 +1124,6 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
             // Add callback for when response is complete
             service.onResponseComplete = () => {
                 setIsSpeaking(false); // Stop speaking animation
-                setIsUserSpeaking(false); // User is not speaking when AI stops
                 // Mark the current live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -1102,15 +1138,6 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
                 });
             };
 
-            // NEW: Add callbacks for user speech start and stop
-            service.onUserSpeechStart = () => {
-                setIsUserSpeaking(true); // User started speaking
-            };
-
-            service.onUserSpeechStop = () => {
-                setIsUserSpeaking(false); // User stopped speaking
-            };
-
             // Handle AI response transcripts - exactly like voice-coach
             service.onTranscript = (delta) => {
                 setTranscription(prev => prev + delta);
@@ -1119,7 +1146,6 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
             // Handle user input transcripts - exactly like voice-coach
             service.onUserTranscript = (userTranscript) => {
                 console.log('🎤 User said:', userTranscript);
-                // Remove setIsUserSpeaking(true) from here since it's handled by onUserSpeechStart
                 
                 // Add user message to chat
                 const userMessage = {
@@ -1195,6 +1221,25 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
                                 </div>
                             </div>
                             <div className="flex items-center space-x-2">
+                                {/* NEW: Subject Selection Dropdown */}
+                                {user?.grade && (
+                                    <div className="flex items-center gap-2 bg-green-50 dark:bg-green-900/20 px-3 py-2 rounded-lg">
+                                        <BookOpen className="h-4 w-4 text-green-600" />
+                                        <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                                            <SelectTrigger className="w-40 h-8 text-sm">
+                                                <SelectValue placeholder="Subject" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {availableSubjects.map((subject) => (
+                                                    <SelectItem key={subject} value={subject}>
+                                                        {subject}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+
                                 {/* NEW: Voice Selection Dropdown */}
                                 <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
                                     <Volume2 className="h-4 w-4 text-blue-600" />
@@ -1245,9 +1290,6 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
                                     <Download className="w-4 h-4 mr-2" />
                                     Export
                                 </Button>
-                                <Button variant="ghost" size="icon">
-                                    <Settings className="w-5 h-5" />
-                                </Button>
                             </div>
                         </div>
                     </div>
@@ -1268,7 +1310,6 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
                                         isSpeaking={isSpeaking}
                                         isConnected={isVoiceActive}
                                         selectedGender={selectedVoiceGender} // NEW: Pass selected gender
-                                        isUserSpeaking={isUserSpeaking} // NEW: Pass user speaking state
                                     />
                                 </CardContent>
                             </Card>

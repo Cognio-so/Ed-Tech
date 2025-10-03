@@ -155,9 +155,6 @@ const VideoForm = ({ onVideoGenerated }) => {
                 setCurrentTaskId(result.task_id);
                 setGenerationStatus({ status: result.status });
                 
-                // Show success message and start polling
-                toast.success("Video generation started! We'll notify you when it's ready.");
-                
                 // Start polling for status updates
                 startStatusPolling(result.task_id);
                 

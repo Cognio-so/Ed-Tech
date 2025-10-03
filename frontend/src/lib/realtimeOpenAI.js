@@ -11,8 +11,6 @@ export class RealtimeOpenAIService {
     this.onUserTranscript = null;
     this.onResponseStart = null; // Reset transcript when new response starts
     this.onResponseComplete = null; // Mark response as complete
-    this.onUserSpeechStart = null; // NEW: User speech started
-    this.onUserSpeechStop = null; // NEW: User speech stopped
     this.isAnalyzing = false;
     this.currentLipSyncData = { A: 0, E: 0, I: 0, O: 0, U: 0 };
     
@@ -340,6 +338,7 @@ export class RealtimeOpenAIService {
 
     const studentName = studentData.studentName || 'Student';
     const studentGrade = studentData.grade || '8';
+    const studentSubject = studentData.subject || 'General Studies'; // NEW: Add subject
     const subjects = Array.isArray(studentData.subjects) ? studentData.subjects.join(', ') : (studentData.subjects || 'General Studies');
     
     // Format pending tasks
@@ -374,6 +373,7 @@ export class RealtimeOpenAIService {
 **Student Details:**
 - Name: ${studentName}
 - Grade: ${studentGrade}
+- Current Subject: ${studentSubject}  # NEW: Add current subject
 - Subjects: ${subjects}
 
 **Student's Current Status:**
@@ -414,6 +414,8 @@ Learning Progress:
    - **Motivating** when they need a push
 
 5. **Sophisticated Learning**: Use advanced pedagogical techniques while maintaining simplicity.
+
+6. **Subject-Specific Focus**: Since the student is currently working on ${studentSubject}, tailor your responses to be relevant to this subject when appropriate. Connect concepts to their current subject area.
 
 **RESPONSE PATTERNS:**
 
@@ -543,16 +545,10 @@ Core Instructions:
       case 'input_audio_buffer.committed':
         break;
       case 'input_audio_buffer.speech_started':
-        // NEW: User started speaking
-        if (this.onUserSpeechStart) {
-          this.onUserSpeechStart();
-        }
+        // REMOVED: User speech start callback - no longer needed
         break;
       case 'input_audio_buffer.speech_stopped':
-        // NEW: User stopped speaking
-        if (this.onUserSpeechStop) {
-          this.onUserSpeechStop();
-        }
+        // REMOVED: User speech stop callback - no longer needed
         break;
       case 'conversation.item.input_audio_transcription.completed':
         // This is the user's speech transcribed

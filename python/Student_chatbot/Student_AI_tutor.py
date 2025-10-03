@@ -15,7 +15,7 @@ import shutil
 
 from PIL import Image
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from langchain.tools import tool, Tool
 import time
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -870,6 +870,11 @@ class AsyncRAGTutor:
         
         if prompt_notes:
             system_prompt_text += "\n\n**Current Session Status:**\n" + "\n".join(prompt_notes)
+
+        # NEW: Add subject-specific context if available
+        if student_details and student_details.get('subject'):
+            subject_context = f"\n\n**Current Subject Focus**: The student is currently working on {student_details.get('subject')}. Please tailor your responses to be relevant to this subject when appropriate."
+            system_prompt_text += subject_context
 
         message_content = [{"type": "text", "text": query}]
         if image_path:

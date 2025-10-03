@@ -133,9 +133,6 @@ const VoiceCoach = () => {
     // NEW: Voice gender selection state
     const [selectedVoiceGender, setSelectedVoiceGender] = useState('female');
 
-    // NEW: Add user speaking state
-    const [isUserSpeaking, setIsUserSpeaking] = useState(false);
-
     // Get API key from environment or localStorage
     const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || (typeof window !== 'undefined' ? localStorage.getItem('openai_api_key') : '');
 
@@ -282,7 +279,7 @@ const VoiceCoach = () => {
         fetchOptimizedTeacherData();
     }, []);
 
-    // OPTIMIZED: Send message handler with cached data
+    // OPTIMIZED: Send message handler with cached data AND conversation saving
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isLoading || !sessionId || !teacherData.teacher) return;
 
@@ -295,12 +292,13 @@ const VoiceCoach = () => {
         };
 
         setMessages(prev => [...prev, userMessage]);
+        const currentInput = inputValue;
         setInputValue('');
         setIsLoading(true);
 
         try {
             const formData = new FormData();
-            formData.append('message', inputValue);
+            formData.append('message', currentInput);
             formData.append('sessionId', sessionId);
             
             // OPTIMIZED: No need to send student data - it's already cached in backend
@@ -321,7 +319,21 @@ const VoiceCoach = () => {
                     avatar: <GraduationCap className="w-4 h-4 text-blue-500" />
                 };
 
-                setMessages(prev => [...prev, aiMessage]);
+                // FIXED: Update messages and save conversation immediately
+                setMessages(prev => {
+                    const updatedMessages = [...prev, aiMessage];
+                    
+                    // FIXED: Save conversation immediately after adding AI message
+                    setTimeout(async () => {
+                        try {
+                            await saveVoiceCoachConversationToHistory(updatedMessages, 'text');
+                        } catch (error) {
+                            console.error('Failed to save conversation:', error);
+                        }
+                    }, 100); // Small delay to ensure state is updated
+                    
+                    return updatedMessages;
+                });
             } else {
                 const errorMessage = {
                     id: Date.now() + 1,
@@ -389,7 +401,6 @@ const VoiceCoach = () => {
             openAIServiceRef.current.onResponseStart = () => {
                 setTranscript(''); // Reset transcript for new response
                 setIsSpeaking(true); // Start speaking animation
-                setIsUserSpeaking(false); // User is not speaking when AI starts
                 // Mark the last live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -407,7 +418,6 @@ const VoiceCoach = () => {
             // Add callback for when response is complete
             openAIServiceRef.current.onResponseComplete = () => {
                 setIsSpeaking(false); // Stop speaking animation
-                setIsUserSpeaking(false); // User is not speaking when AI stops
                 // Mark the current live message as complete
                 setMessages(prev => {
                     const newMessages = [...prev];
@@ -427,7 +437,6 @@ const VoiceCoach = () => {
             };
 
             openAIServiceRef.current.onUserTranscript = (userTranscript) => {
-                setIsUserSpeaking(true); // User is speaking
                 const userMessage = {
                     id: Date.now() + Math.random(),
                     type: 'user',
@@ -507,7 +516,6 @@ const VoiceCoach = () => {
             setError('');
             setIsLoading(false);
             setIsSpeaking(false);
-            setIsUserSpeaking(false); // Reset user speaking state
             
             setMessages(prev => [...prev, { 
                 id: Date.now() + Math.random(),
@@ -935,6 +943,70 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
         URL.revokeObjectURL(url);
     };
 
+    // NEW: Add conversation saving function for Voice Coach
+    const saveVoiceCoachConversationToHistory = async (messagesToSave, sessionType = 'text') => {
+        try {
+            const conversationData = {
+                sessionId: sessionId,
+                title: `Voice Coach Chat - ${new Date().toLocaleDateString()}`,
+                sessionType: sessionType,
+                messages: messagesToSave.map(msg => ({
+                    id: msg.id.toString(),
+                    role: msg.type === 'user' ? 'user' : 'assistant',
+                    content: msg.content,
+                    timestamp: msg.timestamp,
+                    isImageResponse: msg.isImageResponse || false,
+                    metadata: {
+                        messageType: msg.isImageResponse ? 'image' : 'text',
+                        fileAttachments: [],
+                        processingTime: 0
+                    }
+                })),
+                uploadedFiles: uploadedFiles.map(file => ({
+                    filename: file.name,
+                    originalName: file.name,
+                    fileType: file.type,
+                    uploadTime: new Date()
+                })),
+                teacherData: {
+                    name: teacherData.teacher?.name || 'Teacher',
+                    email: teacherData.teacher?.email || 'teacher@example.com',
+                    grades: teacherData.teacher?.grades || [],
+                    subjects: teacherData.teacher?.subjects || []
+                },
+                conversationStats: {
+                    totalMessages: messagesToSave.length,
+                    userMessages: messagesToSave.filter(m => m.type === 'user').length,
+                    aiMessages: messagesToSave.filter(m => m.type === 'ai').length,
+                    totalDuration: 0,
+                    topicsDiscussed: [],
+                    difficultyLevel: 'medium',
+                    learningOutcomes: []
+                },
+                metadata: {
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                    lastMessageAt: new Date(),
+                    isActive: true,
+                    tags: []
+                }
+            };
+
+            const formData = new FormData();
+            formData.append('conversationData', JSON.stringify(conversationData));
+            
+            const result = await saveVoiceCoachChatSession(formData);
+            
+            if (result.success) {
+                console.log('Voice Coach conversation saved to history successfully');
+            } else {
+                console.error('Failed to save Voice Coach conversation:', result.error);
+            }
+        } catch (error) {
+            console.error('Error saving Voice Coach conversation to history:', error);
+        }
+    };
+
     if (dataLoading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900 flex items-center justify-center">
@@ -1006,9 +1078,6 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
                             >
                                 <Download className="w-5 h-5" />
                             </Button>
-                            <Button variant="ghost" size="icon">
-                                <Settings className="w-5 h-5" />
-                            </Button>
                         </div>
                     </div>
                 </div>
@@ -1028,8 +1097,7 @@ Exported on: ${new Date().toLocaleDateString()}\\par\\par`;
                                     <VoiceCoachVideo 
                                         isSpeaking={isSpeaking}
                                         isConnected={isConnected}
-                                        selectedGender={selectedVoiceGender} // NEW: Pass selected gender
-                                        isUserSpeaking={isUserSpeaking} // NEW: Pass user speaking state
+                                        selectedGender={selectedVoiceGender}
                                     />
                                 </CardContent>
 

@@ -78,8 +78,9 @@ class PerplexityWebSearchTool:
         "A powerful web search tool that can answer complex, multi-part questions in a single search. "
         "Use this to find current and factual information. You should pass the user's full, "
         "comprehensive question to this tool, especially if it contains multiple topics. "
-        "Do not break the query into smaller parts; the tool is optimized to handle detailed, combined queries."
-        "provide up-to-date information from the web, and must include relevant educational videos and images."
+        "Do not break the query into smaller parts; the tool is optimized to handle detailed, combined queries. "
+        "🚨 CRITICAL: Only provide REAL, WORKING URLs from actual websites. NEVER use fake URLs like 'https://example.com'. "
+        "If you cannot find real URLs, do not include any URLs at all."
     ),
                 args_schema=self._get_args_schema(),
             )
@@ -132,8 +133,19 @@ class PerplexityWebSearchTool:
             f"Please provide comprehensive search results for: '{query}'\n\n"
             f"Return up to {self.max_results} relevant results. {link_instruction}\n"
             f"Format each result with main information, a brief summary, and the source URLs.\n"
-            f"Make your response detailed and factual, with up-to-date information from the web.\n"
-            f"For each result, you MUST provide links to relevant educational youtube videos URLs and images URLs."
+            f"Make your response detailed and factual, with up-to-date information from the web.\n\n"
+            f"🚨 CRITICAL URL REQUIREMENTS 🚨\n"
+            f"- NEVER use fake URLs like 'https://example.com' or 'https://example-image-url.com'\n"
+            f"- NEVER create placeholder URLs or made-up URLs\n"
+            f"- NEVER use URLs that contain 'example', 'placeholder', 'fake', or 'demo'\n"
+            f"- ONLY provide URLs that actually exist and work\n"
+            f"- For YouTube videos: use real URLs like 'https://www.youtube.com/watch?v=ACTUAL_VIDEO_ID'\n"
+            f"- For images: use real URLs from actual websites like 'https://www.khanacademy.org/actual-image.jpg'\n"
+            f"- If you cannot find real, working URLs, DO NOT include any URLs at all\n"
+            f"- It is better to have no URLs than fake URLs\n"
+            f"- Test that URLs are real before including them\n\n"
+            f"FAILURE TO FOLLOW THESE RULES WILL RESULT IN BROKEN LINKS AND POOR USER EXPERIENCE.\n"
+            f"DO NOT INCLUDE ANY URLs IF YOU CANNOT FIND REAL ONES."
         )
         
         return prompt

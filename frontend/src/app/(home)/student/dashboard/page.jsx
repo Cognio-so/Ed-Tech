@@ -288,7 +288,10 @@ export default function StudentDashboard() {
             />
             <StatCard
               title="Study Time"
-              value={`${Math.round(stats.totalStudyTime / 60)}h`}
+              value={stats.totalStudyTime > 0 ? 
+                `${Math.round(stats.totalStudyTime / 60)}h ${stats.totalStudyTime % 60}m` : 
+                "0m"
+              }
               icon={Clock}
               color="from-purple-500 to-purple-600"
               trend="+15%"
