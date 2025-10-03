@@ -24,6 +24,11 @@ export class RealtimeOpenAIService {
     // NEW: Voice selection
     this.selectedVoice = 'alloy'; // Default voice
     
+    // NEW: Emotion system
+    this.currentEmotion = 'neutral'; // Current emotion state
+    this.emotionHistory = []; // Track emotion changes
+    this.emotionDetectionEnabled = true; // Enable/disable emotion detection
+    
     this.initializeAudio();
   }
 
@@ -297,17 +302,21 @@ export class RealtimeOpenAIService {
 
   sendSessionUpdate(userData = null, userType = 'teacher') {
     if (this.dc?.readyState === 'open') {
-      console.log(`📡 Sending session update with voice: ${this.selectedVoice}`);
+      console.log(`📡 Sending session update with voice: ${this.selectedVoice} and emotion: ${this.currentEmotion}`);
       console.log(`📡 User type: ${userType}`);
       console.log(`📡 User data:`, userData);
       
       // Create the comprehensive prompt for the AI based on user type
       const createPrompt = (userData, userType) => {
+        let basePrompt;
         if (userType === 'student') {
-          return this.createStudentPrompt(userData);
+          basePrompt = this.createStudentPrompt(userData);
         } else {
-          return this.createTeacherPrompt(userData);
+          basePrompt = this.createTeacherPrompt(userData);
         }
+        
+        // Add emotion-specific instructions
+        return this.createEmotionPrompt(basePrompt, this.currentEmotion);
       };
 
       const prompt = createPrompt(userData, userType);
@@ -657,15 +666,22 @@ Does this approach work for your classroom?`;
       case 'input_audio_buffer.committed':
         break;
       case 'input_audio_buffer.speech_started':
-        // REMOVED: User speech start callback - no longer needed
         break;
       case 'input_audio_buffer.speech_stopped':
-        // REMOVED: User speech stop callback - no longer needed
         break;
       case 'conversation.item.input_audio_transcription.completed':
         // This is the user's speech transcribed
         if (this.onUserTranscript) {
           this.onUserTranscript(message.transcript);
+          
+          // NEW: Auto-detect emotion from user input
+          if (this.emotionDetectionEnabled) {
+            const detectedEmotion = this.detectEmotionFromInput(message.transcript);
+            if (detectedEmotion !== this.currentEmotion) {
+              console.log(`🎭 Auto-detected emotion: ${detectedEmotion} from input: "${message.transcript}"`);
+              this.updateEmotion(detectedEmotion);
+            }
+          }
         }
         break;
       case 'response.audio_transcript.delta':
@@ -690,7 +706,6 @@ Does this approach work for your classroom?`;
           this.onResponseStart();
         }
         break;
-      // ADD THESE NEW HANDLERS FOR AI AUDIO OUTPUT
       case 'response.created':
         // AI response is starting
         if (this.onResponseStart) {
@@ -698,23 +713,19 @@ Does this approach work for your classroom?`;
         }
         break;
       case 'response.output_item.added':
-        // AI output item added
         break;
       case 'response.content_part.added':
-        // AI content part added
         break;
       case 'output_audio_buffer.started':
         // AI audio output started - THIS IS KEY FOR LIP SYNC
         console.log('🎵 AI audio output started');
         break;
       case 'conversation.item.input_audio_transcription.delta':
-        // User speech transcription delta
         break;
       case 'error':
         console.error('❌ OpenAI error:', message.error);
         break;
       default:
-        // Remove the console.log to clean up
         break;
     }
   }
@@ -791,6 +802,108 @@ Does this approach work for your classroom?`;
     } else {
       console.log(`ℹ️ Voice is already set to ${newVoice}, no update needed`);
     }
+  }
+
+  // NEW: Update emotion in real-time
+  updateEmotion(emotion) {
+    console.log(`🎭 updateEmotion called with emotion: ${emotion}`);
+    
+    if (this.currentEmotion !== emotion) {
+      this.currentEmotion = emotion;
+      this.emotionHistory.push({
+        emotion: emotion,
+        timestamp: new Date(),
+        context: 'manual'
+      });
+      
+      console.log(`🎭 Emotion updated to: ${emotion}`);
+      
+      // Send session update to apply the new emotion
+      if (this.dc?.readyState === 'open') {
+        console.log(`📡 Data channel is open, sending emotion update`);
+        this.sendSessionUpdate(this.userData, this.userType);
+        console.log(`📡 Session update sent with new emotion: ${emotion}`);
+      } else {
+        console.warn('⚠️ Data channel not open, cannot send emotion update');
+      }
+    } else {
+      console.log(`ℹ️ Emotion is already set to ${emotion}, no update needed`);
+    }
+  }
+
+  // NEW: Auto-detect emotion from user input
+  detectEmotionFromInput(userInput) {
+    if (!this.emotionDetectionEnabled) return 'neutral';
+    
+    const input = userInput.toLowerCase();
+    
+    // Stress/Anxiety indicators
+    if (input.includes('help') || input.includes('confused') || input.includes('can\'t') || 
+        input.includes('too hard') || input.includes('panic') || input.includes('stressed')) {
+      return 'calm';
+    }
+    
+    // Success indicators
+    if (input.includes('got it') || input.includes('understand') || input.includes('correct') || 
+        input.includes('right') || input.includes('perfect') || input.includes('yes')) {
+      return 'excited';
+    }
+    
+    // Error/Failure indicators
+    if (input.includes('wrong') || input.includes('mistake') || input.includes('error') || 
+        input.includes('failed') || input.includes('incorrect')) {
+      return 'reassuring';
+    }
+    
+    // Default to friendly for questions and general input
+    if (input.includes('?') || input.includes('how') || input.includes('what') || 
+        input.includes('why') || input.includes('explain')) {
+      return 'friendly';
+    }
+    
+    return 'neutral';
+  }
+
+  // NEW: Enhanced prompt with emotion instructions
+  createEmotionPrompt(basePrompt, emotion) {
+    const emotionInstructions = {
+      'friendly': `
+**CURRENT EMOTION: FRIENDLY**
+- Use a warm, approachable, and encouraging tone
+- Speak with enthusiasm and positivity
+- Use phrases like "That's a great question!", "Let's break it down", "I'm happy to help!"
+- Maintain an upbeat and supportive demeanor`,
+      
+      'excited': `
+**CURRENT EMOTION: EXCITED**
+- Celebrate achievements with genuine enthusiasm
+- Use an energetic and celebratory tone
+- Use phrases like "Yes, that's exactly right! Great job!", "You nailed it!", "Awesome!"
+- Show genuine excitement and pride in their success`,
+      
+      'calm': `
+**CURRENT EMOTION: CALM**
+- Use a calm, patient, and steady tone
+- Speak slowly and reassuringly
+- Use phrases like "It's okay, let's take a deep breath", "We can work through this together"
+- Provide comfort and reassurance during stressful moments`,
+      
+      'reassuring': `
+**CURRENT EMOTION: REASSURING**
+- Be gentle, supportive, and focus on learning opportunities
+- Use a comforting and understanding tone
+- Use phrases like "No worries, that's a common mistake!", "That was a good try!"
+- Never be discouraging, always focus on the positive`,
+      
+      'neutral': `
+**CURRENT EMOTION: NEUTRAL**
+- Use a balanced, professional, and clear tone
+- Maintain consistency and reliability
+- Focus on clear communication and helpfulness
+- Adapt naturally to the conversation flow`
+    };
+    
+    return basePrompt + emotionInstructions[emotion] || emotionInstructions['neutral'];
   }
 
   // NEW: Get voice based on gender selection

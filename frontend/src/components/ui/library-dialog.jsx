@@ -183,17 +183,8 @@ export default function LibraryDialog({
     // Use both type and resourceType for compatibility with both teacher and student libraries
     const contentType = content?.type || content?.resourceType;
     
-    // Debug logging to see what content we're getting
-    console.log('=== LibraryDialog Debug ===');
-    console.log('Content type:', contentType);
-    console.log('Content object:', content);
-    console.log('Content keys:', content ? Object.keys(content) : 'No content');
-    
     // If no content type is found, try to render as content
     if (!contentType) {
-      console.log('=== No Content Type Found ===');
-      console.log('Content object:', content);
-      
       return (
         <div className="h-full overflow-hidden">
           <ContentPreview
@@ -226,10 +217,6 @@ export default function LibraryDialog({
           content: content.content || content.generatedContent || content.assessmentContent || content.instruction || '',
           assessmentContent: content.assessmentContent || content.content || content.generatedContent || content.instruction || ''
         };
-        
-        console.log('=== Assessment Data Debug ===');
-        console.log('Assessment data being passed:', assessmentData);
-        console.log('Assessment content field:', assessmentData.content);
         
         return (
           <div className="h-full overflow-hidden">
@@ -288,53 +275,55 @@ export default function LibraryDialog({
         );
       
       case 'comic':
-        // Enhanced comic image extraction with better error handling and debugging
+        // Enhanced comic image extraction with better error handling
         let comicImages = [];
+        let comicTexts = [];
         
-        console.log('=== Comic Debug ===');
-        console.log('Content object:', content);
-        console.log('Content panels:', content.panels);
-        console.log('Content imageUrls:', content.imageUrls);
-        console.log('Content images:', content.images);
-        console.log('Content cloudinaryPublicIds:', content.cloudinaryPublicIds);
-        console.log('Content numPanels:', content.numPanels);
+        // Extract comic texts from panelTexts array
+        if (content.panelTexts && Array.isArray(content.panelTexts) && content.panelTexts.length > 0) {
+          comicTexts = content.panelTexts.map((panelText, index) => {
+            // Handle both string and object formats
+            if (typeof panelText === 'string') {
+              return panelText;
+            } else if (panelText && panelText.text) {
+              return panelText.text;
+            } else if (panelText && panelText.content) {
+              return panelText.content;
+            } else if (panelText && panelText.description) {
+              return panelText.description;
+            }
+            return `Panel ${index + 1} text not available`;
+          });
+        }
         
         // Priority order for comic images with better validation:
         // 1. Check for panels with imageUrl or imageBase64
         if (content.panels && Array.isArray(content.panels) && content.panels.length > 0) {
-          console.log('Processing panels:', content.panels);
           comicImages = content.panels
             .map((panel, index) => {
-              console.log(`Panel ${index}:`, panel);
               if (panel && panel.imageUrl) {
-                console.log(`Panel ${index} has imageUrl:`, panel.imageUrl);
                 return panel.imageUrl;
               }
               if (panel && panel.imageBase64) {
-                console.log(`Panel ${index} has imageBase64`);
                 return `data:image/png;base64,${panel.imageBase64}`;
               }
               return null;
             })
             .filter(Boolean);
-          console.log('Images extracted from panels:', comicImages);
         }
         
         // 2. Check for imageUrls array (Cloudinary URLs)
         if (comicImages.length === 0 && content.imageUrls && Array.isArray(content.imageUrls) && content.imageUrls.length > 0) {
-          console.log('Using imageUrls array:', content.imageUrls);
           comicImages = content.imageUrls.filter(Boolean);
         }
         
         // 3. Check for images array
         if (comicImages.length === 0 && content.images && Array.isArray(content.images) && content.images.length > 0) {
-          console.log('Using images array:', content.images);
           comicImages = content.images.filter(Boolean);
         }
         
         // 4. Check for cloudinary public IDs and construct URLs
         if (comicImages.length === 0 && content.cloudinaryPublicIds && Array.isArray(content.cloudinaryPublicIds) && content.cloudinaryPublicIds.length > 0) {
-          console.log('Using cloudinaryPublicIds:', content.cloudinaryPublicIds);
           comicImages = content.cloudinaryPublicIds
             .filter(Boolean)
             .map(id => {
@@ -349,7 +338,6 @@ export default function LibraryDialog({
         
         // 5. Check if content itself contains base64 image data
         if (comicImages.length === 0 && content.content && typeof content.content === 'string' && content.content.includes('data:image')) {
-          console.log('Extracting base64 images from content');
           const base64Matches = content.content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g);
           if (base64Matches) {
             comicImages = base64Matches;
@@ -358,11 +346,8 @@ export default function LibraryDialog({
         
         // 6. Check for single imageUrl field
         if (comicImages.length === 0 && content.imageUrl) {
-          console.log('Using single imageUrl:', content.imageUrl);
           comicImages = [content.imageUrl];
         }
-        
-        console.log('Final comic images found:', comicImages);
         
         return (
           <div className="h-full flex flex-col">
@@ -383,41 +368,53 @@ export default function LibraryDialog({
             <div className="flex-1 min-h-0">
               {comicImages.length > 0 ? (
                 <div className="h-full">
-                <CarouselWithControls
-                  items={comicImages.map((url, i) => ({ url, index: i + 1 }))}
-                  className="h-full"
-                  renderItem={(p) => (
-                      <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-full p-2">
-                      <img 
-                        src={p.url} 
-                        alt={`Panel ${p.index}`} 
-                        className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
-                          loading="lazy"
-                          onLoad={() => {
-                            console.log(`Successfully loaded comic panel ${p.index}`);
-                          }}
-                        onError={(e) => {
-                            console.error(`Failed to load comic panel ${p.index}:`, p.url);
-                          e.target.style.display = 'none';
-                          const fallbackDiv = document.createElement('div');
-                          fallbackDiv.className = 'text-center py-8 text-foreground';
-                          fallbackDiv.innerHTML = `
-                            <div>
-                              <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                              </svg>
-                              <p class="text-sm">Panel ${p.index} failed to load</p>
-                              <p class="text-xs text-muted-foreground mt-2">
-                                URL: ${p.url ? p.url.substring(0, 50) + '...' : 'Not provided'}
-                              </p>
-                            </div>
-                          `;
-                          e.target.parentNode.appendChild(fallbackDiv);
-                        }}
-                      />
-                    </div>
-                  )}
-                />
+                  <CarouselWithControls
+                    items={comicImages.map((url, i) => ({ 
+                      url, 
+                      index: i + 1,
+                      text: comicTexts[i] || `Panel ${i + 1} text not available`
+                    }))}
+                    className="h-full"
+                    renderItem={(p) => (
+                      <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex flex-col h-full">
+                        {/* Panel Image */}
+                        <div className="flex-1 flex items-center justify-center p-4 min-h-0">
+                          <img 
+                            src={p.url} 
+                            alt={`Panel ${p.index}`} 
+                            className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
+                            loading="lazy"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              const fallbackDiv = document.createElement('div');
+                              fallbackDiv.className = 'text-center py-8 text-foreground';
+                              fallbackDiv.innerHTML = `
+                                <div>
+                                  <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                  </svg>
+                                  <p class="text-sm">Panel ${p.index} failed to load</p>
+                                </div>
+                              `;
+                              e.target.parentNode.appendChild(fallbackDiv);
+                            }}
+                          />
+                        </div>
+                        
+                        {/* Panel Text */}
+                        <div className="bg-muted/50 border-t p-4 flex-shrink-0">
+                          <div className="text-center mb-3">
+                            <Badge variant="secondary" className="text-sm px-3 py-1">
+                              Panel {p.index}
+                            </Badge>
+                          </div>
+                          <p className="text-base text-foreground leading-relaxed text-center">
+                            {p.text}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  />
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground h-full flex items-center justify-center">
@@ -438,6 +435,8 @@ export default function LibraryDialog({
                         <p><span className="font-medium">Has panels array:</span> {content.panels ? 'Yes' : 'No'}</p>
                         <p><span className="font-medium">Has imageUrls:</span> {content.imageUrls ? 'Yes' : 'No'}</p>
                         <p><span className="font-medium">Has cloudinaryPublicIds:</span> {content.cloudinaryPublicIds ? 'Yes' : 'No'}</p>
+                        <p><span className="font-medium">Has panelTexts:</span> {content.panelTexts ? 'Yes' : 'No'}</p>
+                        <p><span className="font-medium">PanelTexts count:</span> {content.panelTexts ? content.panelTexts.length : 0}</p>
                       </div>
                     </div>
                     
@@ -522,10 +521,6 @@ export default function LibraryDialog({
       
       default:
         // For any unrecognized content type, try to render as content
-        console.log('=== Unrecognized Content Type ===');
-        console.log('Content type:', contentType);
-        console.log('Content object:', content);
-        
         return (
           <div className="h-full overflow-hidden">
             <ContentPreview
