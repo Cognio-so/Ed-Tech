@@ -448,7 +448,7 @@ const VoiceCoach = () => {
                 setMessages(prev => [...prev, userMessage]);
             };
 
-            // OPTIMIZED: Use cached teacher data
+            // OPTIMIZED: Use cached teacher data - FIXED: Include all required properties
             const teacherDataForAI = {
                 teacherName: teacherData.teacher?.name || 'Teacher',
                 students: teacherData.students.slice(0, 5).map(student => ({
@@ -458,17 +458,73 @@ const VoiceCoach = () => {
                     grades: student.grades,
                     subjects: student.subjects,
                     performance: {
-                        overall: student.performance?.overall || 0 // FIXED: Remove hardcoded 75, use 0 as fallback
+                        overall: student.performance?.overall || 0
                     }
                 })),
                 studentPerformance: {
                     totalStudents: teacherData.students.length,
-                    averagePerformance: teacherData.stats.averageStudentPerformance || 0 // FIXED: Remove hardcoded 75, use 0 as fallback
+                    averagePerformance: teacherData.stats.averageStudentPerformance || 0
+                },
+                // FIXED: Add missing properties that createTeacherPrompt expects
+                studentOverview: {
+                    totalStudents: teacherData.students.length,
+                    averagePerformance: teacherData.stats.averageStudentPerformance || 0,
+                    performanceDistribution: {
+                        high: teacherData.students.filter(s => (s.performance?.overall || 0) >= 80).length,
+                        medium: teacherData.students.filter(s => (s.performance?.overall || 0) >= 60 && (s.performance?.overall || 0) < 80).length,
+                        low: teacherData.students.filter(s => (s.performance?.overall || 0) < 60).length
+                    }
+                },
+                topPerformers: teacherData.students
+                    .sort((a, b) => (b.performance?.overall || 0) - (a.performance?.overall || 0))
+                    .slice(0, 3)
+                    .map(student => ({
+                        name: student.name,
+                        performance: student.performance?.overall || 0,
+                        strengths: student.subjects,
+                        group: student.group || 'Default'
+                    })),
+                subjectPerformance: teacherData.students.reduce((acc, student) => {
+                    student.subjects.forEach(subject => {
+                        if (!acc[subject]) {
+                            acc[subject] = { total: 0, count: 0, students: [] };
+                        }
+                        acc[subject].total += student.performance?.overall || 0;
+                        acc[subject].count += 1;
+                        acc[subject].students.push({
+                            name: student.name,
+                            score: student.performance?.overall || 0
+                        });
+                    });
+                    return acc;
+                }, {}),
+                content: {
+                    totalContent: (teacherData.stats.totalLessons || 0) + (teacherData.stats.totalAssessments || 0) + (teacherData.stats.totalPresentations || 0) + (teacherData.stats.totalComics || 0) + (teacherData.stats.totalImages || 0) + (teacherData.stats.totalVideos || 0) + (teacherData.stats.totalWebSearches || 0),
+                    lessons: teacherData.content.lessons.slice(0, 3).map(item => ({ title: item.title || 'Untitled Lesson', type: 'lesson' })),
+                    assessments: teacherData.content.assessments.slice(0, 3).map(item => ({ title: item.title || 'Untitled Assessment', type: 'assessment' })),
+                    presentations: teacherData.content.presentations.slice(0, 3).map(item => ({ title: item.title || 'Untitled Presentation', type: 'presentation' })),
+                    comics: teacherData.content.comics.slice(0, 3).map(item => ({ title: item.title || 'Untitled Comic', type: 'comic' })),
+                    images: teacherData.content.images.slice(0, 3).map(item => ({ title: item.title || 'Untitled Image', type: 'image' })),
+                    videos: teacherData.content.videos.slice(0, 3).map(item => ({ title: item.title || 'Untitled Video', type: 'video' })),
+                    websearches: teacherData.content.websearches.slice(0, 3).map(item => ({ title: item.title || 'Untitled Web Search', type: 'webSearch' }))
+                },
+                assessments: teacherData.content.assessments.slice(0, 3).map(item => ({
+                    title: item.title || 'Untitled Assessment',
+                    type: item.type || 'assessment',
+                    createdAt: item.createdAt
+                })),
+                mediaToolkit: {
+                    totalContent: (teacherData.stats.totalLessons || 0) + (teacherData.stats.totalAssessments || 0) + (teacherData.stats.totalPresentations || 0) + (teacherData.stats.totalComics || 0) + (teacherData.stats.totalImages || 0) + (teacherData.stats.totalVideos || 0) + (teacherData.stats.totalWebSearches || 0),
+                    comics: teacherData.stats.totalComics || 0,
+                    images: teacherData.stats.totalImages || 0,
+                    slides: teacherData.stats.totalPresentations || 0,
+                    videos: teacherData.stats.totalVideos || 0,
+                    webSearch: teacherData.stats.totalWebSearches || 0
                 },
                 learningAnalytics: {
                     totalLessons: teacherData.stats.totalLessons || 0,
                     totalAssessments: teacherData.stats.totalAssessments || 0,
-                    averageStudentPerformance: teacherData.stats.averageStudentPerformance || 0 // FIXED: Remove hardcoded 75, use 0 as fallback
+                    averageStudentPerformance: teacherData.stats.averageStudentPerformance || 0
                 }
             };
 
