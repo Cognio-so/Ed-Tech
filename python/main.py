@@ -1220,8 +1220,8 @@ async def teacher_chat_endpoint(request: TeacherChatbotRequest):
             image_storage_key=None,
             is_knowledge_base_ready=is_kb_ready,
             uploaded_files=request.uploaded_files,
-            teaching_data=teacher_data,  # Pass the full data but let the tutor handle it efficiently
-            teacher_feedback=feedback_data # NEW: Pass feedback to the tutor
+            teaching_data=teacher_data  # Pass the full data but let the tutor handle it efficiently
+            # REMOVED: teacher_feedback=feedback_data # This parameter doesn't exist for teacher tutor
         )
 
         async def event_stream():
