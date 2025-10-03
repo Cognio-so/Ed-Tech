@@ -809,9 +809,7 @@ const VoiceCoach = () => {
                 return `[${timestamp}] ${role}:\n${msg.content}\n\n`;
             }).join('');
 
-            if (format === 'pdf') {
-                await exportAsPDF(conversationText, conversationMessages);
-            } else if (format === 'doc') {
+            if (format === 'doc') {
                 await exportAsDOC(conversationText, conversationMessages);
             } else {
                 // Fallback to text export
@@ -835,17 +833,6 @@ const VoiceCoach = () => {
                     <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Export Conversation</h3>
                     <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">Choose the format for your conversation export:</p>
                     <div class="space-y-3">
-                        <button class="w-full flex items-center p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-format="pdf">
-                            <div class="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center mr-3">
-                                <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
-                                </svg>
-                            </div>
-                            <div class="text-left">
-                                <div class="font-medium text-gray-900 dark:text-white">PDF Document</div>
-                                <div class="text-sm text-gray-500 dark:text-gray-400">Portable Document Format</div>
-                            </div>
-                        </button>
                         <button class="w-full flex items-center p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-format="doc">
                             <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center mr-3">
                                 <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 20 20">
@@ -896,64 +883,6 @@ const VoiceCoach = () => {
 
             document.body.appendChild(dialog);
         });
-    };
-
-    // Export as PDF using jsPDF with Unicode support
-    const exportAsPDF = async (conversationText, conversationMessages) => {
-        // Load jsPDF dynamically
-        const { jsPDF } = await import('jspdf');
-        const doc = new jsPDF();
-        
-        // Set font
-        doc.setFont('helvetica');
-        
-        // Add title
-        doc.setFontSize(16);
-        doc.text('Voice Coach Conversation', 20, 20);
-        
-        // Add export date
-        doc.setFontSize(10);
-        doc.text(`Exported on: ${new Date().toLocaleDateString()}`, 20, 30);
-        
-        // Add line separator
-        doc.line(20, 35, 190, 35);
-        
-        // Add conversation content
-        doc.setFontSize(10);
-        let yPosition = 45;
-        const pageHeight = doc.internal.pageSize.height;
-        const margin = 20;
-        const maxWidth = 170;
-        
-        conversationMessages.forEach((msg, index) => {
-            const timestamp = msg.timestamp.toLocaleString();
-            const role = msg.type === 'user' ? 'User' : 'Voice Coach';
-            
-            // Clean the content to remove problematic characters
-            const cleanContent = msg.content
-                .replace(/[^\x00-\x7F]/g, '') // Remove non-ASCII characters
-                .replace(/[👋🎉🚀💡📚🎯⭐🌟💪🔥]/g, '') // Remove common emojis
-                .replace(/[^\x20-\x7E]/g, '') // Remove any remaining non-printable characters
-                .trim();
-            
-            const content = `${timestamp} - ${role}:\n${cleanContent}`;
-            
-            // Split text into lines that fit the page width
-            const lines = doc.splitTextToSize(content, maxWidth);
-            
-            // Check if we need a new page
-            if (yPosition + (lines.length * 5) > pageHeight - margin) {
-                doc.addPage();
-                yPosition = 20;
-            }
-            
-            // Add the text
-            doc.text(lines, margin, yPosition);
-            yPosition += (lines.length * 5) + 5;
-        });
-        
-        // Save the PDF
-        doc.save(`voice-coach-conversation-${new Date().toISOString().split('T')[0]}.pdf`);
     };
 
     // Export as DOC (RTF format that can be opened in Word)
