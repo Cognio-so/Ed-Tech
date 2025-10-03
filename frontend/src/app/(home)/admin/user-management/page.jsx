@@ -66,7 +66,7 @@ export default function UserManagementPage() {
   const [createSubjectDialogOpen, setCreateSubjectDialogOpen] = useState(false);
   const [createGradeDialogOpen, setCreateGradeDialogOpen] = useState(false);
 
-  // Form states
+  // Form states - UPDATED to include selectedGrade
   const [createForm, setCreateForm] = useState({
     name: "",
     email: "",
@@ -74,7 +74,8 @@ export default function UserManagementPage() {
     role: "student",
     grades: [],
     subjects: [],
-    gradeSubjectPairs: [] // New field for grade-subject pairs
+    gradeSubjectPairs: [],
+    selectedGrade: "" // Add this field
   });
   const [editForm, setEditForm] = useState({
     name: "",
@@ -83,7 +84,8 @@ export default function UserManagementPage() {
     emailVerified: false,
     grades: [],
     subjects: [],
-    gradeSubjectPairs: [] // New field for grade-subject pairs
+    gradeSubjectPairs: [],
+    selectedGrade: "" // Add this field
   });
 
   // Subject and Grade management states
@@ -180,7 +182,8 @@ export default function UserManagementPage() {
           role: "student", 
           grades: [], 
           subjects: [],
-          gradeSubjectPairs: []
+          gradeSubjectPairs: [],
+          selectedGrade: "" // Add this field
         });
         fetchData();
       } else {
@@ -265,7 +268,8 @@ export default function UserManagementPage() {
         emailVerified: userData.emailVerified,
         grades: userData.grades || [],
         subjects: userData.subjects || [],
-        gradeSubjectPairs: userData.gradeSubjectPairs || []
+        gradeSubjectPairs: userData.gradeSubjectPairs || [],
+        selectedGrade: "" // Add this field
       });
       setEditDialogOpen(true);
     } catch (error) {
@@ -978,13 +982,13 @@ export default function UserManagementPage() {
                   </div>
                 )}
 
-                {/* For teachers - show grade-subject pairs */}
+                {/* For teachers - show grade-subject pairs with grade-first selection */}
                 {createForm.role === "teacher" && (
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label>Teaching Assignments</Label>
                       <p className="text-sm text-muted-foreground">
-                        Select the grades and subjects this teacher will teach
+                        First select a grade, then choose the subjects for that grade
                       </p>
                     </div>
                     
@@ -993,23 +997,39 @@ export default function UserManagementPage() {
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
                         <span className="text-sm text-muted-foreground">Loading options...</span>
                       </div>
-                    ) : gradeSubjectPairs.length > 0 ? (
-                      <div className="space-y-3">
-                        {/* Group by grade for better organization */}
-                        {availableGrades
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map((grade) => {
-                            const subjectsForGrade = gradeSubjectPairs.filter(pair => pair.grade === grade.name);
-                            if (subjectsForGrade.length === 0) return null;
-                            
-                            return (
-                              <div key={grade.id} className="border rounded-lg p-4 space-y-3">
-                                <div className="flex items-center gap-2">
-                                  <School className="h-4 w-4 text-primary" />
-                                  <h4 className="font-medium text-sm">{grade.name}</h4>
-                                </div>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                  {subjectsForGrade.map((pair) => (
+                    ) : availableGrades.length > 0 ? (
+                      <div className="space-y-4">
+                        {/* Step 1: Grade Selection */}
+                        <div className="space-y-2">
+                          <Label htmlFor="grade-select">Select Grade</Label>
+                          <Select 
+                            value={createForm.selectedGrade} 
+                            onValueChange={(value) => setCreateForm(prev => ({ ...prev, selectedGrade: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choose a grade first..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableGrades
+                                .sort((a, b) => a.name.localeCompare(b.name))
+                                .map((grade) => (
+                                  <SelectItem key={grade.id} value={grade.name}>
+                                    {grade.name}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Step 2: Subject Selection (only show if grade is selected) */}
+                        {createForm.selectedGrade && (
+                          <div className="space-y-2">
+                            <Label>Select Subjects for {createForm.selectedGrade}</Label>
+                            {(() => {
+                              const subjectsForSelectedGrade = gradeSubjectPairs.filter(pair => pair.grade === createForm.selectedGrade);
+                              return subjectsForSelectedGrade.length > 0 ? (
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 border rounded-md p-3">
+                                  {subjectsForSelectedGrade.map((pair) => (
                                     <div key={pair.id} className="flex items-center space-x-2">
                                       <Checkbox
                                         id={`create-pair-${pair.id}`}
@@ -1025,14 +1045,36 @@ export default function UserManagementPage() {
                                     </div>
                                   ))}
                                 </div>
-                              </div>
-                            );
-                          })}
+                              ) : (
+                                <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                                  <p className="text-sm text-muted-foreground">No subjects available for {createForm.selectedGrade}</p>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+
+                        {/* Show selected assignments summary */}
+                        {createForm.gradeSubjectPairs.length > 0 && (
+                          <div className="space-y-2">
+                            <Label>Selected Assignments</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {createForm.gradeSubjectPairs.map((pairId) => {
+                                const pair = gradeSubjectPairs.find(p => p.id === pairId);
+                                return pair ? (
+                                  <Badge key={pairId} variant="secondary" className="text-xs">
+                                    {pair.subject} ({pair.grade})
+                                  </Badge>
+                                ) : null;
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                        <p className="text-sm text-muted-foreground">No teaching assignments available</p>
-                        <p className="text-xs text-muted-foreground mt-1">Add curriculum data first</p>
+                        <p className="text-sm text-muted-foreground">No grades available</p>
+                        <p className="text-xs text-muted-foreground mt-1">Create grades first</p>
                       </div>
                     )}
                   </div>
@@ -1148,13 +1190,13 @@ export default function UserManagementPage() {
                   </div>
                 )}
 
-                {/* For teachers - show grade-subject pairs */}
+                {/* For teachers - show grade-subject pairs with grade-first selection (EDIT DIALOG) */}
                 {editForm.role === "teacher" && (
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label>Teaching Assignments</Label>
                       <p className="text-sm text-muted-foreground">
-                        Select the grades and subjects this teacher will teach
+                        First select a grade, then choose the subjects for that grade
                       </p>
                     </div>
                     
@@ -1163,23 +1205,39 @@ export default function UserManagementPage() {
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
                         <span className="text-sm text-muted-foreground">Loading options...</span>
                       </div>
-                    ) : gradeSubjectPairs.length > 0 ? (
-                      <div className="space-y-3">
-                        {/* Group by grade for better organization */}
-                        {availableGrades
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map((grade) => {
-                            const subjectsForGrade = gradeSubjectPairs.filter(pair => pair.grade === grade.name);
-                            if (subjectsForGrade.length === 0) return null;
-                            
-                            return (
-                              <div key={grade.id} className="border rounded-lg p-4 space-y-3">
-                                <div className="flex items-center gap-2">
-                                  <School className="h-4 w-4 text-primary" />
-                                  <h4 className="font-medium text-sm">{grade.name}</h4>
-                                </div>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                  {subjectsForGrade.map((pair) => (
+                    ) : availableGrades.length > 0 ? (
+                      <div className="space-y-4">
+                        {/* Step 1: Grade Selection */}
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-grade-select">Select Grade</Label>
+                          <Select 
+                            value={editForm.selectedGrade} 
+                            onValueChange={(value) => setEditForm(prev => ({ ...prev, selectedGrade: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choose a grade first..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableGrades
+                                .sort((a, b) => a.name.localeCompare(b.name))
+                                .map((grade) => (
+                                  <SelectItem key={grade.id} value={grade.name}>
+                                    {grade.name}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Step 2: Subject Selection (only show if grade is selected) */}
+                        {editForm.selectedGrade && (
+                          <div className="space-y-2">
+                            <Label>Select Subjects for {editForm.selectedGrade}</Label>
+                            {(() => {
+                              const subjectsForSelectedGrade = gradeSubjectPairs.filter(pair => pair.grade === editForm.selectedGrade);
+                              return subjectsForSelectedGrade.length > 0 ? (
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 border rounded-md p-3">
+                                  {subjectsForSelectedGrade.map((pair) => (
                                     <div key={pair.id} className="flex items-center space-x-2">
                                       <Checkbox
                                         id={`edit-pair-${pair.id}`}
@@ -1195,14 +1253,36 @@ export default function UserManagementPage() {
                                     </div>
                                   ))}
                                 </div>
-                              </div>
-                            );
-                          })}
+                              ) : (
+                                <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
+                                  <p className="text-sm text-muted-foreground">No subjects available for {editForm.selectedGrade}</p>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+
+                        {/* Show selected assignments summary */}
+                        {editForm.gradeSubjectPairs.length > 0 && (
+                          <div className="space-y-2">
+                            <Label>Selected Assignments</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {editForm.gradeSubjectPairs.map((pairId) => {
+                                const pair = gradeSubjectPairs.find(p => p.id === pairId);
+                                return pair ? (
+                                  <Badge key={pairId} variant="secondary" className="text-xs">
+                                    {pair.subject} ({pair.grade})
+                                  </Badge>
+                                ) : null;
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="p-4 border border-dashed border-muted-foreground/25 rounded-md text-center">
-                        <p className="text-sm text-muted-foreground">No teaching assignments available</p>
-                        <p className="text-xs text-muted-foreground mt-1">Add curriculum data first</p>
+                        <p className="text-sm text-muted-foreground">No grades available</p>
+                        <p className="text-xs text-muted-foreground mt-1">Create grades first</p>
                       </div>
                     )}
                   </div>

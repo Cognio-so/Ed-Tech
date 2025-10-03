@@ -63,7 +63,6 @@ const contentPlaceholders = {
 const LibraryCharacter = () => (
   <div className="hidden lg:block absolute right-4 top-4">
     <div className="relative w-24 h-24">
-      <div className="absolute inset-0 text-5xl" style={{ animation: 'gentle-bounce 4s ease-in-out infinite' }}>��</div>
       <div className="absolute -top-2 -right-2 text-xl" style={{ animation: 'gentle-spin 6s linear infinite' }}>⭐</div>
       <div className="absolute -top-6 right-2 text-lg" style={{ animation: 'gentle-pulse 3s ease-in-out infinite' }}>✨</div>
       <style jsx>{`

@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { 
   FileText, 
   Presentation, 
-  Image, 
+  Image as ImageIcon, 
   Video, 
   BookOpen, 
   Search, 
@@ -189,7 +189,7 @@ const contentTypes = {
   },
   image: { 
     label: "Images", 
-    icon: Image, 
+    icon: ImageIcon, 
     color: "bg-pink-100",
     placeholderImage: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=300&fit=crop&crop=center"
   },
@@ -367,7 +367,7 @@ export default function LibraryPage() {
 
     switch (format) {
       case 'pdf':
-        await downloadComicAsPDF(comicImages, filename);
+        await downloadComicAsPDF(comicImages, comic, filename);
         break;
       case 'doc':
         await downloadComicAsDOCX(comicImages, comic, filename);
@@ -379,7 +379,7 @@ export default function LibraryPage() {
         await downloadComicAsImages(comicImages, filename);
         break;
       default:
-        throw new Error('Unsupported format for comics');
+        throw new Error(`Unsupported format: ${format}`);
     }
   };
 
@@ -460,39 +460,111 @@ export default function LibraryPage() {
   };
 
   // Helper functions for different download types
-  const downloadComicAsPDF = async (images, filename) => {
+  const downloadComicAsPDF = async (images, comic, filename) => {
     const { jsPDF } = await import('jspdf');
     const doc = new jsPDF();
     
+    // Extract panel texts
+    let panelTexts = [];
+    if (comic.panelTexts && Array.isArray(comic.panelTexts)) {
+      panelTexts = comic.panelTexts.map((panelText, index) => {
+        if (typeof panelText === 'string') {
+          return panelText;
+        } else if (panelText && panelText.text) {
+          return panelText.text;
+        } else if (panelText && panelText.content) {
+          return panelText.content;
+        } else if (panelText && panelText.description) {
+          return panelText.description;
+        }
+        return `Panel ${index + 1} text not available`;
+      });
+    } else if (comic.panels && Array.isArray(comic.panels)) {
+      panelTexts = comic.panels.map((panel, index) => {
+        return panel.text || panel.content || panel.description || `Panel ${index + 1} text not available`;
+      });
+    }
+    
+    // Process images sequentially to ensure all are loaded
     for (let i = 0; i < images.length; i++) {
       if (i > 0) doc.addPage();
       
       try {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          const imgWidth = doc.internal.pageSize.getWidth();
-          const imgHeight = (img.height * imgWidth) / img.width;
-          const pageHeight = doc.internal.pageSize.getHeight();
+        // Wait for each image to load before proceeding
+        await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
           
-          if (imgHeight > pageHeight) {
-            const ratio = pageHeight / imgHeight;
-            const newWidth = imgWidth * ratio;
-            const newHeight = pageHeight;
-            doc.addImage(img, 'JPEG', (imgWidth - newWidth) / 2, 0, newWidth, newHeight);
-          } else {
-            doc.addImage(img, 'JPEG', 0, (pageHeight - imgHeight) / 2, imgWidth, imgHeight);
-          }
+          img.onload = () => {
+            try {
+              const imgWidth = doc.internal.pageSize.getWidth();
+              const pageHeight = doc.internal.pageSize.getHeight();
+              const margin = 20;
+              const availableWidth = imgWidth - (margin * 2);
+              const availableHeight = pageHeight - (margin * 2);
+              
+              // Calculate image dimensions to fit on page
+              let imgDisplayWidth = availableWidth;
+              let imgDisplayHeight = (img.height * imgDisplayWidth) / img.width;
+              
+              // If image is too tall, scale it down
+              if (imgDisplayHeight > availableHeight * 0.7) { // Reserve 30% for text
+                imgDisplayHeight = availableHeight * 0.7;
+                imgDisplayWidth = (img.width * imgDisplayHeight) / img.height;
+              }
+              
+              // Center the image
+              const imgX = (imgWidth - imgDisplayWidth) / 2;
+              const imgY = margin;
+              
+              // Add the image
+              doc.addImage(img, 'JPEG', imgX, imgY, imgDisplayWidth, imgDisplayHeight);
+              
+              // Add panel text below the image
+              const textY = imgY + imgDisplayHeight + 10;
+              const panelText = panelTexts[i] || `Panel ${i + 1}`;
+              
+              // Set font for text
+              doc.setFontSize(12);
+              doc.setFont('helvetica', 'normal');
+              
+              // Split text into multiple lines if it's too long
+              const maxWidth = availableWidth;
+              const textLines = doc.splitTextToSize(panelText, maxWidth);
+              
+              // Add text with proper spacing
+              let currentY = textY;
+              for (let line of textLines) {
+                if (currentY + 10 > pageHeight - margin) {
+                  // If text would go beyond page, add a new page
+                  doc.addPage();
+                  currentY = margin;
+                }
+                doc.text(line, margin, currentY);
+                currentY += 6; // Line height
+              }
+              
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          };
           
-          if (i === images.length - 1) {
-            doc.save(`${filename}.pdf`);
-          }
-        };
-        img.src = images[i];
+          img.onerror = () => {
+            console.error(`Error loading image ${i + 1}:`, images[i]);
+            reject(new Error(`Failed to load image ${i + 1}`));
+          };
+          
+          img.src = images[i];
+        });
       } catch (error) {
-        console.error(`Error loading image ${i}:`, error);
+        console.error(`Error processing image ${i + 1}:`, error);
+        // Continue with next image even if one fails
       }
     }
+    
+    // Save the PDF after all images are processed
+    doc.save(`${filename}.pdf`);
   };
 
   const downloadComicAsDOCX = async (images, comic, filename) => {
@@ -856,10 +928,7 @@ export default function LibraryPage() {
     switch (contentType) {
       case 'comic':
         return [
-          { value: 'pdf', label: 'PDF (.pdf)', description: 'All panels in a single PDF' },
-          { value: 'doc', label: 'Word Document (.docx)', description: 'Document with panel information' },
-          { value: 'pptx', label: 'PowerPoint (.pptx)', description: 'Presentation with panels' },
-          { value: 'image', label: 'Individual Images (.jpg)', description: 'Download each panel separately' }
+          { value: 'pdf', label: 'PDF (.pdf)', description: 'All panels in a single PDF with text' }
         ];
       case 'image':
         return [
@@ -870,18 +939,26 @@ export default function LibraryPage() {
         ];
       case 'slides':
         return [
-          { value: 'pptx', label: 'PowerPoint (.pptx)', description: 'Original presentation file' }
+          { value: 'pptx', label: 'PowerPoint (.pptx)', description: 'Presentation format' }
         ];
       case 'content':
       case 'assessment':
         return [
-          { value: 'pdf', label: 'PDF (.pdf)', description: 'Formatted document' },
-          { value: 'doc', label: 'Word Document (.docx)', description: 'Editable document' },
-          { value: 'md', label: 'Markdown (.md)', description: 'Plain text with formatting' }
+          { value: 'pdf', label: 'PDF (.pdf)', description: 'Content in PDF format' },
+          { value: 'doc', label: 'Word Document (.docx)', description: 'Content in Word format' }
+        ];
+      case 'video':
+        return [
+          { value: 'pdf', label: 'PDF (.pdf)', description: 'Video metadata as PDF' }
+        ];
+      case 'websearch':
+        return [
+          { value: 'pdf', label: 'PDF (.pdf)', description: 'Search results in PDF format' },
+          { value: 'doc', label: 'Word Document (.docx)', description: 'Search results in Word format' }
         ];
       default:
         return [
-          { value: 'pdf', label: 'PDF (.pdf)', description: 'Document format' }
+          { value: 'pdf', label: 'PDF (.pdf)', description: 'Content in PDF format' }
         ];
     }
   };
