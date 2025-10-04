@@ -81,7 +81,7 @@ app = FastAPI(
 # --- Add CORS Middleware ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://ed-tech-alpha-sable.vercel.app"],  # Add your frontend URLs
+    allow_origins=["http://localhost:3000","https://edupulseai.com" ,"https://ed-tech-alpha-sable.vercel.app"],  # Add your frontend URLs
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
