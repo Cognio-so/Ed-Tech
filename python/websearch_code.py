@@ -2,6 +2,7 @@ import os
 import logging
 import time
 import asyncio
+import re
 from typing import Annotated, TypedDict, List, Dict, Any, Optional, Literal
 from dotenv import load_dotenv
 
@@ -30,7 +31,7 @@ class WebSearchState(TypedDict):
     search_results: Optional[List[Dict[str, Any]]]
 
 class PerplexityWebSearchTool:
-    """Reusable Perplexity web search tool for LangGraph."""
+    """Reusable Perplexity web search tool for LangGraph with enhanced URL extraction."""
     
     def __init__(
         self, 
@@ -75,12 +76,12 @@ class PerplexityWebSearchTool:
                 func=self._search_func,
                 name="perplexity_search",
                 description=(
-        "A powerful web search tool that can answer complex, multi-part questions in a single search. "
-        "Use this to find current and factual information. You should pass the user's full, "
-        "Do not break the query into smaller parts; the tool is optimized to handle detailed, combined queries."
-        "provide up-to-date information from the web, and must include relevant and valid educational videos."
-        "provide videos URLs in same language as the query."
-    ),
+                    "A powerful web search tool that finds educational videos and resources. "
+                    "CRITICAL: You MUST extract clean, valid YouTube URLs from the results. "
+                    "Use this to find current and factual information with video resources. "
+                    "Pass the full, detailed query in a single search call. "
+                    "Always provide URLs in the format: [Title](https://youtube.com/watch?v=VIDEO_ID)"
+                ),
                 args_schema=self._get_args_schema(),
             )
             
@@ -98,6 +99,121 @@ class PerplexityWebSearchTool:
         
         return SearchSchema
     
+    def _extract_clean_urls(self, text: str) -> List[Dict[str, str]]:
+        """
+        Extract and clean YouTube URLs from text with multiple fallback patterns.
+        
+        Returns:
+            List of dicts with 'url' and 'title' keys
+        """
+        urls = []
+        
+        # Pattern 1: Full YouTube URLs (most common)
+        youtube_patterns = [
+            r'https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
+            r'https?://youtu\.be/([a-zA-Z0-9_-]{11})',
+            r'youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
+            r'youtu\.be/([a-zA-Z0-9_-]{11})',
+        ]
+        
+        for pattern in youtube_patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                video_id = match.group(1) if match.groups() else match.group(0)
+                # Ensure we have a valid 11-character video ID
+                if len(video_id) == 11:
+                    clean_url = f"https://youtube.com/watch?v={video_id}"
+                    
+                    # Try to extract title from surrounding text
+                    title = self._extract_title_near_url(text, match.start())
+                    
+                    urls.append({
+                        'url': clean_url,
+                        'title': title or "Educational Video",
+                        'video_id': video_id
+                    })
+        
+        # Pattern 2: Markdown-style links [title](url)
+        markdown_pattern = r'\[([^\]]+)\]\((https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]{11}))[^\)]*\)'
+        markdown_matches = re.finditer(markdown_pattern, text, re.IGNORECASE)
+        for match in markdown_matches:
+            title = match.group(1).strip()
+            video_id = match.group(3)
+            clean_url = f"https://youtube.com/watch?v={video_id}"
+            urls.append({
+                'url': clean_url,
+                'title': title,
+                'video_id': video_id
+            })
+        
+        # Remove duplicates based on video_id
+        seen_ids = set()
+        unique_urls = []
+        for url_dict in urls:
+            if url_dict['video_id'] not in seen_ids:
+                seen_ids.add(url_dict['video_id'])
+                unique_urls.append(url_dict)
+        
+        logger.info(f"Extracted {len(unique_urls)} unique clean URLs from search results")
+        return unique_urls
+    
+    def _extract_title_near_url(self, text: str, url_position: int, context_window: int = 100) -> Optional[str]:
+        """
+        Extract a title from text near a URL position.
+        Looks backwards from the URL for a likely title.
+        """
+        start = max(0, url_position - context_window)
+        context = text[start:url_position]
+        
+        # Look for patterns like "Title:" or "Video:" before the URL
+        title_patterns = [
+            r'(?:title|video|watch):\s*([^\n\r]+?)(?:\s*[-–—]|\s*\||$)',
+            r'"([^"]{10,100})"',  # Quoted text
+            r'([A-Z][^.!?\n]{10,100}?)(?:\s*[-–—]|\n)',  # Sentence-like structure
+        ]
+        
+        for pattern in title_patterns:
+            matches = re.finditer(pattern, context, re.IGNORECASE)
+            for match in matches:
+                title = match.group(1).strip()
+                if len(title) > 10 and len(title) < 100:  # Reasonable title length
+                    return title
+        
+        return None
+    
+    def _format_search_prompt(self, query: str) -> str:
+        """
+        Format the search prompt to instruct Perplexity to return clean URLs.
+        
+        Args:
+            query: The search query
+            
+        Returns:
+            Formatted search prompt
+        """
+        link_instruction = """
+        CRITICAL URL REQUIREMENTS:
+        1. Provide ONLY valid, complete YouTube URLs
+        2. Use the format: https://youtube.com/watch?v=VIDEO_ID
+        3. Each URL must be on its own line or in markdown format: [Title](URL)
+        4. Include the full video title before each URL
+        5. Do not truncate or break URLs
+        """ if self.include_links else ""
+        
+        prompt = (
+            f"Search for educational videos and resources about: '{query}'\n\n"
+            f"REQUIREMENTS:\n"
+            f"- Return up to {self.max_results} high-quality results\n"
+            f"- Focus on educational content suitable for learning\n"
+            f"- Prioritize YouTube videos from reputable educational channels\n"
+            f"{link_instruction}\n"
+            f"- Provide a brief description of each video\n"
+            f"- Ensure all URLs are complete and functional\n\n"
+            f"Format your response clearly with video titles and URLs."
+        )
+        
+        return prompt
+    
     def _search_func(self, query: str) -> Dict[str, Any]:
         """
         Internal function to execute web search using Perplexity.
@@ -106,37 +222,27 @@ class PerplexityWebSearchTool:
             query: The search query
         
         Returns:
-            Dictionary with search results
+            Dictionary with search results including cleaned URLs
         """
         search_prompt = self._format_search_prompt(query)
         response = self.chat_model.invoke(search_prompt)
         
+        # Extract clean URLs from the response
+        clean_urls = self._extract_clean_urls(response.content)
+        
+        # Format the response with clean URLs
+        formatted_content = response.content
+        if clean_urls:
+            formatted_content += "\n\n=== EXTRACTED VIDEO URLS ===\n"
+            for i, url_info in enumerate(clean_urls, 1):
+                formatted_content += f"{i}. [{url_info['title']}]({url_info['url']})\n"
+        
         return {
             "query": query,
-            "results": response.content,
+            "results": formatted_content,
+            "video_urls": clean_urls,  # Separate field for easy access
+            "url_count": len(clean_urls)
         }
-    
-    def _format_search_prompt(self, query: str) -> str:
-        """
-        Format the search prompt to instruct Perplexity to return search results.
-        
-        Args:
-            query: The search query
-            
-        Returns:
-            Formatted search prompt
-        """
-        link_instruction = "Include valid source URLs for videos for each piece of information." if self.include_links else ""
-        
-        prompt = (
-            f"Please provide comprehensive search results for: '{query}'\n\n"
-            f"Return up to {self.max_results} relevant results. {link_instruction}\n"
-            f"Format each result with main information, a brief summary, and the source URLs.\n"
-            f"Make your response detailed and factual, with up-to-date information from the web.\n"
-            f"you MUST provide relevant and valid educational videos URLs."
-        )
-        
-        return prompt
     
     # Async search method
     async def search(self, query: str) -> List[Dict[str, Any]]:
@@ -147,10 +253,9 @@ class PerplexityWebSearchTool:
             query: The search query
             
         Returns:
-            List of search result objects. Returns an empty list on error.
+            List of search result objects with cleaned URLs
         """
         try:
-            # Log and time the search
             logger.info(f"Executing async web search for query: {query}")
             start_time = time.time()
             
@@ -159,14 +264,25 @@ class PerplexityWebSearchTool:
             # Using 'ainvoke' for non-blocking I/O
             response = await self.chat_model.ainvoke(search_prompt)
             
-            # Parse the response into search results format
+            # Extract clean URLs
+            clean_urls = self._extract_clean_urls(response.content)
+            
+            # Format the response
+            formatted_content = response.content
+            if clean_urls:
+                formatted_content += "\n\n=== EXTRACTED VIDEO URLS ===\n"
+                for i, url_info in enumerate(clean_urls, 1):
+                    formatted_content += f"{i}. [{url_info['title']}]({url_info['url']})\n"
+            
             search_results = [{
-                "content": response.content,
+                "content": formatted_content,
                 "query": query,
+                "video_urls": clean_urls,
+                "url_count": len(clean_urls)
             }]
             
             elapsed = time.time() - start_time
-            logger.info(f"Search completed in {elapsed:.2f}s for: {query}")
+            logger.info(f"Search completed in {elapsed:.2f}s. Found {len(clean_urls)} video URLs")
             
             return search_results
         except Exception as e:
@@ -253,11 +369,16 @@ def get_search_components(llm):
     Returns:
         Dictionary with search tool and LLM with tools bound
     """
-    # This now uses the Perplexity class 
-    search_tool_instance = PerplexityWebSearchTool(max_results=5, model="sonar", include_links=True)
+    # This now uses the Perplexity class with enhanced URL extraction
+    search_tool_instance = PerplexityWebSearchTool(
+        max_results=5, 
+        model="sonar", 
+        include_links=True
+    )
     llm_with_tools = search_tool_instance.bind_to_llm(llm)
     
     return {
         "search_tool": search_tool_instance.get_tool(),
-        "llm_with_tools": llm_with_tools
+        "llm_with_tools": llm_with_tools,
+        "search_instance": search_tool_instance  # Include instance for direct access
     }
