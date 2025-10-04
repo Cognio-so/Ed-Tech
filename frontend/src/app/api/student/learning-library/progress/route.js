@@ -288,62 +288,116 @@ export async function POST(request) {
     const { db } = await connectToDatabase();
     const progressCollection = db.collection('progress');
     const usersCollection = db.collection('user');
+    const lessonsCollection = db.collection('lessons');
 
     const studentId = new ObjectId(session.user.id);
     const contentObjectId = new ObjectId(contentId);
 
-    const progressData = {
-      studentId,
-      contentId: contentObjectId,
-      contentType: completionData.contentType || 'content',
-      contentTitle: completionData.contentTitle || 'Untitled',
-      subject: completionData.subject || 'General',
-      grade: completionData.grade || 'All',
-      status: 'completed',
-      progress: {
-        currentStep: 1,
-        totalSteps: 1,
-        percentage: 100,
-        timeSpent: completionData.timeSpent || 0,
-        lastAccessedAt: new Date()
-      },
-      completionData: {
-        completedAt: new Date(),
-        score: completionData.score || null,
-        answers: completionData.answers || [],
-        correctAnswers: completionData.correctAnswers || 0,
-        totalQuestions: completionData.totalQuestions || 0,
-        timeToComplete: completionData.timeToComplete || 0,
-        feedback: completionData.feedback || null
-      },
-      metadata: {
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        attempts: completionData.attempts || 1,
-        bookmarked: false
-      }
-    };
-
-    // Update progress
-    await progressCollection.updateOne(
-      { studentId, contentId: contentObjectId },
-      { $set: progressData },
-      { upsert: true }
-    );
-
-    // Update user stats
-    await usersCollection.updateOne(
-      { _id: studentId },
-      { 
-        $inc: { 
-          'stats.completedLessons': 1,
-          'stats.totalTimeSpent': completionData.timeSpent || 0
-        },
-        $set: { 
-          'stats.lastActivity': new Date()
+    // Fetch the actual content from the database to get the correct data
+    const actualContent = await lessonsCollection.findOne(
+      { _id: contentObjectId },
+      {
+        projection: {
+          _id: 1,
+          title: 1,
+          subject: 1,
+          grade: 1,
+          topic: 1,
+          contentType: 1,
+          difficulty: 1,
+          language: 1,
+          duration: 1,
+          lessonDescription: 1,
+          description: 1,
+          instruction: 1,
+          generatedContent: 1,
+          contentData: 1,
+          assessmentContent: 1,
+          content: 1
         }
       }
     );
+
+    if (!actualContent) {
+      return NextResponse.json(
+        { error: 'Content not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if progress record already exists
+    const existingProgress = await progressCollection.findOne({
+      studentId,
+      contentId: contentObjectId
+    });
+
+    const now = new Date();
+    const isNewRecord = !existingProgress;
+
+    // Use the actual content data instead of hardcoded values
+    const updateOperation = {
+      $set: {
+        studentId,
+        contentId: contentObjectId,
+        contentType: actualContent.contentType || completionData.contentType || 'content',
+        contentTitle: actualContent.title || completionData.contentTitle || 'Untitled',
+        subject: actualContent.subject || completionData.subject || 'General',
+        grade: actualContent.grade || completionData.grade || 'All',
+        topic: actualContent.topic || '',
+        difficulty: actualContent.difficulty || '',
+        language: actualContent.language || '',
+        status: 'completed', // This is the key fix - ensure status is 'completed'
+        progress: {
+          currentStep: 1,
+          totalSteps: 1,
+          percentage: 100,
+          timeSpent: completionData.timeSpent || 0,
+          lastAccessedAt: now
+        },
+        completionData: {
+          completedAt: now,
+          score: completionData.score || null,
+          answers: completionData.answers || [],
+          correctAnswers: completionData.correctAnswers || 0,
+          totalQuestions: completionData.totalQuestions || 0,
+          timeToComplete: completionData.timeToComplete || 0,
+          feedback: completionData.feedback || null
+        },
+        'metadata.updatedAt': now,
+        'metadata.attempts': (existingProgress?.metadata?.attempts || 0) + 1,
+        'metadata.bookmarked': existingProgress?.metadata?.bookmarked || false
+      }
+    };
+
+    // Only set createdAt for new records
+    if (isNewRecord) {
+      updateOperation.$setOnInsert = {
+        'metadata.createdAt': now
+      };
+    }
+
+    // Update progress with proper upsert handling
+    await progressCollection.updateOne(
+      { studentId, contentId: contentObjectId },
+      updateOperation,
+      { upsert: true }
+    );
+
+    // Only increment user stats if this is a new completion
+    if (isNewRecord || existingProgress?.status !== 'completed') {
+      await usersCollection.updateOne(
+        { _id: studentId },
+        { 
+          $inc: { 
+            'stats.completedLessons': 1,
+            'stats.totalTimeSpent': completionData.timeSpent || 0
+          },
+          $set: { 
+            'stats.lastActivity': now
+          }
+        }
+      );
+    }
 
     return NextResponse.json({ success: true });
 
