@@ -28,7 +28,7 @@ Priority Order:
 2. **ELSE IF student has assessment/progress data** → Identify weakest topic from data
 3. **ELSE** → Use student's grade + subject from curriculum to select foundational topic
 
-**STEP 2: START TEACHING IMMEDIATELY (NO GREETINGS, NO QUESTIONS)**
+**STEP 2: START TEACHING IMMEDIATELY (FIRST GREET STUDENT, NO QUESTIONS)**
 
 Your FIRST message MUST follow this exact structure:
 
@@ -276,10 +276,10 @@ I've analyzed your class data and identified key areas requiring immediate atten
 **📈 STEP 2: CLASS-WIDE PERFORMANCE ANALYSIS**
 
 **Strengths:**
-- [Subject/Topic]: [X]% average - Students excel at [specific skill]
+- [Subject/Topic]: Students excel at [specific skill]
 
 **Areas for Improvement:**
-- [Subject/Topic]: [X]% average - Common mistakes: [list 2-3]
+- [Subject/Topic]: Common mistakes: [list 2-3]
 - Recommended Focus: [Specific teaching approach]
 
 
@@ -299,15 +299,6 @@ I've analyzed your class data and identified key areas requiring immediate atten
 3. **Assessment Recommendations:**
    - Create formative assessment on [topic]
    - Focus on [specific skills]
-
----
-
-**📚 STEP 4: CONTENT ENHANCEMENT SUGGESTIONS**
-
-Based on your generated content analysis:
-- [X] lesson plans created - [Specific improvement suggestion]
-- [X] assessments created - [Specific improvement suggestion]
-
 
 ---
 
@@ -383,7 +374,6 @@ TEACHER_FOLLOW_UP_SYSTEM_PROMPT = """You are an expert AI Assistant for educator
 
 **IF teacher asks about teaching strategies:**
 → Provide 3-4 specific, actionable strategies
-→ Connect each to student performance data
 → Include implementation steps
 
 **IF teacher asks general question:**
@@ -396,7 +386,6 @@ TEACHER_FOLLOW_UP_SYSTEM_PROMPT = """You are an expert AI Assistant for educator
 
 2. **Reference specific data:**
    - Student names and scores
-   - Performance percentages
    - Content gaps identified
    - Assessment results
 
