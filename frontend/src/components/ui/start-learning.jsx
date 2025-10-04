@@ -920,28 +920,17 @@ export default function StartLearning({
 
     setProgress(newProgress);
 
-    // Update progress in database - FIXED: Use correct API endpoint
+    // Update progress in database - Use server action instead of direct fetch
     try {
-      const response = await fetch('/api/student/learning-library/progress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contentId: contentId,
-          completionData: {
-            contentType: contentType,
-            contentTitle: content.title,
-            subject: content.subject,
-            grade: content.grade,
-            timeSpent: newProgress.timeSpent,
-            timeToComplete: sessionTimeSpent,
-            status: completed ? 'completed' : 'in_progress'
-          }
-        })
+      await updateStudentProgress(contentId, {
+        contentType: contentType,
+        contentTitle: content.title,
+        subject: content.subject,
+        grade: content.grade,
+        timeSpent: newProgress.timeSpent,
+        timeToComplete: sessionTimeSpent,
+        status: completed ? 'completed' : 'in_progress'
       });
-
-      if (!response.ok) {
-        console.error('Failed to update progress');
-      }
     } catch (error) {
       console.error('Error updating progress:', error);
     }
