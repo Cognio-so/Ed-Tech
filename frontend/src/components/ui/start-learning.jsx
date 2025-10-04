@@ -1016,8 +1016,8 @@ export default function StartLearning({
     try {
       const timeSpent = Math.round((Date.now() - startTime) / 60000);
       
-      // Use the action.js function directly instead of API call
-      await updateStudentProgress(content.id || content._id, {
+      // Create a clean, serializable completion data object
+      const completionData = {
         contentType: content.type || content.contentType,
         contentTitle: content.title,
         subject: content.subject,
@@ -1027,8 +1027,11 @@ export default function StartLearning({
         score: score,
         correctAnswers: correctAnswers,
         totalQuestions: totalQuestions,
-        answers: answers
-      });
+        answers: answers ? JSON.parse(JSON.stringify(answers)) : {} // Deep clone to ensure serializability
+      };
+
+      // Use the action.js function directly instead of API call
+      await updateStudentProgress(content.id || content._id, completionData);
 
       // Show success message
       toast.success(`Assessment completed! Your score: ${score}% 🎉`, {
@@ -1207,75 +1210,59 @@ export default function StartLearning({
       case 'comic':
         // Check if this is a comic lesson
         if (content.resourceType === 'comic' || content.contentType === 'comic') {
-          // Collect images from all possible sources and deduplicate
-          let comicImages = [];
-          const seenUrls = new Set(); // Track seen URLs to avoid duplicates
+          // Use the actual panels structure if available
+          let comicPanels = [];
           
-          // Helper function to add unique images
-          const addUniqueImages = (images) => {
-            if (Array.isArray(images)) {
-              images.forEach(img => {
-                if (img && !seenUrls.has(img)) {
-                  seenUrls.add(img);
-                  comicImages.push(img);
-                }
-              });
-            }
-          };
-          
-          // 1. Check for panels array (most common for comics)
           if (content.panels && Array.isArray(content.panels) && content.panels.length > 0) {
-            const panelImages = content.panels
-              .map(panel => {
-                if (panel && typeof panel === 'object') {
-                  return panel.imageUrl || panel.imageBase64 || panel.cloudinaryPublicId;
-                }
-                return null;
-              })
-              .filter(Boolean);
-            addUniqueImages(panelImages);
-          }
-          
-          // 2. Check for imageUrls array (Cloudinary URLs)
-          if (content.imageUrls && Array.isArray(content.imageUrls) && content.imageUrls.length > 0) {
-            addUniqueImages(content.imageUrls);
-          }
-          
-          // 3. Check for images array
-          if (content.images && Array.isArray(content.images) && content.images.length > 0) {
-            addUniqueImages(content.images);
-          }
-          
-          // 4. Check for cloudinary public IDs and construct URLs
-          if (content.cloudinaryPublicIds && Array.isArray(content.cloudinaryPublicIds) && content.cloudinaryPublicIds.length > 0) {
-            const cloudinaryUrls = content.cloudinaryPublicIds
-              .filter(Boolean)
-              .map(id => {
-                // Handle both full URLs and just public IDs
-                if (id.startsWith('http')) {
-                  return id;
-                }
-                // Try different Cloudinary URL formats
-                return `https://res.cloudinary.com/demo/image/upload/${id}`;
-              });
-            addUniqueImages(cloudinaryUrls);
-          }
-          
-          // 5. Check if content itself contains base64 image data
-          if (content.content && typeof content.content === 'string' && content.content.includes('data:image')) {
-            const base64Matches = content.content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g);
-            if (base64Matches) {
-              addUniqueImages(base64Matches);
+            // Use the actual panels structure with text and images
+            comicPanels = content.panels.map((panel, index) => ({
+              index: index + 1,
+              url: panel.imageUrl || panel.cloudinaryPublicId || (panel.imageBase64 ? `data:image/png;base64,${panel.imageBase64}` : null),
+              text: panel.prompt || `Panel ${index + 1} description not available`,
+              panelNumber: panel.panelNumber || index + 1
+            })).filter(panel => panel.url); // Only include panels with valid images
+          } else {
+            // Fallback: collect images from other sources but without text
+            let comicImages = [];
+            const seenUrls = new Set();
+            
+            const addUniqueImages = (images) => {
+              if (Array.isArray(images)) {
+                images.forEach(img => {
+                  if (img && !seenUrls.has(img)) {
+                    seenUrls.add(img);
+                    comicImages.push(img);
+                  }
+                });
+              }
+            };
+            
+            // Check for imageUrls array (Cloudinary URLs)
+            if (content.imageUrls && Array.isArray(content.imageUrls) && content.imageUrls.length > 0) {
+              addUniqueImages(content.imageUrls);
             }
+            
+            // Check for images array
+            if (content.images && Array.isArray(content.images) && content.images.length > 0) {
+              addUniqueImages(content.images);
+            }
+            
+            // Check for single imageUrl field
+            if (content.imageUrl && !seenUrls.has(content.imageUrl)) {
+              seenUrls.add(content.imageUrl);
+              comicImages.push(content.imageUrl);
+            }
+            
+            // Convert to panel format
+            comicPanels = comicImages.map((url, i) => ({
+              index: i + 1,
+              url: url,
+              text: `Panel ${i + 1} - No description available`,
+              panelNumber: i + 1
+            }));
           }
           
-          // 6. Check for single imageUrl field
-          if (content.imageUrl && !seenUrls.has(content.imageUrl)) {
-            seenUrls.add(content.imageUrl);
-            comicImages.push(content.imageUrl);
-          }
-        
-          if (comicImages.length === 0) {
+          if (comicPanels.length === 0) {
             return (
               <div className="text-center py-8 text-foreground h-full flex items-center justify-center">
                 <div>
@@ -1291,11 +1278,9 @@ export default function StartLearning({
               <div className="text-center mb-4 flex-shrink-0">
                 <h3 className="text-lg font-semibold">{content.title}</h3>
                 <p className="text-sm text-muted-foreground">{content.topic || content.instruction || content.description}</p>
-                {content.numPanels && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {content.numPanels} panel{content.numPanels !== 1 ? 's' : ''}
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {comicPanels.length} panel{comicPanels.length !== 1 ? 's' : ''}
+                </p>
                 {content.comicType && (
                   <Badge variant="outline" className="mt-2">
                     {content.comicType}
@@ -1304,33 +1289,43 @@ export default function StartLearning({
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <CarouselWithControls
-                  items={comicImages.map((url, i) => ({ url, index: i + 1 }))}
+                  items={comicPanels}
                   className="h-full"
-                  renderItem={(p) => (
-                    <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex items-center justify-center h-full p-2">
-                      <img 
-                        src={p.url} 
-                        alt={`Panel ${p.index}`} 
-                        className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
-                        loading="lazy"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          const fallbackDiv = document.createElement('div');
-                          fallbackDiv.className = 'text-center py-8 text-foreground';
-                          fallbackDiv.innerHTML = `
-                            <div>
-                              <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                              </svg>
-                              <p class="text-sm">Panel ${p.index} failed to load</p>
-                              <p class="text-xs text-muted-foreground mt-2">
-                                URL: ${p.url ? p.url.substring(0, 50) + '...' : 'Not provided'}
-                              </p>
-                            </div>
-                          `;
-                          e.target.parentNode.appendChild(fallbackDiv);
-                        }}
-                      />
+                  renderItem={(panel) => (
+                    <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex flex-col h-full">
+                      {/* Panel Image */}
+                      <div className="flex-1 flex items-center justify-center p-4 min-h-0">
+                        <img 
+                          src={panel.url} 
+                          alt={`Panel ${panel.index}`} 
+                          className="max-h-full max-w-full object-contain rounded-lg shadow-sm" 
+                          loading="lazy"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            const fallbackDiv = document.createElement('div');
+                            fallbackDiv.className = 'text-center py-8 text-foreground';
+                            fallbackDiv.innerHTML = `
+                              <div>
+                                <svg class="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                <p class="text-sm">Panel ${panel.index} failed to load</p>
+                                <p class="text-xs text-muted-foreground mt-2">
+                                  URL: ${panel.url ? panel.url.substring(0, 50) + '...' : 'Not provided'}
+                                </p>
+                              </div>
+                            `;
+                            e.target.parentNode.appendChild(fallbackDiv);
+                          }}
+                        />
+                      </div>
+                      
+                      {/* Panel Text */}
+                      <div className="p-3 bg-muted/50 border-t">
+                        <p className="text-sm text-foreground leading-relaxed">
+                          {panel.text}
+                        </p>
+                      </div>
                     </div>
                   )}
                 />
