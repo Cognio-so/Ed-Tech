@@ -41,6 +41,11 @@ export default function AssessmentPreview({
     let currentQuestion = null;
     let inSolutionsSection = false;
 
+    // Debug logging
+    console.log('=== PARSING ASSESSMENT CONTENT ===');
+    console.log('Content length:', content.length);
+    console.log('First 500 chars:', content.substring(0, 500));
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       
@@ -77,14 +82,25 @@ export default function AssessmentPreview({
             options: []
           };
 
-          // Check if this is a True/False question based on the question text
+          // Check if this is a True/False question (both English and Arabic)
           if (questionText.toLowerCase().includes('true or false') || 
-              questionText.toLowerCase().includes('true/false')) {
+              questionText.toLowerCase().includes('true/false') ||
+              questionText.includes('صح أو خطأ') ||
+              questionText.includes('صح أو خطأ؟')) {
             currentQuestion.type = 'true_false';
             currentQuestion.options = [
-              { id: 'true', text: 'True' },
-              { id: 'false', text: 'False' }
+              { id: 'true', text: 'صح' },
+              { id: 'false', text: 'خطأ' }
             ];
+          } else if (questionText.toLowerCase().includes('briefly explain') ||
+                     questionText.toLowerCase().includes('explain') ||
+                     questionText.toLowerCase().includes('describe') ||
+                     questionText.includes('اشرح') ||
+                     questionText.includes('اذكر') ||
+                     questionText.includes('ما هي')) {
+            currentQuestion.type = 'short_answer';
+          } else {
+            currentQuestion.type = 'multiple_choice';
           }
         } else if (currentQuestion && line.match(/^[A-D]\)/)) {
           // This is an option for the current question
@@ -118,6 +134,10 @@ export default function AssessmentPreview({
         question.correctAnswer = correctAnswer;
       }
     });
+
+    // Debug logging
+    console.log('Parsed questions:', questions);
+    console.log('Parsed solutions:', solutions);
 
     return { questions, solutions };
   };
@@ -315,7 +335,7 @@ export default function AssessmentPreview({
                 onChange={() => !isReviewMode && !isPreviewMode && handleAnswerChange(index, 'true')}
                 disabled={isReviewMode || isPreviewMode}
               />
-              <label htmlFor={`tf-${index}-true`} className="text-sm">True</label>
+              <label htmlFor={`tf-${index}-true`} className="text-sm">صح</label>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -327,7 +347,7 @@ export default function AssessmentPreview({
                 onChange={() => !isReviewMode && !isPreviewMode && handleAnswerChange(index, 'false')}
                 disabled={isReviewMode || isPreviewMode}
               />
-              <label htmlFor={`tf-${index}-false`} className="text-sm">False</label>
+              <label htmlFor={`tf-${index}-false`} className="text-sm">خطأ</label>
             </div>
           </div>
         )}

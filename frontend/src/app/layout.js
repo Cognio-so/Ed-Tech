@@ -3,6 +3,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import Script from "next/script";
+import WeglotWatcher from "@/components/WeglotWatcher";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,7 +31,11 @@ export default function RootLayout({ children }) {
         <Script id="weglot-init" strategy="beforeInteractive">
           {`
             Weglot.initialize({
-              api_key: 'wg_c1c784d0252a1ad86fc1a611f8c25e9c4'
+              api_key: 'wg_c1c784d0252a1ad86fc1a611f8c25e9c4',
+              originalLanguage: 'en',
+              destinationLanguages: ['ar'],
+              autoSwitch: true,
+              cache: true
             });
           `}
         </Script>
@@ -39,6 +44,7 @@ export default function RootLayout({ children }) {
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning={true}
       >
+        <WeglotWatcher />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
