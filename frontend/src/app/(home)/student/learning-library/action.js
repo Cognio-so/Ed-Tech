@@ -87,6 +87,14 @@ export async function getLessonById(lessonId) {
 
 export async function updateStudentProgress(contentId, completionData = {}) {
   try {
+    // Validate input data
+    if (!contentId) {
+      throw new Error('Content ID is required');
+    }
+
+    // Ensure completionData is serializable
+    const cleanCompletionData = JSON.parse(JSON.stringify(completionData));
+
     const headers = await getFetchHeaders();
     
     const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/student/learning-library/progress`, {
@@ -94,13 +102,14 @@ export async function updateStudentProgress(contentId, completionData = {}) {
       headers,
       body: JSON.stringify({
         contentId,
-        completionData
+        completionData: cleanCompletionData
       }),
       cache: 'no-store'
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
     }
 
     const data = await response.json();
