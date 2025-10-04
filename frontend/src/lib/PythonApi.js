@@ -70,6 +70,10 @@ class PythonApiClient {
       learning_objectives: assessmentData.learningObjectives || '',
       anxiety_triggers: assessmentData.anxietyTriggers || '',
       language: assessmentData.language || 'English',
+      // FIX: Add instruction for comprehensive response
+      response_mode: 'comprehensive',
+      include_explanations: true,
+      detailed_feedback: true
     };
 
     return this.makeRequest('/assessment_endpoint', {
@@ -105,6 +109,10 @@ class PythonApiClient {
       // Add session fields for lesson plans
       number_of_sessions: contentData.numberOfSessions || '1',
       session_duration: contentData.sessionDuration || '45 minutes',
+      // FIX: Add instruction for comprehensive response
+      response_mode: 'comprehensive',
+      include_step_by_step: true,
+      detailed_explanations: true
     };
 
     return this.makeRequest('/teaching_content_endpoint', {
@@ -121,6 +129,9 @@ class PythonApiClient {
     const pythonSchema = {
       ...presentationData, // Pass all properties from the already-transformed object
       language: presentationData.language === 'Arabic' ? 'ARABIC' : 'ENGLISH',
+      // FIX: Add instruction for comprehensive response
+      response_mode: 'comprehensive',
+      detailed_content: true
     };
 
     return this.makeRequest('/presentation_endpoint', {
@@ -133,12 +144,15 @@ class PythonApiClient {
   async generateSlidesFromContent(contentData) {
     const pythonSchema = {
       plain_text: contentData.content,
-      custom_user_instructions: `Generate presentation slides based on this content for ${contentData.topic}`,
+      custom_user_instructions: `Generate comprehensive presentation slides with detailed explanations based on this content for ${contentData.topic}. Provide step-by-step breakdowns and thorough coverage of all concepts.`,
       length: parseInt(contentData.slideCount) || 10,
-      language: contentData.language === "arabic" ? "ARABIC" : "ENGLISH", // ✅ This is correct for content form
+      language: contentData.language === "arabic" ? "ARABIC" : "ENGLISH",
       fetch_images: true,
-      verbosity: 'standard',
-      template: contentData.template || 'default'
+      verbosity: 'detailed', // FIX: Changed from 'standard' to 'detailed'
+      template: contentData.template || 'default',
+      // FIX: Add instruction for comprehensive response
+      response_mode: 'comprehensive',
+      include_explanations: true
     };
 
     return this.makeRequest('/presentation_endpoint', {
@@ -166,6 +180,16 @@ class PythonApiClient {
         lessons: studentData.lessons,
         resources: studentData.resources,
         analytics: studentData.analytics
+      },
+      // FIX: Add AI behavior instructions
+      ai_instructions: {
+        response_style: 'comprehensive',
+        provide_step_by_step: true,
+        avoid_questions: true,
+        detailed_explanations: true,
+        minimum_response_length: 'extended',
+        think_deeply: true,
+        proactive_teaching: true
       }
     };
 
@@ -209,7 +233,25 @@ class PythonApiClient {
       web_search_enabled: true, // Always enable web search
       student_data: transformedStudentData,
       uploaded_files: uploadedFileNames,
-      use_feedback: useFeedback // NEW: Add feedback flag
+      use_feedback: useFeedback,
+      // FIX: Add comprehensive AI behavior instructions
+      ai_instructions: {
+        response_style: 'comprehensive_educational',
+        behavior: 'proactive_teacher',
+        provide_step_by_step: true,
+        avoid_asking_questions: true,
+        assume_student_needs_full_explanation: true,
+        detailed_explanations: true,
+        minimum_response_length: 'extended',
+        think_deeply: true,
+        break_down_concepts: true,
+        provide_examples: true,
+        include_practice_problems: true,
+        anticipate_confusion: true,
+        teaching_mode: 'comprehensive',
+        never_ask_for_clarification: true,
+        provide_complete_answer: true
+      }
     };
 
     try {
@@ -276,7 +318,15 @@ class PythonApiClient {
       session_id: sessionId,
       query: query,
       history: history,
-      web_search_enabled: true // Always enable web search
+      web_search_enabled: true, // Always enable web search
+      // FIX: Add AI behavior instructions
+      ai_instructions: {
+        response_style: 'comprehensive',
+        provide_step_by_step: true,
+        avoid_questions: true,
+        detailed_explanations: true,
+        minimum_response_length: 'extended'
+      }
     }));
 
     // Add files if any
@@ -333,7 +383,10 @@ class PythonApiClient {
       prompt += assessmentData.customPrompt;
     }
     
-    return prompt || 'None.';
+    // FIX: Add comprehensive response instruction
+    prompt += ' Provide comprehensive, step-by-step explanations without asking questions. Assume the user needs complete information.';
+    
+    return prompt || 'Provide comprehensive, step-by-step explanations without asking questions.';
   }
 
   // Legacy method for backward compatibility
@@ -349,11 +402,14 @@ class PythonApiClient {
     const pythonSchema = {
       topic: imageData.topic,
       grade_level: imageData.gradeLevel || '8',
-      preferred_visual_type: imageData.preferred_visual_type, // This correctly maps visualType to preferred_visual_type
+      preferred_visual_type: imageData.preferred_visual_type,
       subject: imageData.subject,
       difficulty_flag: (imageData.difficultyFlag ? 'true' : 'false'),
       instructions: imageData.instructions,
       language: imageData.language || 'English',
+      // FIX: Add instruction for comprehensive response
+      response_mode: 'comprehensive',
+      detailed_description: true
     };
 
     console.log('Sending image generation request with schema:', pythonSchema);
@@ -368,12 +424,15 @@ class PythonApiClient {
   async runWebSearch(searchData) {
     const pythonSchema = {
       topic: searchData.topic,
-      grade_level: searchData.gradeLevel || '8', // Use auto-detected grade
+      grade_level: searchData.gradeLevel || '8',
       subject: searchData.subject,
-      content_type: searchData.contentType, // e.g., 'articles', 'videos'
+      content_type: searchData.contentType,
       language: searchData.language || 'English',
       comprehension: searchData.comprehension || 'intermediate',
       max_results: parseInt(searchData.maxResults),
+      // FIX: Add instruction for comprehensive response
+      response_mode: 'comprehensive',
+      detailed_summaries: true
     };
 
     return this.makeRequest('/web_search_endpoint', {
@@ -383,19 +442,22 @@ class PythonApiClient {
   }
 
   // Comics streaming: returns the raw fetch Response
-  async startComicsStream(comicsData, signal) { // FIX: Accept signal as an argument
+  async startComicsStream(comicsData, signal) {
     const url = `${this.baseUrl}/comics_stream_endpoint`;
     const payload = {
       instructions: comicsData.instructions,
-      grade_level: comicsData.gradeLevel || '8', // Correctly maps gradeLevel to grade_level
+      grade_level: comicsData.gradeLevel || '8',
       num_panels: parseInt(comicsData.numPanels),
       language: comicsData.language || 'English',
+      // FIX: Add instruction for comprehensive response
+      response_mode: 'comprehensive',
+      detailed_content: true
     };
     return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal, // FIX: Pass the signal to the fetch request
+      signal,
     });
   }
 
@@ -420,7 +482,10 @@ class PythonApiClient {
       student_details_with_reports: teacherData.students,
       generated_content_details: teacherData.content,
       feedback_data: teacherData.feedback,
-      learning_analytics: teacherData.analytics
+      learning_analytics: teacherData.analytics,
+      // FIX: Add instruction for comprehensive response
+      response_mode: 'comprehensive',
+      detailed_analysis: true
     };
 
     return this.makeRequest('/teacher_bulk_data_endpoint', {
@@ -480,7 +545,27 @@ class PythonApiClient {
       history: history,
       teacher_data: optimizedTeacherData,
       web_search_enabled: true,
-      uploaded_files: uploadedFiles
+      uploaded_files: uploadedFiles,
+      // FIX: Add comprehensive AI behavior instructions for teacher
+      ai_instructions: {
+        response_style: 'comprehensive_professional',
+        behavior: 'expert_advisor',
+        provide_step_by_step: true,
+        avoid_asking_questions: true,
+        assume_teacher_needs_full_explanation: true,
+        detailed_explanations: true,
+        minimum_response_length: 'extended',
+        think_deeply: true,
+        provide_actionable_insights: true,
+        include_data_analysis: true,
+        teaching_strategies: true,
+        anticipate_needs: true,
+        professional_mode: 'comprehensive',
+        never_ask_for_clarification: true,
+        provide_complete_answer: true,
+        include_best_practices: true,
+        pedagogical_reasoning: true
+      }
     };
 
     console.log('Starting optimized teacher chat:', {
@@ -606,6 +691,9 @@ class PythonApiClient {
       language: searchData.language || 'English',
       comprehension: searchData.comprehension || 'intermediate',
       max_results: parseInt(searchData.maxResults) || 5,
+      // FIX: Add instruction for comprehensive response
+      response_mode: 'comprehensive',
+      detailed_summaries: true
     };
 
     return this.makeRequest('/web_search_endpoint', {
@@ -661,7 +749,27 @@ class PythonApiClient {
           history: history,
           web_search_enabled: webSearchEnabled,
           student_data: studentData,
-          uploaded_files: uploadedFileNames
+          uploaded_files: uploadedFileNames,
+          // FIX: Add comprehensive AI behavior instructions
+          ai_instructions: {
+            response_style: 'comprehensive_educational',
+            behavior: 'proactive_tutor',
+            provide_step_by_step: true,
+            avoid_asking_questions: true,
+            assume_student_needs_full_explanation: true,
+            detailed_explanations: true,
+            minimum_response_length: 'extended',
+            think_deeply: true,
+            break_down_concepts: true,
+            provide_examples: true,
+            include_practice_problems: true,
+            anticipate_confusion: true,
+            teaching_mode: 'comprehensive',
+            never_ask_for_clarification: true,
+            provide_complete_answer: true,
+            encourage_learning: true,
+            scaffold_understanding: true
+          }
         }),
       });
       
