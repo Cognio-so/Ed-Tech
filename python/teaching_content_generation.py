@@ -208,7 +208,7 @@ async def run_generation_pipeline_async(config: dict):
         )
     if "multimedia suggestion" in additional_options:
         options_instructions.append(
-            "- **Multimedia Suggestions:** You must include a section with suggestions for relevant multimedia resources. This should include at least one recommended YouTube video (with a full URL) and a description of a relevant image or diagram (with a URL if possible). These suggestions should directly support the lesson topic."
+            "- **Multimedia Suggestions:** You must include a section with suggestions for relevant multimedia resources. This should include at least one recommended YouTube video (with a full URL). These suggestions should directly support the lesson topic."
         )
     
     config['additional_ai_options_instructions'] = "\n".join(options_instructions)
@@ -235,6 +235,7 @@ async def run_generation_pipeline_async(config: dict):
         client = qdrant_client.QdrantClient(
             url=os.getenv("QDRANT_URL"),
             api_key=os.getenv("QDRANT_API_KEY"),
+            timeout=120
         )
         vector_store = QdrantVectorStore(
             client=client,
@@ -285,14 +286,14 @@ async def run_generation_pipeline_async(config: dict):
                 content_type_ar = content_type_ar_map.get(config['content_type'], config['content_type'])
                 search_query = (
                     f"مصادر تعليمية تتضمن فيديوهات يوتيوب وصور لـ {config['grade']} في مادة {config['subject']} "
-                    f"لـ {content_type_ar} حول '{config['lesson_topic']}'"
+                    f"لـ {content_type_ar} حول '{config['lesson_topic']}' بلغة '{config['language']}'"
                 )
                 if config.get('learning_objective', '') != 'Not specified':
                     search_query += f" مع هدف التعلم: '{config['learning_objective']}'"
             else:  # Default to English
                 search_query = (
-                    f"Teaching resources with youtube videos and images for a {config['grade']} {config['subject']} "
-                    f"{config['content_type']} on '{config['lesson_topic']}'"
+                    f"Teaching resources with youtube videos for a {config['grade']} {config['subject']} "
+                    f"{config['content_type']} on '{config['lesson_topic']}' of language '{config['language']}'"
                 )
                 if config.get('learning_objective', '') != 'Not specified':
                     search_query += f" with the learning objective: '{config['learning_objective']}'"
