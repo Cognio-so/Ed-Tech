@@ -372,18 +372,18 @@ class TeacherAsyncRAGTutor:
         
         self.tools = [self.retriever_tool]
         
-        if self.config.web_search_enabled:
-            if os.getenv("PPLX_API_KEY"):
-                logging.info("Web search is enabled and PPLX_API_KEY is set.")
-                # Updated to use Perplexity 
-                websearch_tool = PerplexityWebSearchTool(
-                    max_results=5, 
-                    model="sonar", 
-                    include_links=True
-                ).get_tool()
-                self.tools.append(websearch_tool)
-            else:
-                logging.warning("Web search is enabled in config, but PPLX_API_KEY is not set. Web search will be disabled.")
+        # if self.config.web_search_enabled:
+        #     if os.getenv("PPLX_API_KEY"):
+        #         logging.info("Web search is enabled and PPLX_API_KEY is set.")
+        #         # Updated to use Perplexity 
+        #         websearch_tool = PerplexityWebSearchTool(
+        #             max_results=5, 
+        #             model="sonar", 
+        #             include_links=True
+        #         ).get_tool()
+        #         self.tools.append(websearch_tool)
+        #     else:
+        #         logging.warning("Web search is enabled in config, but PPLX_API_KEY is not set. Web search will be disabled.")
                 
         self.tool_map = {tool.name: tool for tool in self.tools}
         self.llm_with_tools = self.llm.bind_tools(self.tools)
@@ -493,31 +493,31 @@ class TeacherAsyncRAGTutor:
         self.config.web_search_enabled = web_search_enabled
         logging.info(f"Updating web search status to: {self.config.web_search_enabled}")
 
-        # Check if the web search tool is currently in our list of tools
-        websearch_tool_present = any(tool.name == 'perplexity_search' for tool in self.tools)
+        # # Check if the web search tool is currently in our list of tools
+        # websearch_tool_present = any(tool.name == 'perplexity_search' for tool in self.tools)
 
-        if self.config.web_search_enabled and not websearch_tool_present:
-            if os.getenv("PPLX_API_KEY"):
-                logging.info("Enabling and adding web search tool.")
-                # We instantiate the tool using the class from websearch_code.py
-                websearch_tool = PerplexityWebSearchTool(
-                    max_results=5, 
-                    model="sonar", 
-                    include_links=True
-                ).get_tool()
-                self.tools.append(websearch_tool)
-            else:
-                logging.warning("Cannot enable web search: PPLX_API_KEY is not set.")
-                self.config.web_search_enabled = False # Ensure config reflects reality
+        # if self.config.web_search_enabled and not websearch_tool_present:
+        #     if os.getenv("PPLX_API_KEY"):
+        #         logging.info("Enabling and adding web search tool.")
+        #         # We instantiate the tool using the class from websearch_code.py
+        #         websearch_tool = PerplexityWebSearchTool(
+        #             max_results=5, 
+        #             model="sonar", 
+        #             include_links=True
+        #         ).get_tool()
+        #         self.tools.append(websearch_tool)
+        #     else:
+        #         logging.warning("Cannot enable web search: PPLX_API_KEY is not set.")
+        #         self.config.web_search_enabled = False # Ensure config reflects reality
 
-        elif not self.config.web_search_enabled and websearch_tool_present:
-            logging.info("Disabling and removing web search tool.")
-            self.tools = [tool for tool in self.tools if tool.name != 'perplexity_search']
+        # elif not self.config.web_search_enabled :
+        #     logging.info("Disabling and removing web search tool.")
+            # self.tools = [tool for tool in self.tools if tool.name != 'perplexity_search']
 
         # CRITICAL: Re-create the tool map and re-bind the tools to the LLM
-        self.tool_map = {tool.name: tool for tool in self.tools}
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
-        logging.info(f"Tools updated. Current tools: {[tool.name for tool in self.tools]}")
+        # self.tool_map = {tool.name: tool for tool in self.tools}
+        # self.llm_with_tools = self.llm.bind_tools(self.tools)
+        # logging.info(f"Tools updated. Current tools: {[tool.name for tool in self.tools]}")
 
     def _is_greeting_or_short_response(self, query: str) -> bool:
         """Checks if the query is a simple greeting or a short, common response."""
@@ -863,10 +863,10 @@ class TeacherAsyncRAGTutor:
         else:
             prompt_notes.append("- **Knowledge Base**: NOT AVAILABLE. Do not use the 'knowledge_base_retriever' tool.")
 
-        if self.config.web_search_enabled:
-            prompt_notes.append("- **Web Search**: ENABLED. You can use the 'websearch_tool' tool for web searches.")
-        else:
-            prompt_notes.append("- **Web Search**: DISABLED.")
+        # if self.config.web_search_enabled:
+        #     prompt_notes.append("- **Web Search**: ENABLED. You can use the 'websearch_tool' tool for web searches.")
+        # else:
+        #     prompt_notes.append("- **Web Search**: DISABLED.")
         
         if prompt_notes:
             system_prompt_text += "\n\n**Current Session Status:**\n" + "\n".join(prompt_notes)
@@ -1016,6 +1016,7 @@ class TeacherAsyncRAGTutor:
             # Get the stream writer to send custom data
             writer = get_stream_writer()
             
+            full_response = ""
             # Stream each chunk as it comes in directly to the output stream
             # MODIFICATION: Pass history to the agent executor
             async for chunk in self._agent_executor_stream_async(
@@ -1027,10 +1028,69 @@ class TeacherAsyncRAGTutor:
             ):
                 # Stream each chunk directly using the writer
                 writer(chunk)
+                full_response += chunk
             
             # Return an empty AI message - the content has already been streamed
-            return {"messages": [AIMessage(content="")]}
-        
+            return {"messages": [AIMessage(content=full_response)]}
+
+
+        async def websearch_node(state: OrchestratorState):
+            """
+            Perform a web search for relevant educational videos based on the LLM's generated answer.
+            """
+            writer = get_stream_writer()
+            last_ai_message = state["messages"][-1]
+
+            # Ensure it's an AI message and not empty
+            if not isinstance(last_ai_message, AIMessage) or not last_ai_message.content:
+                logging.info("No AI response content to base video search on. Skipping websearch.")
+                return {}
+
+            llm_response_content = last_ai_message.content
+            student_details = state.get("student_details")
+
+            if self.config.web_search_enabled and os.getenv("PPLX_API_KEY"):
+                try:
+                    # Use an LLM to generate a dynamic search query
+                    logging.info("Generating dynamic search query for videos based on LLM response.")
+                    
+                    # Define the prompt for generating the search query
+                    search_query_prompt = ChatPromptTemplate.from_messages([
+                        ("system", "You are an expert at creating concise and effective search queries for finding educational videos. Based on the following text, generate a short search query (5-15 words) that would find relevant educational videos on platforms like YouTube. Respond with ONLY the search query text and nothing else. Provide video in same language as the student."),
+                        ("human", "{text_content}")
+                    ])
+                    
+                    # Create and invoke the chain
+                    search_query_chain = search_query_prompt | self.llm | StrOutputParser()
+                    search_query = await search_query_chain.ainvoke({"text_content": llm_response_content})
+                    logging.info(f"Dynamically generated video search query: '{search_query}'")
+
+                    # Add student details to the dynamic query
+                    if student_details:
+                        grade = student_details.get("grade", "")
+                        subject = student_details.get("subject", "")
+                        if grade:
+                            search_query += f" for grade {grade}"
+                        if subject:
+                             search_query += f" {subject}"
+                    
+                    logging.info(f"Performing web search for videos with final query: '{search_query}'")
+                    
+                    websearch_tool = PerplexityWebSearchTool(max_results=3, model="sonar", include_links=True)
+                    search_results = await websearch_tool.search(search_query)
+                    
+                    if search_results and search_results[0].get("video_urls"):
+                        video_urls = search_results[0]["video_urls"]
+                        formatted_videos = "\n\n**Here are some educational videos that might help:**\n"
+                        for video in video_urls:
+                            formatted_videos += f"- **{video['title']}**: {video['url']}\n"
+                        writer(formatted_videos)
+                except Exception as e:
+                    logging.error(f"Error during intelligent web search for videos: {e}")
+            
+            return {}
+
+
         # Define the conditional edge function
         def route_by_action(state: OrchestratorState):
             """Route to the next node based on the action determined by the router."""
@@ -1046,14 +1106,15 @@ class TeacherAsyncRAGTutor:
         # Add the nodes
         workflow.add_node("router", router_node)
         workflow.add_node("llm_with_tools", llm_with_tools_node)
+        workflow.add_node("websearch", websearch_node)
         workflow.add_node("image_generator", image_generator_node)
         
         # Add edges
         workflow.add_edge(START, "router")
         workflow.add_conditional_edges("router", route_by_action)
-        # workflow.add_edge("llm_with_tools", END)
+        workflow.add_edge("llm_with_tools", "websearch")
+        workflow.add_edge("websearch", END)
         workflow.add_edge("image_generator", END)
-        workflow.add_edge("llm_with_tools", END)
         
         self.graph = workflow.compile()
         logging.info("LangGraph orchestrator workflow created successfully.")

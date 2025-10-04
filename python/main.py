@@ -159,6 +159,7 @@ class StudentData(BaseModel):
     lessons: Optional[List[Dict[str, Any]]] = Field([], description="Student's lessons")
     resources: Optional[List[Dict[str, Any]]] = Field([], description="Student's learning resources")
     analytics: Optional[List[Dict[str, Any]]] = Field([], description="Student's learning analytics")
+    teacher_feedback: Optional[List[Dict[str, Any]]] = Field([], description="Feedback provided by the teacher for this student")
 
     @validator('achievements', pre=True)
     def validate_achievements(cls, v):
@@ -215,7 +216,7 @@ async def chatbot_endpoint(request: ChatbotRequest):
         teacher_feedback = None
         if request.use_feedback and request.student_data:
             teacher_feedback = request.student_data.model_dump().get('teacher_feedback')
-            logger.info(f"Using teacher feedback: {len(teacher_feedback) if teacher_feedback else 0} items")
+            logger.info(f"Using teacher feedback: {teacher_feedback} items")
         
         if request.student_data:
             student_data = request.student_data
