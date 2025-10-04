@@ -87,12 +87,15 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
                                line.match(/^Question/) || // English "Question"
                                line.match(/^\*\*\d+\./) || // **1. Question format
                                line.match(/^\*\*[A-Z]\./) || // **A. Question format
-                               line.match(/^\*\*[أ-ي]\./); // **Arabic. Question format
+                               line.match(/^\*\*[أ-ي]\./) || // **Arabic. Question format
+                               line.match(/^MCQ\s*$/) || // MCQ header
+                               line.match(/^اختيار\s*من\s*متعدد\s*$/); // Arabic MCQ header
 
         if (isQuestionStart) {
           // Save previous question if exists
           if (currentQuestion) {
             questions.push(currentQuestion);
+            console.log(`Saved question ${currentQuestion.number} with ${currentQuestion.options.length} options`);
           }
           
           // Start new question - handle markdown bold format
@@ -133,6 +136,8 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
             options: []
           };
           questionCounter++;
+          
+          console.log(`Started new question ${questionNumber}: "${cleanQuestionText}"`);
 
           // Check if this is a True/False question
           if (cleanQuestionText.toLowerCase().includes('true or false') || 
@@ -156,13 +161,25 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
                      cleanQuestionText.toLowerCase().includes('prove that') ||
                      cleanQuestionText.includes('اشرح') ||
                      cleanQuestionText.includes('وضح') ||
-                     cleanQuestionText.includes('ما المقصود')) {
+                     cleanQuestionText.includes('ما المقصود') ||
+                     cleanQuestionText.includes('ما هو الفرق') ||
+                     cleanQuestionText.includes('كيف يمكن') ||
+                     cleanQuestionText.includes('ما هو') ||
+                     cleanQuestionText.includes('ما هي') ||
+                     cleanQuestionText.includes('ما الذي') ||
+                     cleanQuestionText.includes('ما الذي') ||
+                     cleanQuestionText.includes('لماذا') ||
+                     cleanQuestionText.includes('متى') ||
+                     cleanQuestionText.includes('أين') ||
+                     cleanQuestionText.includes('من') ||
+                     cleanQuestionText.includes('أي') ||
+                     cleanQuestionText.includes('كيف')) {
             currentQuestion.type = 'short_answer';
           } else {
             currentQuestion.type = 'mcq';
           }
         } else if (currentQuestion) {
-          // FIXED: Handle multiple option formats
+          // FIXED: Handle multiple option formats - Enhanced patterns with better debugging
           const optionPatterns = [
             /^[A-D]\)/,           // A), B), C), D)
             /^[A-D]\./,           // A., B., C., D.
@@ -179,16 +196,53 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
             /^-\s/,               // - (dash with space)
             /^\*\s/,              // * (asterisk with space)
             /^•\s/,               // • (bullet with space)
+            /^أ\)/,               // Arabic أ)
+            /^ب\)/,               // Arabic ب)
+            /^ج\)/,               // Arabic ج)
+            /^د\)/,               // Arabic د)
+            /^أ\./,               // Arabic أ.
+            /^ب\./,               // Arabic ب.
+            /^ج\./,               // Arabic ج.
+            /^د\./,               // Arabic د.
+            /^a\)/i,              // a), b), c), d) (case insensitive)
+            /^b\)/i,              // b)
+            /^c\)/i,              // c)
+            /^d\)/i,              // d)
+            /^a\./i,              // a., b., c., d. (case insensitive)
+            /^b\./i,              // b.
+            /^c\./i,              // c.
+            /^d\./i,              // d.
           ];
 
           const isOption = optionPatterns.some(pattern => pattern.test(line));
           
+          // Debug logging for option detection
+          if (currentQuestion.type === 'mcq' && line.trim()) {
+            console.log(`Checking line for MCQ options: "${line}"`);
+            console.log(`Is option: ${isOption}`);
+            console.log(`Current question options count: ${currentQuestion.options.length}`);
+          }
+          
           if (isOption) {
             // This is an option for the current MCQ question
             currentQuestion.options.push(line);
+            console.log(`Added option: "${line}" to question ${currentQuestion.number}`);
           } else if (currentQuestion.type === 'short_answer' && line && !line.match(/^(\d+\.|[A-Z]\.|[أ-ي]\.|السؤال|Question)/)) {
             // This might be additional text for the short answer question
             currentQuestion.text += ' ' + line;
+          } else if (currentQuestion.type === 'mcq' && line.trim() && !line.match(/^(\d+\.|[A-Z]\.|[أ-ي]\.|السؤال|Question|MCQ|اختيار)/)) {
+            // If it's an MCQ question and we haven't found options yet, this might be an option without standard formatting
+            // Try to detect if this looks like an option (starts with common option indicators)
+            const looksLikeOption = /^[a-zA-Zأ-ي]\s/.test(line) || 
+                                   /^[a-zA-Zأ-ي]:/.test(line) ||
+                                   /^[a-zA-Zأ-ي]\./.test(line) ||
+                                   /^[a-zA-Zأ-ي]\)/.test(line) ||
+                                   line.trim().length < 100; // Short lines might be options
+            
+            if (looksLikeOption && currentQuestion.options.length < 4) {
+              currentQuestion.options.push(line);
+              console.log(`Added potential option: "${line}" to question ${currentQuestion.number}`);
+            }
           }
         }
       }
@@ -197,7 +251,17 @@ const InteractiveAssessment = ({ assessment, onAnswerChange, studentAnswers, onS
     // Don't forget the last question
     if (currentQuestion) {
       questions.push(currentQuestion);
+      console.log(`Saved final question ${currentQuestion.number} with ${currentQuestion.options.length} options`);
     }
+
+    // Debug: Log all parsed questions
+    console.log('=== FINAL PARSED QUESTIONS ===');
+    questions.forEach((q, index) => {
+      console.log(`Question ${q.number}: "${q.text}" (${q.type}) - ${q.options.length} options`);
+      if (q.options.length > 0) {
+        console.log(`  Options:`, q.options);
+      }
+    });
 
     // If no questions were found with the above logic, try to extract content as a single question
     if (questions.length === 0 && content.trim()) {
@@ -1208,61 +1272,53 @@ export default function StartLearning({
         );
       
       case 'comic':
+        console.log('=== COMIC CASE ENTERED ===');
+        console.log('Content:', content);
+        
         // Check if this is a comic lesson
         if (content.resourceType === 'comic' || content.contentType === 'comic') {
-          // Use the actual panels structure if available
-          let comicPanels = [];
+          console.log('=== COMIC CONDITION PASSED ===');
           
-          if (content.panels && Array.isArray(content.panels) && content.panels.length > 0) {
-            // Use the actual panels structure with text and images
-            comicPanels = content.panels.map((panel, index) => ({
-              index: index + 1,
-              url: panel.imageUrl || panel.cloudinaryPublicId || (panel.imageBase64 ? `data:image/png;base64,${panel.imageBase64}` : null),
-              text: panel.prompt || `Panel ${index + 1} description not available`,
-              panelNumber: panel.panelNumber || index + 1
-            })).filter(panel => panel.url); // Only include panels with valid images
-          } else {
-            // Fallback: collect images from other sources but without text
-            let comicImages = [];
-            const seenUrls = new Set();
-            
-            const addUniqueImages = (images) => {
-              if (Array.isArray(images)) {
-                images.forEach(img => {
-                  if (img && !seenUrls.has(img)) {
-                    seenUrls.add(img);
-                    comicImages.push(img);
-                  }
-                });
-              }
-            };
-            
-            // Check for imageUrls array (Cloudinary URLs)
-            if (content.imageUrls && Array.isArray(content.imageUrls) && content.imageUrls.length > 0) {
-              addUniqueImages(content.imageUrls);
-            }
-            
-            // Check for images array
-            if (content.images && Array.isArray(content.images) && content.images.length > 0) {
-              addUniqueImages(content.images);
-            }
-            
-            // Check for single imageUrl field
-            if (content.imageUrl && !seenUrls.has(content.imageUrl)) {
-              seenUrls.add(content.imageUrl);
-              comicImages.push(content.imageUrl);
-            }
-            
-            // Convert to panel format
-            comicPanels = comicImages.map((url, i) => ({
-              index: i + 1,
-              url: url,
-              text: `Panel ${i + 1} - No description available`,
-              panelNumber: i + 1
-            }));
+          // Extract comic data based on the exact database schema
+          let comicImages = [];
+          let comicTexts = [];
+          
+          // Extract images from imageUrls array (from database schema)
+          if (content.imageUrls && Array.isArray(content.imageUrls) && content.imageUrls.length > 0) {
+            comicImages = content.imageUrls.filter(Boolean);
+            console.log('Extracted from imageUrls:', comicImages);
           }
           
-          if (comicPanels.length === 0) {
+          // Extract texts from panelTexts array (from database schema)
+          if (content.panelTexts && Array.isArray(content.panelTexts) && content.panelTexts.length > 0) {
+            comicTexts = content.panelTexts.map((panelText, index) => {
+              // Handle the exact database schema: {index: 1, text: "..."}
+              if (panelText && panelText.text) {
+                return panelText.text;
+              }
+              return `Panel ${index + 1} text not available`;
+            });
+            console.log('Extracted comicTexts:', comicTexts);
+          }
+          
+          // Fallback: try cloudinaryPublicIds if imageUrls is empty
+          if (comicImages.length === 0 && content.cloudinaryPublicIds && Array.isArray(content.cloudinaryPublicIds) && content.cloudinaryPublicIds.length > 0) {
+            comicImages = content.cloudinaryPublicIds
+              .filter(Boolean)
+              .map(id => {
+                if (id.startsWith('http')) {
+                  return id;
+                }
+                return `https://res.cloudinary.com/demo/image/upload/${id}`;
+              });
+            console.log('Extracted from cloudinaryPublicIds:', comicImages);
+          }
+          
+          console.log('Final comicImages:', comicImages);
+          console.log('Final comicTexts:', comicTexts);
+          
+          if (comicImages.length === 0) {
+            console.log('No comic images found, showing fallback');
             return (
               <div className="text-center py-8 text-foreground h-full flex items-center justify-center">
                 <div>
@@ -1273,13 +1329,14 @@ export default function StartLearning({
             );
           }
 
+          console.log('Rendering comic with', comicImages.length, 'images');
           return (
             <div className="h-full flex flex-col">
               <div className="text-center mb-4 flex-shrink-0">
                 <h3 className="text-lg font-semibold">{content.title}</h3>
-                <p className="text-sm text-muted-foreground">{content.topic || content.instruction || content.description}</p>
+                <p className="text-sm text-muted-foreground">{content.topic || content.instruction || content.lessonDescription}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {comicPanels.length} panel{comicPanels.length !== 1 ? 's' : ''}
+                  {comicImages.length} panel{comicImages.length !== 1 ? 's' : ''}
                 </p>
                 {content.comicType && (
                   <Badge variant="outline" className="mt-2">
@@ -1289,7 +1346,11 @@ export default function StartLearning({
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <CarouselWithControls
-                  items={comicPanels}
+                  items={comicImages.map((url, i) => ({ 
+                    url, 
+                    index: i + 1,
+                    text: comicTexts[i] || content.instruction || content.lessonDescription || content.topic || `Panel ${i + 1} - No description available`
+                  }))}
                   className="h-full"
                   renderItem={(panel) => (
                     <div className="rounded-lg border overflow-hidden bg-gradient-to-br from-background to-muted/10 flex flex-col h-full">
@@ -1310,9 +1371,6 @@ export default function StartLearning({
                                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                                 </svg>
                                 <p class="text-sm">Panel ${panel.index} failed to load</p>
-                                <p class="text-xs text-muted-foreground mt-2">
-                                  URL: ${panel.url ? panel.url.substring(0, 50) + '...' : 'Not provided'}
-                                </p>
                               </div>
                             `;
                             e.target.parentNode.appendChild(fallbackDiv);
@@ -1320,9 +1378,14 @@ export default function StartLearning({
                         />
                       </div>
                       
-                      {/* Panel Text */}
-                      <div className="p-3 bg-muted/50 border-t">
-                        <p className="text-sm text-foreground leading-relaxed">
+                      {/* Panel Text - Using the exact database schema */}
+                      <div className="bg-muted/50 border-t p-4 flex-shrink-0">
+                        <div className="text-center mb-3">
+                          <Badge variant="secondary" className="text-sm px-3 py-1">
+                            Panel {panel.index}
+                          </Badge>
+                        </div>
+                        <p className="text-base text-foreground leading-relaxed text-center">
                           {panel.text}
                         </p>
                       </div>
@@ -1347,6 +1410,8 @@ export default function StartLearning({
               </div>
             </div>
           );
+        } else {
+          console.log('=== COMIC CONDITION FAILED ===');
         }
         
         // Fallback for non-comic content

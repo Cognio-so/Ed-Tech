@@ -105,6 +105,7 @@ export async function GET(request) {
             difficultyFlag: 1,
             cloudinaryPublicId: 1,
             cloudinaryPublicIds: 1,
+            panelTexts: 1,  // ADD THIS LINE - This was missing!
             template: 1,
             verbosity: 1,
             includeImages: 1,
@@ -223,6 +224,7 @@ export async function GET(request) {
         numPanels: lesson.numPanels,
         comicType: lesson.comicType,
         instruction: lesson.instruction,
+        panelTexts: lesson.panelTexts,  // ADD THIS LINE - This was missing!
         imageUrl: lesson.imageUrl,
         imageBase64: lesson.imageBase64,
         visualType: lesson.visualType,
