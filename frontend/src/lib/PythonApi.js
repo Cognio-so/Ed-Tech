@@ -148,7 +148,7 @@ class PythonApiClient {
       length: parseInt(contentData.slideCount) || 10,
       language: contentData.language === "arabic" ? "ARABIC" : "ENGLISH",
       fetch_images: true,
-      verbosity: 'detailed', // FIX: Changed from 'standard' to 'detailed'
+      verbosity: 'text-heavy', // FIXED: Changed from 'detailed' to 'text-heavy' to match backend schema
       template: contentData.template || 'default',
       // FIX: Add instruction for comprehensive response
       response_mode: 'comprehensive',

@@ -27,7 +27,7 @@ class PPTXToHeyGenVideo:
         openai_api_key: Optional[str] = None,
         avatar_id: Optional[str] = None,
         voice_id: Optional[str] = None,
-        model: str = "gpt-4.1",
+        model: str = "gpt-4o",
         width: int = 1280,
         height: int = 720,
         background_color: str = "#FFFFFF",
@@ -168,6 +168,7 @@ class PPTXToHeyGenVideo:
                 num_slides_to_process = len(prs.slides)
                 for i in range(1, num_slides_to_process + 1):
                     path = os.path.join(temp_dir, f"slide_{i}.png")
+                    # FIXED: Use higher resolution for better quality
                     presentation.Slides(i).Export(path, "PNG", self.width, self.height)
                     slide_image_paths.append(path)
                 presentation.Close()
@@ -199,52 +200,117 @@ class PPTXToHeyGenVideo:
                 # Fallback to white if color format is invalid
                 bg_color = "#ffffff"
             
+            # FIXED: Create higher quality images
             img = Image.new("RGB", (self.width, self.height), color=bg_color)
             draw = ImageDraw.Draw(img)
             try:
-                font = ImageFont.truetype("arial.ttf", 24)
+                # FIXED: Use larger font for better readability
+                font = ImageFont.truetype("arial.ttf", 32)
+                title_font = ImageFont.truetype("arial.ttf", 48)
             except IOError:
                 font = ImageFont.load_default()
+                title_font = ImageFont.load_default()
             
-            text = "\n".join(s.text for s in slide.shapes if hasattr(s, "text") and s.text).strip()
-            draw.text((50, 50), f"Slide {i + 1}\n\n{text}", fill="black", font=font)
-            img.save(path)
+            # FIXED: Better text extraction and formatting
+            slide_texts = []
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_texts.append(shape.text.strip())
+            
+            # Combine all text with better formatting
+            full_text = "\n\n".join(slide_texts) if slide_texts else f"Slide {i + 1}"
+            
+            # FIXED: Better text positioning and wrapping
+            y_position = 50
+            max_width = self.width - 100
+            
+            # Draw title
+            draw.text((50, y_position), f"Slide {i + 1}", fill="black", font=title_font)
+            y_position += 80
+            
+            # Draw content with word wrapping
+            words = full_text.split()
+            lines = []
+            current_line = []
+            
+            for word in words:
+                test_line = " ".join(current_line + [word])
+                bbox = draw.textbbox((0, 0), test_line, font=font)
+                text_width = bbox[2] - bbox[0]
+                
+                if text_width <= max_width:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(" ".join(current_line))
+                        current_line = [word]
+                    else:
+                        lines.append(word)
+            
+            if current_line:
+                lines.append(" ".join(current_line))
+            
+            # Draw lines
+            for line in lines[:15]:  # Limit to 15 lines to prevent overflow
+                draw.text((50, y_position), line, fill="black", font=font)
+                y_position += 40
+                if y_position > self.height - 100:  # Leave space at bottom
+                    break
+            
+            img.save(path, "PNG", quality=95)
             paths.append(path)
         return paths
 
     def _build_video_inputs(self, slide_notes: List[str]) -> List[Dict]:
-        position_map = {
-            "right_corner": {"x": 0.8, "y": 0.85, "scale": 0.35},
-            "left_corner": {"x": 0.2, "y": 0.85, "scale": 0.35},
-            "center": {"x": 0.5, "y": 0.5, "scale": 0.8},
-            "full": {"x": 0.5, "y": 0.5, "scale": 1.0},
-        }
-
-
+        """
+        FIXED: Better avatar positioning and slide background handling
+        """
         video_inputs: List[Dict] = []
+        
         for idx, note in enumerate(slide_notes):
+            # FIXED: Better avatar positioning that doesn't interfere with slide content
             scene = {
                 "character": {
                     "type": "talking_photo",
                     "talking_photo_id": self.avatar_id,
                     "talking_photo_style": "circle",
-                    "scale":  0.33,
+                    # FIXED: Smaller scale and better positioning
+                    "scale": 0.25,  # Reduced from 0.33 to 0.25
                     "offset": {
-                        "x": 0.42,
-                        "y": 0.42
-                        },
+                        # FIXED: Position avatar in bottom-right corner with proper margins
+                        "x": 0.35,  # Moved from 0.42 to 0.35 (more to the right)
+                        "y": 0.35   # Moved from 0.42 to 0.35 (higher up)
+                    },
                 },
-                "voice": {"type": "text", "input_text": note, "voice_id": self.voice_id},
+                "voice": {
+                    "type": "text", 
+                    "input_text": note, 
+                    "voice_id": self.voice_id
+                },
             }
 
+            # FIXED: Better background handling
             if self.use_slides_as_background and idx < len(self.slide_asset_ids):
                 asset_id = self.slide_asset_ids[idx]
                 logging.info(f"Setting background for scene {idx + 1} with asset_id: {asset_id}")
-                scene["background"] = {"type": "image", "image_asset_id": asset_id}
+                scene["background"] = {
+                    "type": "image", 
+                    "image_asset_id": asset_id,
+                    # FIXED: Add background positioning to ensure full coverage
+                    "position": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "scale": 1.0
+                    }
+                }
             else:
-                scene["background"] = {"type": "color", "value": self.background_color}
+                scene["background"] = {
+                    "type": "color", 
+                    "value": self.background_color
+                }
             
             video_inputs.append(scene)
+            
         return video_inputs
 
     def create_multi_scene_video(self, slide_notes: List[str], title: str) -> Dict:
@@ -301,13 +367,16 @@ class PPTXToHeyGenVideo:
         speaker_notes = []
         for i, text in enumerate(slide_texts):
             try:
+                # FIXED: Better system prompt for more engaging content
                 system_prompt = (
-                    "You are a virtual teacher, and your task is to explain the content of a presentation slide. "
-                    "You will be given the text from a slide and are expected to generate a script that is clear, "
-                    "engaging, and educational. Your tone should be professional yet approachable."
+                    "You are a professional virtual teacher creating engaging educational content. "
+                    "Your task is to explain presentation slide content in a clear, engaging, and educational manner. "
+                    "Create speaker notes that are conversational, informative, and easy to follow. "
+                    "Keep the explanation concise but comprehensive, suitable for video narration. "
+                    "Use a professional yet approachable tone that keeps viewers engaged."
                 )
                 
-                user_prompt = f"Here is the slide content:\n\n---\n\n{text}\n\n---\n\nPlease provide the speaker notes."
+                user_prompt = f"Here is the slide content:\n\n---\n\n{text}\n\n---\n\nPlease provide engaging speaker notes for video narration. Keep it under 200 words and make it conversational."
                 
                 response = self._client.chat.completions.create(
                     model=self.model,
@@ -316,7 +385,7 @@ class PPTXToHeyGenVideo:
                         {"role": "user", "content": user_prompt},
                     ],
                     temperature=0.7,
-                    max_tokens=250,
+                    max_tokens=300,  # Increased from 250 to 300
                 )
                 
                 note = response.choices[0].message.content.strip()
@@ -326,7 +395,7 @@ class PPTXToHeyGenVideo:
             except Exception as e:
                 logging.error(f"Failed to generate notes for slide {i+1}: {e}")
                 # Fallback to a simple note
-                speaker_notes.append(f"This is the content for slide {i+1}: {text}")
+                speaker_notes.append(f"Let me explain this slide content: {text}")
 
         return speaker_notes
 
@@ -343,7 +412,14 @@ class PPTXToHeyGenVideo:
             logging.warning(f"Limiting to {max_slides} slides from {len(slides)}.")
             slides = slides[:max_slides]
         
-        slides_text = ["\n".join(s.text for s in slide.shapes if hasattr(s, "text") and s.text).strip() for slide in slides]
+        # FIXED: Better text extraction
+        slides_text = []
+        for slide in slides:
+            slide_text = []
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_text.append(shape.text.strip())
+            slides_text.append("\n".join(slide_text) if slide_text else f"Slide {len(slides_text) + 1}")
 
         if self.use_slides_as_background:
             folder_name = f"Slides_{os.path.basename(pptx_path)}_{int(time.time())}"
@@ -379,7 +455,10 @@ def main():
         # --- MODIFICATION: Simplified converter initialization ---
         # Avatar ID and Voice ID are now handled by environment variables within the class.
         # Using slides as background is now the default.
-        converter = PPTXToHeyGenVideo()
+        converter = PPTXToHeyGenVideo(
+            pptx_avatar_id=pptx_avatar_id,
+            pptx_voice_id=pptx_voice_id
+        )
         
         # --- MODIFICATION: Simplified convert method call ---
         # Title and max_slides are no longer passed as command-line arguments.

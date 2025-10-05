@@ -577,7 +577,7 @@ export async function saveVoiceCoachConversation(formData) {
     const { db } = await connectToDatabase();
     const userId = new ObjectId(session.user.id);
 
-    await db.collection('teacherConversations').insertOne({
+    await db.collection('teacher_conversations').insertOne({
       sessionId: sessionId,
       teacherId: userId.toString(),
       messages: messages,
@@ -632,7 +632,7 @@ export async function getVoiceCoachConversationHistory(formData) {
     }
 
     // Get conversations with pagination
-    const conversations = await db.collection('teacherConversations')
+    const conversations = await db.collection('teacher_conversations')
       .find(query)
       .sort({ 'metadata.lastMessageAt': -1 })
       .skip((page - 1) * limit)
@@ -640,7 +640,7 @@ export async function getVoiceCoachConversationHistory(formData) {
       .toArray();
 
     // Get total count for pagination
-    const totalCount = await db.collection('teacherConversations')
+    const totalCount = await db.collection('teacher_conversations')
       .countDocuments(query);
 
     // Serialize the data
@@ -705,7 +705,7 @@ export async function getVoiceCoachConversation(formData) {
 
     const { db } = await connectToDatabase();
     
-    const conversation = await db.collection('teacherConversations')
+    const conversation = await db.collection('teacher_conversations')
       .findOne({ 
         _id: new ObjectId(conversationId),
         teacherId: new ObjectId(session.user.id)
@@ -789,7 +789,7 @@ export async function deleteVoiceCoachConversation(formData) {
 
     const { db } = await connectToDatabase();
     
-    const result = await db.collection('teacherConversations')
+    const result = await db.collection('teacher_conversations')
       .deleteOne({ 
         _id: new ObjectId(conversationId),
         teacherId: new ObjectId(session.user.id)
@@ -845,7 +845,7 @@ export async function updateVoiceCoachConversationTitle(formData) {
 
     const { db } = await connectToDatabase();
     
-    const result = await db.collection('teacherConversations')
+    const result = await db.collection('teacher_conversations')
       .updateOne(
         { 
           _id: new ObjectId(conversationId),
@@ -953,7 +953,7 @@ export async function migrateConversations() {
     const { db } = await connectToDatabase();
     
     // Find conversations without teacherId
-    const conversationsWithoutTeacherId = await db.collection('teacherConversations')
+    const conversationsWithoutTeacherId = await db.collection('teacher_conversations')
       .find({ teacherId: { $exists: false } })
       .toArray();
 
@@ -968,7 +968,7 @@ export async function migrateConversations() {
     }
 
     // Update all conversations without teacherId to belong to current teacher
-    const result = await db.collection('teacherConversations')
+    const result = await db.collection('teacher_conversations')
       .updateMany(
         { teacherId: { $exists: false } },
         { 
