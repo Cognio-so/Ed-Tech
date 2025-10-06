@@ -155,6 +155,78 @@ export async function getAllLibraryContent() {
   }
 }
 
+// NEW: Get curriculum data for grade-subject pairs
+export async function getCurriculumData() {
+  try {
+    const { db } = await connectToDatabase();
+    const curriculumCollection = db.collection("curriculum");
+    
+    // Fetch all curriculum documents
+    const curriculumDocs = await curriculumCollection.find({}).toArray();
+    
+    // Create grade-subject pairs from curriculum
+    const gradeSubjectPairs = [];
+    const gradesSet = new Set();
+    const subjectsSet = new Set();
+    
+    curriculumDocs.forEach(doc => {
+      if (doc.subject && doc.subject.trim() && doc.grade && doc.grade.trim()) {
+        const grade = doc.grade.trim();
+        const subject = doc.subject.trim();
+        
+        gradesSet.add(grade);
+        subjectsSet.add(subject);
+        
+        // Create grade-subject pair
+        const pairId = `${grade}_${subject}`;
+        if (!gradeSubjectPairs.find(pair => pair.id === pairId)) {
+          gradeSubjectPairs.push({
+            id: pairId,
+            grade: grade,
+            subject: subject,
+            displayName: `${grade} (${subject})`,
+            createdAt: new Date('2024-01-01')
+          });
+        }
+      }
+    });
+    
+    // Convert sets to arrays for backward compatibility
+    const subjects = Array.from(subjectsSet).map((subject, index) => ({
+      id: `subject_${index}`,
+      name: subject,
+      createdAt: new Date('2024-01-01')
+    })).sort((a, b) => a.name.localeCompare(b.name));
+    
+    const grades = Array.from(gradesSet).map((grade, index) => ({
+      id: `grade_${index}`,
+      name: grade,
+      createdAt: new Date('2024-01-01')
+    })).sort((a, b) => a.name.localeCompare(b.name));
+    
+    return {
+      success: true,
+      subjects,
+      grades,
+      gradeSubjectPairs: gradeSubjectPairs.sort((a, b) => {
+        // Sort by grade first, then by subject
+        const gradeCompare = a.grade.localeCompare(b.grade);
+        if (gradeCompare !== 0) return gradeCompare;
+        return a.subject.localeCompare(b.subject);
+      })
+    };
+  } catch (error) {
+    console.error("Error fetching curriculum data:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to fetch curriculum data",
+      subjects: [],
+      grades: [],
+      gradeSubjectPairs: []
+    };
+  }
+}
+
 // Delete content by type and ID
 export async function deleteLibraryContent(contentId, contentType) {
   try {

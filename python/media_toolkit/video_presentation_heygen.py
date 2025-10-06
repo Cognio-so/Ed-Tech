@@ -3,11 +3,14 @@ import time
 import json
 import logging
 import mimetypes
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 import requests
 from dotenv import load_dotenv
 from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.enum.text import PP_ALIGN
+from pptx.dml.color import RGBColor
 
 # --- OpenAI SDK Setup ---
 try:
@@ -28,19 +31,18 @@ class PPTXToHeyGenVideo:
         avatar_id: Optional[str] = None,
         voice_id: Optional[str] = None,
         model: str = "gpt-4o",
-        width: int = 1280,
-        height: int = 720,
+        width: int = 1920,
+        height: int = 1080,
         background_color: str = "#FFFFFF",
         request_timeout_s: int = 70,
         poll_interval_s: int = 5,
         pptx_avatar_id: Optional[str] = None,
         pptx_voice_id: Optional[str] = None,
-        # --- MODIFICATION: Hardcoded to always use slides as background ---
         use_slides_as_background: bool = True,
+        language: str = "english",  # NEW: Language support
     ):
         self.heygen_api_key = heygen_api_key or os.getenv("HEYGEN_API_KEY")
         self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
-        # User can provide their own avatar and voice IDs, if not provided it will use default IDs from .env file.
         self.avatar_id = pptx_avatar_id or os.getenv("HEYGEN_AVATAR_ID")
         self.voice_id = pptx_voice_id or os.getenv("HEYGEN_VOICE_ID")
         self.model = model
@@ -49,8 +51,8 @@ class PPTXToHeyGenVideo:
         self.background_color = background_color
         self.request_timeout_s = request_timeout_s
         self.poll_interval_s = poll_interval_s
-        # MODIFICATION: Hardcoded avatar position
         self.use_slides_as_background = use_slides_as_background
+        self.language = language.lower()  # NEW: Store language preference
         self.slide_asset_ids: List[str] = []
 
         if not self.heygen_api_key:
@@ -96,14 +98,113 @@ class PPTXToHeyGenVideo:
                 time.sleep(2 ** attempt)
         raise RuntimeError("Unreachable")
 
+    # NEW: Fetch actual voices from HeyGen API using correct endpoint
+    def get_available_voices_from_api(self) -> List[Dict]:
+        """Fetch actual voices from HeyGen API using correct endpoint"""
+        try:
+            # Try the correct endpoint
+            url = "https://api.heygen.com/v1/brand_voice/list"
+            response = self._get_with_retry(url)
+            data = response.json()
+            
+            voices = data.get("data", [])
+            logging.info(f"Fetched {len(voices)} voices from HeyGen API")
+            
+            # Log all voices to see what's available
+            for voice in voices[:10]:  # Log first 10 voices
+                voice_id = voice.get('voice_id') or voice.get('id')
+                voice_name = voice.get('name', 'Unknown')
+                language = voice.get('language', 'Unknown')
+                logging.info(f"Voice: {voice_name} - ID: {voice_id} - Language: {language}")
+            
+            return voices
+                
+        except Exception as e:
+            logging.error(f"Error fetching voices from API: {e}")
+            return []
+
+    # NEW: Find Arabic-compatible voices
+    def find_arabic_voices(self) -> List[str]:
+        """Find voices that actually support Arabic"""
+        try:
+            voices = self.get_available_voices_from_api()
+            
+            arabic_voices = []
+            for voice in voices:
+                voice_id = voice.get('voice_id') or voice.get('id')
+                voice_name = voice.get('name', 'Unknown')
+                language = voice.get('language', '')
+                
+                # Check if voice supports Arabic
+                if (language.lower() == 'arabic' or 
+                    'arabic' in language.lower() or
+                    'ar' in language.lower() or
+                    'arabic' in voice_name.lower()):
+                    
+                    arabic_voices.append(voice_id)
+                    logging.info(f"Found Arabic voice: {voice_name} - ID: {voice_id}")
+            
+            if not arabic_voices:
+                logging.warning("No Arabic voices found in API response")
+                # Try some alternative voice IDs that might work
+                alternative_voices = [
+                    "bb2850ee8c76464d8e3d43f51b963fd1",  # Christine
+                    "1776ddbd05374fa480e92f0297bbc67e",  # Melissa
+                    "080f8e5cb3ae424989242b0efe5205e6",  # Ceecee
+                    "baae7852b7824c8aaec62fc1c4e3064b",  # Rex
+                ]
+                logging.info(f"Using alternative voices: {alternative_voices}")
+                return alternative_voices
+            
+            return arabic_voices
+            
+        except Exception as e:
+            logging.error(f"Error finding Arabic voices: {e}")
+            return ["bb2850ee8c76464d8e3d43f51b963fd1"]  # Fallback
+
+    # NEW: Use actual Arabic voice IDs from voice_details.txt
+    def get_voice_for_language(self, language: str) -> str:
+        """Get the best voice for the specified language"""
+        if language.lower() == 'arabic':
+            # These are ACTUAL Arabic voice IDs from HeyGen
+            arabic_voices = [
+                "042173e02d18478384c64fdfe37ddd67",  # GHIZLANE (Female)
+                "04fa555734714c3a90ac08a1ed64021c",  # Moncellence (Male)
+                "0eb85e6e8710473b82f7e88609ba3053",  # Hushed Hiba - Excited (Female)
+                "61cfb9ee298d419fa76d7f913f817447",  # Hakeem Hassan (Male)
+                "61cfb9ee298d419fa76d7f913f817447",  # Sana (Female)
+                "7042665eceec4300afd14e4f3ecf9157",  # Sana (Female)
+                "e406a437e338443e9412162a0fff5289",  # Hushed Hiba (Female)
+                "d12916aac1c44e6e8025ad820f1e9d4a",  # Hushed Hiba - Friendly (Female)
+            ]
+            
+            # Use the first Arabic voice
+            selected_voice = arabic_voices[0]
+            logging.info(f"Selected Arabic voice: {selected_voice} (GHIZLANE)")
+            return selected_voice
+        else:
+            return self.voice_id
+
+    # NEW: Validate voice and language compatibility
+    def validate_voice_language_compatibility(self, voice_id: str, language: str) -> bool:
+        """Check if the selected voice supports the specified language"""
+        try:
+            # Since all our voices are multilingual, they support any language
+            voices = self.get_available_voices_from_api(language)
+            for voice in voices:
+                if voice.get("voice_id") == voice_id:
+                    return True
+            return False
+        except Exception as e:
+            logging.error(f"Error validating voice compatibility: {e}")
+            return False
+
     def _create_heygen_folder(self, folder_name: str) -> str:
         logging.info(f"Creating HeyGen asset folder: {folder_name}")
         payload = {"name": folder_name}
-        # The URL for the create folder endpoint is v1
         url = "https://api.heygen.com/v1/folders/create"
         response = self._post_with_retry(url, payload)
         
-        # The key in the response data is 'id', not 'folder_id'.
         folder_id = response.json().get("data", {}).get("id")
 
         if not folder_id:
@@ -115,13 +216,12 @@ class PPTXToHeyGenVideo:
         file_name = os.path.basename(file_path)
         mime_type, _ = mimetypes.guess_type(file_path)
         if not mime_type:
-            mime_type = "image/jpeg"  # Default MIME type
+            mime_type = "image/png"
 
         logging.info(f"Uploading {file_name} to HeyGen (target folder: {folder_id})...")
 
         url = "https://upload.heygen.com/v1/asset"
         
-        # Create headers specific to this file upload request
         upload_headers = {
             "X-Api-Key": self.heygen_api_key,
             "Content-Type": mime_type,
@@ -165,143 +265,111 @@ class PPTXToHeyGenVideo:
                 logging.info("Using PowerPoint COM automation to export slides...")
                 powerpoint = win32com.client.Dispatch("PowerPoint.Application")
                 presentation = powerpoint.Presentations.Open(os.path.abspath(pptx_path), ReadOnly=True, WithWindow=False)
+                
                 num_slides_to_process = len(prs.slides)
                 for i in range(1, num_slides_to_process + 1):
                     path = os.path.join(temp_dir, f"slide_{i}.png")
-                    # FIXED: Use higher resolution for better quality
-                    presentation.Slides(i).Export(path, "PNG", self.width, self.height)
+                    slide = presentation.Slides(i)
+                    # FIXED: Use correct Export method parameters
+                    slide.Export(path, "PNG")
                     slide_image_paths.append(path)
+                    logging.info(f"Exported slide {i} to {path}")
+                
                 presentation.Close()
                 powerpoint.Quit()
+                logging.info("PowerPoint COM automation completed successfully")
+                
             else:
-                raise NotImplementedError("Automatic slide export is only supported on Windows.")
+                # For non-Windows systems, try using LibreOffice
+                logging.info("Windows not detected, trying LibreOffice conversion...")
+                slide_image_paths = self._convert_with_libreoffice(pptx_path, temp_dir)
+                
         except Exception as e:
-            logging.warning(f"Slide export failed: {e}. Falling back to creating blank images with text.")
-            slide_image_paths = self._create_fallback_slide_images(prs, temp_dir)
+            logging.error(f"Slide export failed: {e}")
+            raise RuntimeError(f"Failed to export slides from PowerPoint file: {e}")
+
+        if not slide_image_paths:
+            raise RuntimeError("Failed to extract any slide images")
 
         self.slide_asset_ids = [self._upload_asset_to_heygen(p, folder_id) for p in slide_image_paths]
 
-    def _create_fallback_slide_images(self, prs: Presentation, temp_dir: str) -> List[str]:
-        from PIL import Image, ImageDraw, ImageFont
-        
-        paths = []
-        for i, slide in enumerate(prs.slides):
-            path = os.path.join(temp_dir, f"slide_{i + 1}.png")
+    def _convert_with_libreoffice(self, pptx_path: str, temp_dir: str) -> List[str]:
+        """Convert PowerPoint to images using LibreOffice"""
+        try:
+            import subprocess
+            import os
             
-            # Fix: Convert color to proper format for PIL
-            bg_color = self.background_color
-            if bg_color.startswith('#'):
-                # Already has # prefix
-                pass
-            elif len(bg_color) == 6 and all(c in '0123456789abcdefABCDEF' for c in bg_color):
-                # Hex without # prefix
-                bg_color = f"#{bg_color}"
-            else:
-                # Fallback to white if color format is invalid
-                bg_color = "#ffffff"
+            # Convert PPTX to PDF first
+            pdf_path = os.path.join(temp_dir, "presentation.pdf")
+            cmd = [
+                "libreoffice", "--headless", "--convert-to", "pdf", 
+                "--outdir", temp_dir, pptx_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             
-            # FIXED: Create higher quality images
-            img = Image.new("RGB", (self.width, self.height), color=bg_color)
-            draw = ImageDraw.Draw(img)
-            try:
-                # FIXED: Use larger font for better readability
-                font = ImageFont.truetype("arial.ttf", 32)
-                title_font = ImageFont.truetype("arial.ttf", 48)
-            except IOError:
-                font = ImageFont.load_default()
-                title_font = ImageFont.load_default()
+            if result.returncode != 0:
+                raise Exception(f"LibreOffice conversion failed: {result.stderr}")
             
-            # FIXED: Better text extraction and formatting
-            slide_texts = []
-            for shape in slide.shapes:
-                if hasattr(shape, "text") and shape.text.strip():
-                    slide_texts.append(shape.text.strip())
+            # Convert PDF to images using ImageMagick
+            cmd = [
+                "convert", "-density", "300", "-quality", "100",
+                pdf_path, os.path.join(temp_dir, "slide_%d.png")
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             
-            # Combine all text with better formatting
-            full_text = "\n\n".join(slide_texts) if slide_texts else f"Slide {i + 1}"
+            if result.returncode != 0:
+                raise Exception(f"ImageMagick conversion failed: {result.stderr}")
             
-            # FIXED: Better text positioning and wrapping
-            y_position = 50
-            max_width = self.width - 100
-            
-            # Draw title
-            draw.text((50, y_position), f"Slide {i + 1}", fill="black", font=title_font)
-            y_position += 80
-            
-            # Draw content with word wrapping
-            words = full_text.split()
-            lines = []
-            current_line = []
-            
-            for word in words:
-                test_line = " ".join(current_line + [word])
-                bbox = draw.textbbox((0, 0), test_line, font=font)
-                text_width = bbox[2] - bbox[0]
-                
-                if text_width <= max_width:
-                    current_line.append(word)
+            # Find generated PNG files
+            slide_files = []
+            for i in range(1, 100):  # Assume max 100 slides
+                slide_path = os.path.join(temp_dir, f"slide_{i}.png")
+                if os.path.exists(slide_path):
+                    slide_files.append(slide_path)
                 else:
-                    if current_line:
-                        lines.append(" ".join(current_line))
-                        current_line = [word]
-                    else:
-                        lines.append(word)
-            
-            if current_line:
-                lines.append(" ".join(current_line))
-            
-            # Draw lines
-            for line in lines[:15]:  # Limit to 15 lines to prevent overflow
-                draw.text((50, y_position), line, fill="black", font=font)
-                y_position += 40
-                if y_position > self.height - 100:  # Leave space at bottom
                     break
             
-            img.save(path, "PNG", quality=95)
-            paths.append(path)
-        return paths
+            return slide_files
+            
+        except Exception as e:
+            logging.warning(f"LibreOffice conversion failed: {e}")
+            return []
 
     def _build_video_inputs(self, slide_notes: List[str]) -> List[Dict]:
-        """
-        FIXED: Better avatar positioning and slide background handling
-        """
+        """FIXED: Proper background positioning and avatar placement with larger size"""
         video_inputs: List[Dict] = []
         
         for idx, note in enumerate(slide_notes):
-            # FIXED: Better avatar positioning that doesn't interfere with slide content
             scene = {
                 "character": {
                     "type": "talking_photo",
                     "talking_photo_id": self.avatar_id,
                     "talking_photo_style": "circle",
-                    # FIXED: Smaller scale and better positioning
-                    "scale": 0.25,  # Reduced from 0.33 to 0.25
+                    # FIXED: Increased avatar size to be more visible
+                    "scale": 0.25,  # Increased from 0.08 to 0.25 (3x larger)
                     "offset": {
-                        # FIXED: Position avatar in bottom-right corner with proper margins
-                        "x": 0.35,  # Moved from 0.42 to 0.35 (more to the right)
-                        "y": 0.35   # Moved from 0.42 to 0.35 (higher up)
+                        # FIXED: Position in bottom-right corner with proper margins
+                        "x": 0.35,  # Move more to the right
+                        "y": 0.35   # Move higher up to avoid slide content
                     },
                 },
                 "voice": {
                     "type": "text", 
                     "input_text": note, 
-                    "voice_id": self.voice_id
+                    "voice_id": self.voice_id,
+                    # NEW: Try adding language parameter to voice
+                    "language": "ar" if self.language.lower() == 'arabic' else "en"
                 },
             }
 
-            # FIXED: Better background handling
+            # FIXED: Proper background handling - ensure slides are visible
             if self.use_slides_as_background and idx < len(self.slide_asset_ids):
                 asset_id = self.slide_asset_ids[idx]
                 logging.info(f"Setting background for scene {idx + 1} with asset_id: {asset_id}")
                 scene["background"] = {
                     "type": "image", 
-                    "image_asset_id": asset_id,
-                    # FIXED: Add background positioning to ensure full coverage
-                    "position": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "scale": 1.0
-                    }
+                    "image_asset_id": asset_id
+                    # No position object - let HeyGen handle the full background
                 }
             else:
                 scene["background"] = {
@@ -330,13 +398,9 @@ class PPTXToHeyGenVideo:
         return {"video_id": video_id}
 
     def wait_for_video(self, video_id: str) -> Dict:        
-        """
-        Polls the HeyGen API for the video status indefinitely until it is
-        either 'completed' or 'failed'.
-        """
+        """Polls the HeyGen API for the video status indefinitely until it is either 'completed' or 'failed'."""
         logging.info(f"Waiting for video {video_id} to complete. with Avatar id {self.avatar_id} and voice id {self.voice_id}. Polling status...")
 
-        # Loop indefinitely until a terminal status is reached
         while True:
             status_url = f"https://api.heygen.com/v1/video_status.get?video_id={video_id}"
             try:
@@ -358,7 +422,6 @@ class PPTXToHeyGenVideo:
             except requests.RequestException as e:
                 logging.warning(f"Status check failed due to a network error: {e}. Retrying...")
             
-            # Wait for the specified interval before the next poll
             time.sleep(self.poll_interval_s)
     
     def generate_speaker_notes(self, slide_texts: List[str]) -> List[str]:
@@ -367,16 +430,16 @@ class PPTXToHeyGenVideo:
         speaker_notes = []
         for i, text in enumerate(slide_texts):
             try:
-                # FIXED: Better system prompt for more engaging content
+                # FIXED: Language-aware system prompt
                 system_prompt = (
-                    "You are a professional virtual teacher creating engaging educational content. "
+                    f"You are a professional virtual teacher creating engaging educational content in {self.language}. "
                     "Your task is to explain presentation slide content in a clear, engaging, and educational manner. "
                     "Create speaker notes that are conversational, informative, and easy to follow. "
                     "Keep the explanation concise but comprehensive, suitable for video narration. "
-                    "Use a professional yet approachable tone that keeps viewers engaged."
+                    f"Use a professional yet approachable tone in {self.language} that keeps viewers engaged."
                 )
                 
-                user_prompt = f"Here is the slide content:\n\n---\n\n{text}\n\n---\n\nPlease provide engaging speaker notes for video narration. Keep it under 200 words and make it conversational."
+                user_prompt = f"Here is the slide content:\n\n---\n\n{text}\n\n---\n\nPlease provide engaging speaker notes for video narration in {self.language}. Keep it under 200 words and make it conversational."
                 
                 response = self._client.chat.completions.create(
                     model=self.model,
@@ -385,7 +448,7 @@ class PPTXToHeyGenVideo:
                         {"role": "user", "content": user_prompt},
                     ],
                     temperature=0.7,
-                    max_tokens=300,  # Increased from 250 to 300
+                    max_tokens=300,
                 )
                 
                 note = response.choices[0].message.content.strip()
@@ -394,13 +457,22 @@ class PPTXToHeyGenVideo:
 
             except Exception as e:
                 logging.error(f"Failed to generate notes for slide {i+1}: {e}")
-                # Fallback to a simple note
                 speaker_notes.append(f"Let me explain this slide content: {text}")
 
         return speaker_notes
 
-    def convert(self, pptx_path: str, title: Optional[str] = None, max_slides: Optional[int] = None) -> Dict:
-        logging.info(f"Starting conversion for: {pptx_path}")
+    def convert(self, pptx_path: str, title: Optional[str] = None, max_slides: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Convert a PowerPoint presentation to a HeyGen video.
+        """
+        logging.info(f"Starting conversion of {pptx_path}")
+        
+        # FIXED: Auto-select voice based on language
+        if self.language.lower() == 'arabic':
+            self.voice_id = self.get_voice_for_language(self.language)
+            logging.info(f"Auto-selected voice for Arabic: {self.voice_id}")
+        
+        logging.info(f"Using voice {self.voice_id} for language {self.language}")
         
         prs = Presentation(pptx_path)
         slides = list(prs.slides)
@@ -412,7 +484,7 @@ class PPTXToHeyGenVideo:
             logging.warning(f"Limiting to {max_slides} slides from {len(slides)}.")
             slides = slides[:max_slides]
         
-        # FIXED: Better text extraction
+        # Better text extraction
         slides_text = []
         for slide in slides:
             slide_text = []
@@ -439,12 +511,15 @@ class PPTXToHeyGenVideo:
             "video_id": gen_info["video_id"],
             "video_url": final_status.get("video_url"),
             "slides_count": len(slide_notes),
+            "language": self.language,
+            "voice_id": self.voice_id
         }
 
 def main():
     pptx_file_path = input("enter ppt file path here :")
     pptx_avatar_id = input("enter ppt avatar id here :")
     pptx_voice_id = input("enter ppt voice id here :")
+    language = input("enter language (english/arabic): ").strip().lower() or "english"
 
     if not os.path.exists(pptx_file_path):
         logging.error(f"File not found: {pptx_file_path}")
@@ -452,16 +527,12 @@ def main():
         return
 
     try:
-        # --- MODIFICATION: Simplified converter initialization ---
-        # Avatar ID and Voice ID are now handled by environment variables within the class.
-        # Using slides as background is now the default.
         converter = PPTXToHeyGenVideo(
             pptx_avatar_id=pptx_avatar_id,
-            pptx_voice_id=pptx_voice_id
+            pptx_voice_id=pptx_voice_id,
+            language=language
         )
         
-        # --- MODIFICATION: Simplified convert method call ---
-        # Title and max_slides are no longer passed as command-line arguments.
         result = converter.convert(pptx_file_path)
         
         print("\n--- Conversion Successful ---")

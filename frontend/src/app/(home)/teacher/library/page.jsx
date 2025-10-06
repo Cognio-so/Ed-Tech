@@ -29,7 +29,7 @@ import {
   ChevronDown
 } from "lucide-react";
 import { toast } from "sonner";
-import { getAllLibraryContent, deleteLibraryContent, addContentToLesson } from "./action";
+import { getAllLibraryContent, deleteLibraryContent, addContentToLesson, getCurriculumData } from "./action";
 import { authClient } from "@/lib/auth-client";
 import LibraryDialog from "@/components/ui/library-dialog";
 import LibraryLoading from "./loading";
@@ -235,6 +235,14 @@ export default function LibraryPage() {
     isPublic: false
   });
 
+  // NEW: Curriculum data state
+  const [curriculumData, setCurriculumData] = useState({
+    gradeSubjectPairs: [],
+    grades: [],
+    subjects: []
+  });
+  const [loadingCurriculum, setLoadingCurriculum] = useState(true);
+
   // Download dialog state
   const [downloadDialog, setDownloadDialog] = useState({ open: false, item: null });
   const [downloadFormat, setDownloadFormat] = useState('pdf');
@@ -253,12 +261,36 @@ export default function LibraryPage() {
     getUser();
   }, []);
 
-  // Load library content
+  // Load library content and curriculum data
   useEffect(() => {
     if (user?.id) {
       loadLibraryContent();
+      loadCurriculumData();
     }
   }, [user?.id]);
+
+  // Load curriculum data
+  const loadCurriculumData = async () => {
+    try {
+      setLoadingCurriculum(true);
+      const result = await getCurriculumData();
+      if (result.success) {
+        setCurriculumData({
+          gradeSubjectPairs: result.gradeSubjectPairs || [],
+          grades: result.grades || [],
+          subjects: result.subjects || []
+        });
+      } else {
+        console.error("Failed to load curriculum data:", result.error);
+        toast.error("Failed to load curriculum data");
+      }
+    } catch (error) {
+      console.error("Error loading curriculum data:", error);
+      toast.error("Failed to load curriculum data");
+    } finally {
+      setLoadingCurriculum(false);
+    }
+  };
 
   // Filter content based on search and active tab
   useEffect(() => {
@@ -1181,7 +1213,7 @@ export default function LibraryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add to Lesson Dialog */}
+      {/* Add to Lesson Dialog - FIXED with proper grade-subject selection */}
       <Dialog open={addToLessonDialog} onOpenChange={setAddToLessonDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -1202,32 +1234,35 @@ export default function LibraryPage() {
               />
             </div>
             
-            {/* Add grade selection for slides and videos */}
+            {/* FIXED: Grade selection for slides and videos using curriculum data */}
             {(selectedContentForLesson?.type === 'slides' || selectedContentForLesson?.type === 'video') && (
               <div className="space-y-2">
                 <Label htmlFor="grade">Grade Level</Label>
-                <Select 
-                  value={lessonFormData.grade} 
-                  onValueChange={(value) => setLessonFormData(prev => ({ ...prev, grade: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select grade level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">Grade 1</SelectItem>
-                    <SelectItem value="2">Grade 2</SelectItem>
-                    <SelectItem value="3">Grade 3</SelectItem>
-                    <SelectItem value="4">Grade 4</SelectItem>
-                    <SelectItem value="5">Grade 5</SelectItem>
-                    <SelectItem value="6">Grade 6</SelectItem>
-                    <SelectItem value="7">Grade 7</SelectItem>
-                    <SelectItem value="8">Grade 8</SelectItem>
-                    <SelectItem value="9">Grade 9</SelectItem>
-                    <SelectItem value="10">Grade 10</SelectItem>
-                    <SelectItem value="11">Grade 11</SelectItem>
-                    <SelectItem value="12">Grade 12</SelectItem>
-                  </SelectContent>
-                </Select>
+                {loadingCurriculum ? (
+                  <div className="flex items-center justify-center p-4">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-sm text-muted-foreground">Loading grade options...</span>
+                  </div>
+                ) : (
+                  <Select 
+                    value={lessonFormData.grade} 
+                    onValueChange={(value) => setLessonFormData(prev => ({ ...prev, grade: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select grade level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {curriculumData.gradeSubjectPairs.map((pair) => (
+                        <SelectItem key={pair.id} value={pair.displayName}>
+                          {pair.displayName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Select the specific grade and subject combination for this lesson
+                </p>
               </div>
             )}
             

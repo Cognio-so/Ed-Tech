@@ -167,7 +167,7 @@ const VideoCreator = ({ setGeneratedContent }) => {
 
       {/* Video Preview Modal */}
       <Dialog open={showVideoModal} onOpenChange={setShowVideoModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className=" max-h-[98vh] max-w-[1024px] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Video Generation Complete</DialogTitle>
             <DialogDescription>

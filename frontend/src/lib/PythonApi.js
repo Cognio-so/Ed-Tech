@@ -625,6 +625,7 @@ class PythonApiClient {
     formData.append('voice_id', videoData.voice_id);
     formData.append('talking_photo_id', videoData.talking_photo_id);
     formData.append('title', videoData.title);
+    formData.append('language', videoData.language || 'english'); 
 
     return this.makeRequest('/video_presentation_endpoint', {
       method: 'POST',
