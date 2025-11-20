@@ -1,4 +1,3 @@
-"""FastAPI entrypoint for teacher content generation services."""
 
 from __future__ import annotations
 
@@ -15,12 +14,20 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status, Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt, validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    validator,
+    model_validator,
+)
 
 from teacher.Content_generation.lesson_plan import generate_lesson_plan
 from teacher.Content_generation.presentation import generate_presentation
 from teacher.Content_generation.Quizz import generate_quizz
 from teacher.Content_generation.worksheet import generate_worksheet
+from teacher.Assessment.assessment import generate_assessment
 
 
 load_dotenv()
@@ -63,6 +70,51 @@ class LessonPlanRequest(BaseModel):
 
 class ContentGenerationRequest(LessonPlanRequest):
     model_config = ConfigDict(populate_by_name=True)
+
+
+class AssessmentRequest(BaseModel):
+    subject: str = Field(..., min_length=1)
+    grade: str = Field(..., min_length=1)
+    difficulty_level: str = Field(..., min_length=1)
+    language: str = Field(..., min_length=1)
+    topic: str = Field(..., min_length=1)
+    learning_objective: str = Field(..., min_length=1)
+    duration: str = Field(..., min_length=1)
+    confidence_level: int = Field(..., ge=1, le=5)
+    custom_instruction: Optional[str] = Field("", description="Optional teacher notes")
+    mcq_enabled: bool = False
+    mcq_count: Optional[int] = Field(default=0, ge=0)
+    true_false_enabled: bool = False
+    true_false_count: Optional[int] = Field(default=0, ge=0)
+    short_answer_enabled: bool = False
+    short_answer_count: Optional[int] = Field(default=0, ge=0)
+
+    @validator("language")
+    def normalize_language(cls, value: str) -> str:
+        return value.capitalize()
+
+    @model_validator(mode="after")
+    def validate_question_configuration(cls, values: "AssessmentRequest") -> "AssessmentRequest":
+        question_flags = [
+            ("mcq_enabled", "mcq_count"),
+            ("true_false_enabled", "true_false_count"),
+            ("short_answer_enabled", "short_answer_count"),
+        ]
+        any_enabled = False
+
+        for enabled_key, count_key in question_flags:
+            count_value = getattr(values, count_key) or 0
+            if getattr(values, enabled_key):
+                any_enabled = True
+                if count_value <= 0:
+                    raise ValueError(f"{count_key} must be greater than 0 when {enabled_key} is true.")
+            else:
+                setattr(values, count_key, 0)
+
+        if not any_enabled:
+            raise ValueError("At least one question type must be enabled.")
+        return values
+
 sessions: Dict[str, Dict[str, Any]] = {}
 
 
@@ -242,6 +294,113 @@ async def generate_content(
         "session_id": current_session_id,
         "teacher_id": teacher_id,
         "type": type,
+        "content": raw_output,
+    }
+
+
+@app.post("/api/session/{session_id}/teacher/{teacher_id}/assessment")
+async def create_assessment(
+    session_id: str,
+    teacher_id: str,
+    payload: AssessmentRequest,
+    stream: bool = False,
+) -> Dict[str, Any]:
+    """
+    Generate an assessment aligned to the provided grade, subject, and learning objectives.
+    Supports optional streaming using Server-Sent Events.
+    """
+
+    await SessionManager.get_session(session_id)
+    request_payload = payload.model_dump(mode="json")
+
+    async def invoke_generator(
+        chunk_callback: Optional[Callable[[str], Awaitable[None]]] = None
+    ):
+        result = generate_assessment(request_payload, chunk_callback=chunk_callback)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+    if stream:
+        queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
+        full_response = ""
+
+        async def chunk_callback(chunk: str):
+            nonlocal full_response
+            full_response += chunk
+            await queue.put(
+                {
+                    "type": "content",
+                    "data": {
+                        "chunk": chunk,
+                        "full_response": full_response,
+                        "is_complete": False,
+                    },
+                }
+            )
+
+        async def run_and_store():
+            try:
+                raw_output = await invoke_generator(chunk_callback=chunk_callback)
+                metadata = {
+                    "session_id": session_id,
+                    "teacher_id": teacher_id,
+                    "type": "assessment",
+                    "content": raw_output,
+                }
+                await queue.put(
+                    {
+                        "type": "content",
+                        "data": {
+                            "chunk": "",
+                            "full_response": raw_output,
+                            "is_complete": True,
+                        },
+                    }
+                )
+                await queue.put({"type": "metadata", "data": metadata})
+            except Exception as exc:
+                await queue.put(
+                    {"type": "error", "data": {"message": str(exc)}}
+                )
+            finally:
+                await queue.put(None)
+
+        asyncio.create_task(run_and_store())
+
+        async def stream_output():
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield f"data: {json.dumps(chunk)}\n\n"
+
+        headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Session-Id": session_id,
+            "X-Teacher-Id": teacher_id,
+            "X-Content-Type": "assessment",
+        }
+        return StreamingResponse(
+            stream_output(),
+            media_type="text/event-stream",
+            headers=headers,
+        )
+
+    try:
+        raw_output = await invoke_generator()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "session_id": session_id,
+        "teacher_id": teacher_id,
+        "type": "assessment",
         "content": raw_output,
     }
 
