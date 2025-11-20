@@ -53,171 +53,344 @@ if "auto_session_attempted" not in st.session_state:
 if not st.session_state.session_id and not st.session_state.auto_session_attempted:
     create_session(show_feedback=False)
 
-# Main form
-with st.form("content_generation_form"):
-    col1, col2 = st.columns(2)
+tool_selection = st.radio(
+    "Choose Generator",
+    ["Content Generator", "Assessment Generator"],
+    horizontal=True,
+    help="Switch between existing content generators and the new assessment builder.",
+)
 
+# Main form for legacy content generation
+if tool_selection == "Content Generator":
+    with st.form("content_generation_form"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("Content Details")
+            content_type = st.selectbox(
+                "Content Type",
+                ["lesson_plan", "presentation", "quizz", "worksheet"]
+            )
+            grade = st.text_input("Grade", "10th")
+            subject = st.text_input("Subject", "Physics")
+            topic = st.text_input("Topic", "Newton's Laws of Motion")
+            language = st.text_input("Language", "English")
+        
+        with col2:
+            st.subheader("Parameters")
+            instruction_depth = st.selectbox(
+                "Instruction Depth",
+                ["Simple", "Standard", "Enriched"]
+            )
+            emotional_consideration = st.slider(
+                "Emotional Consideration Level",
+                min_value=1,
+                max_value=5,
+                value=3,
+                help="1: Low, 5: High"
+            )
+            
+            st.markdown("**Features**")
+            adaptive_learning = st.checkbox("Adaptive Learning", value=True)
+            include_assessment = st.checkbox("Include Assessment", value=True)
+            multimedia_suggestion = st.checkbox("Multimedia Suggestions", value=True)
+
+        st.subheader("Specifics")
+        learning_objective = st.text_area(
+            "Learning Objective",
+            "Students should understand the three laws of motion and apply them to real-world scenarios."
+        )
+
+        if content_type == "lesson_plan":
+            c1, c2 = st.columns(2)
+            with c1:
+                number_of_sessions = st.number_input(
+                    "Number of Sessions", min_value=1, value=2, help="Used only for lesson plans."
+                )
+            with c2:
+                duration_of_session = st.text_input(
+                    "Duration per Session", "45 minutes", help="Used only for lesson plans."
+                )
+        else:
+            number_of_sessions = None
+            duration_of_session = None
+
+        stream_output = st.checkbox(
+            "Stream Output",
+            value=False,
+            help="Stream responses as they are generated (only supported on lesson plans for now)."
+        )
+        submitted = st.form_submit_button("Generate Content")
+
+    if submitted:
+        # Construct payload
+        payload = {
+            "grade": grade,
+            "subject": subject,
+            "language": language,
+            "topic": topic,
+            "learning_objective": learning_objective,
+            "emotional_consideration": emotional_consideration,
+            "adaptive_learning": adaptive_learning,
+            "include_assessment": include_assessment,
+            "multimedia_suggestion": multimedia_suggestion,
+            "instruction_depth": instruction_depth,
+            "number_of_sessions": number_of_sessions,
+            "duration_of_session": duration_of_session,
+            "type": content_type # This is used for validation in the Pydantic model if needed, but mainly for the URL
+        }
+
+        # Require session ID for session-scoped endpoint
+        session_id = st.session_state.session_id.strip()
+        if not session_id:
+            st.error("Session ID is required. Create or paste one in the sidebar before generating content.")
+            st.stop()
+
+        # Construct URL targeting the session-specific endpoint
+        base_url = (
+            f"{api_base_url}/api/teacher/{teacher_id}/session/"
+            f"{session_id}/content_generator/{content_type}"
+        )
+        if stream_output:
+            url = f"{base_url}?stream=true"
+        else:
+            url = base_url
+
+        st.info(f"Sending request to: `{url}`")
+        
+        try:
+            if stream_output:
+                placeholder = st.empty()
+                transcript_placeholder = st.empty()
+                metadata_placeholder = st.empty()
+                full_response = ""
+                with st.spinner("Streaming content..."):
+                    response = requests.post(url, json=payload, stream=True)
+                    if response.status_code != 200:
+                        st.error(f"Error {response.status_code}: {response.text}")
+                    else:
+                        st.success("Streaming connection established")
+                        for line in response.iter_lines():
+                            if not line:
+                                continue
+                            if not line.startswith(b"data:"):
+                                continue
+                            payload_line = line[5:].strip()
+                            try:
+                                event = json.loads(payload_line.decode("utf-8"))
+                            except json.JSONDecodeError:
+                                continue
+                            event_type = event.get("type")
+                            data = event.get("data", {})
+                            if event_type == "content":
+                                chunk = data.get("chunk", "")
+                                if chunk:
+                                    full_response += chunk
+                                elif data.get("full_response"):
+                                    full_response = data["full_response"]
+                                placeholder.markdown(full_response or "_Waiting for content..._")
+                                if data.get("is_complete"):
+                                    st.success("Streaming complete")
+                            elif event_type == "metadata":
+                                metadata_placeholder.json(data)
+                            elif event_type == "error":
+                                st.error(data.get("message", "Unknown streaming error"))
+                            transcript_placeholder.markdown(full_response)
+                if full_response:
+                    st.subheader("Final Content")
+                    st.markdown(full_response)
+            else:
+                with st.spinner("Generating content..."):
+                    response = requests.post(url, json=payload)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    st.success("Content Generated Successfully!")
+                    
+                    # Display Session Info
+                    st.json({
+                        "session_id": data.get("session_id"),
+                        "teacher_id": data.get("teacher_id"),
+                        "type": data.get("type")
+                    })
+                    
+                    # Display Content
+                    st.subheader("Generated Content")
+                    content = data.get("content")
+                    
+                    if isinstance(content, str):
+                        # Try to parse XML if it looks like XML
+                        if content.strip().startswith("<") and content.strip().endswith(">"):
+                            st.code(content, language="xml")
+                        else:
+                            st.markdown(content)
+                    else:
+                        st.json(content)
+                else:
+                    st.error(f"Error {response.status_code}: {response.text}")
+                
+        except requests.exceptions.ConnectionError:
+            st.error(f"Could not connect to backend at {api_base_url}. Is it running?")
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
+
+else:
+    st.subheader("Assessment Generator")
+    col1, col2 = st.columns(2)
     with col1:
-        st.subheader("Content Details")
-        content_type = st.selectbox(
-            "Content Type",
-            ["lesson_plan", "presentation", "quizz", "worksheet"]
-        )
-        grade = st.text_input("Grade", "10th")
-        subject = st.text_input("Subject", "Physics")
-        topic = st.text_input("Topic", "Newton's Laws of Motion")
-        language = st.text_input("Language", "English")
-    
+        assess_subject = st.text_input("Subject", "Mathematics", key="assess_subject")
+        assess_grade = st.text_input("Grade", "8th", key="assess_grade")
+        assess_topic = st.text_input("Topic", "Linear Equations", key="assess_topic")
+        assess_language = st.text_input("Language", "English", key="assess_language")
+        assess_duration = st.text_input("Duration", "40 minutes", key="assess_duration")
     with col2:
-        st.subheader("Parameters")
-        instruction_depth = st.selectbox(
-            "Instruction Depth",
-            ["Simple", "Standard", "Enriched"]
-        )
-        emotional_consideration = st.slider(
-            "Emotional Consideration Level",
+        assess_difficulty = st.text_input("Difficulty Level", "Standard", key="assess_difficulty")
+        assess_confidence = st.slider(
+            "Confidence Support Level (1=Low, 5=High)",
             min_value=1,
             max_value=5,
             value=3,
-            help="1: Low, 5: High"
+            key="assess_confidence"
         )
-        
-        st.markdown("**Features**")
-        adaptive_learning = st.checkbox("Adaptive Learning", value=True)
-        include_assessment = st.checkbox("Include Assessment", value=True)
-        multimedia_suggestion = st.checkbox("Multimedia Suggestions", value=True)
-
-    st.subheader("Specifics")
-    learning_objective = st.text_area(
-        "Learning Objective",
-        "Students should understand the three laws of motion and apply them to real-world scenarios."
+        assess_learning_objective = st.text_area(
+            "Learning Objective",
+            "Ensure students can solve one-variable linear equations with confidence.",
+            key="assess_learning_objective"
+        )
+    assess_custom_instruction = st.text_area(
+        "Custom Instructions (optional)",
+        "Emphasize problem-solving strategies and explain reasoning steps.",
+        key="assess_custom_instruction"
     )
 
-    if content_type == "lesson_plan":
-        c1, c2 = st.columns(2)
-        with c1:
-            number_of_sessions = st.number_input(
-                "Number of Sessions", min_value=1, value=2, help="Used only for lesson plans."
+    st.markdown("### Question Types")
+    q_col1, q_col2, q_col3 = st.columns(3)
+    with q_col1:
+        mcq_enabled = st.checkbox("Multiple Choice", value=True, key="assess_mcq_enabled")
+        if mcq_enabled:
+            mcq_count = st.number_input(
+                "MCQ Count", min_value=1, value=5, key="assess_mcq_count"
             )
-        with c2:
-            duration_of_session = st.text_input(
-                "Duration per Session", "45 minutes", help="Used only for lesson plans."
-            )
-    else:
-        number_of_sessions = None
-        duration_of_session = None
-
-    stream_output = st.checkbox("Stream Output", value=False, help="Stream responses as they are generated (only supported on lesson plans for now).")
-    submitted = st.form_submit_button("Generate Content")
-
-if submitted:
-    # Construct payload
-    payload = {
-        "grade": grade,
-        "subject": subject,
-        "language": language,
-        "topic": topic,
-        "learning_objective": learning_objective,
-        "emotional_consideration": emotional_consideration,
-        "adaptive_learning": adaptive_learning,
-        "include_assessment": include_assessment,
-        "multimedia_suggestion": multimedia_suggestion,
-        "instruction_depth": instruction_depth,
-        "number_of_sessions": number_of_sessions,
-        "duration_of_session": duration_of_session,
-        "type": content_type # This is used for validation in the Pydantic model if needed, but mainly for the URL
-    }
-
-    # Require session ID for session-scoped endpoint
-    session_id = st.session_state.session_id.strip()
-    if not session_id:
-        st.error("Session ID is required. Create or paste one in the sidebar before generating content.")
-        st.stop()
-
-    # Construct URL targeting the session-specific endpoint
-    base_url = (
-        f"{api_base_url}/api/teacher/{teacher_id}/session/"
-        f"{session_id}/content_generator/{content_type}"
-    )
-    if stream_output:
-        url = f"{base_url}?stream=true"
-    else:
-        url = base_url
-
-    st.info(f"Sending request to: `{url}`")
-    
-    try:
-        if stream_output:
-            placeholder = st.empty()
-            transcript_placeholder = st.empty()
-            metadata_placeholder = st.empty()
-            full_response = ""
-            with st.spinner("Streaming content..."):
-                response = requests.post(url, json=payload, stream=True)
-                if response.status_code != 200:
-                    st.error(f"Error {response.status_code}: {response.text}")
-                else:
-                    st.success("Streaming connection established")
-                    for line in response.iter_lines():
-                        if not line:
-                            continue
-                        if not line.startswith(b"data:"):
-                            continue
-                        payload_line = line[5:].strip()
-                        try:
-                            event = json.loads(payload_line.decode("utf-8"))
-                        except json.JSONDecodeError:
-                            continue
-                        event_type = event.get("type")
-                        data = event.get("data", {})
-                        if event_type == "content":
-                            chunk = data.get("chunk", "")
-                            if chunk:
-                                full_response += chunk
-                            elif data.get("full_response"):
-                                full_response = data["full_response"]
-                            placeholder.markdown(full_response or "_Waiting for content..._")
-                            if data.get("is_complete"):
-                                st.success("Streaming complete")
-                        elif event_type == "metadata":
-                            metadata_placeholder.json(data)
-                        elif event_type == "error":
-                            st.error(data.get("message", "Unknown streaming error"))
-                        transcript_placeholder.markdown(full_response)
-            if full_response:
-                st.subheader("Final Content")
-                st.markdown(full_response)
         else:
-            with st.spinner("Generating content..."):
-                response = requests.post(url, json=payload)
-            
-            if response.status_code == 200:
-                data = response.json()
-                st.success("Content Generated Successfully!")
-                
-                # Display Session Info
-                st.json({
-                    "session_id": data.get("session_id"),
-                    "teacher_id": data.get("teacher_id"),
-                    "type": data.get("type")
-                })
-                
-                # Display Content
-                st.subheader("Generated Content")
-                content = data.get("content")
-                
-                if isinstance(content, str):
-                    # Try to parse XML if it looks like XML
-                    if content.strip().startswith("<") and content.strip().endswith(">"):
-                        st.code(content, language="xml")
+            mcq_count = 0
+    with q_col2:
+        tf_enabled = st.checkbox("True / False", value=False, key="assess_tf_enabled")
+        if tf_enabled:
+            tf_count = st.number_input(
+                "True/False Count", min_value=1, value=4, key="assess_tf_count"
+            )
+        else:
+            tf_count = 0
+    with q_col3:
+        sa_enabled = st.checkbox("Short Answer", value=False, key="assess_sa_enabled")
+        if sa_enabled:
+            sa_count = st.number_input(
+                "Short Answer Count", min_value=1, value=3, key="assess_sa_count"
+            )
+        else:
+            sa_count = 0
+
+    assessment_stream = st.checkbox("Stream Output", value=False, key="assess_stream_toggle")
+    assessment_submit = st.button("Generate Assessment")
+
+    if assessment_submit:
+        if not any([mcq_enabled, tf_enabled, sa_enabled]):
+            st.error("Select at least one question type.")
+            st.stop()
+
+        session_id = st.session_state.session_id.strip()
+        if not session_id:
+            st.error("Session ID is required. Create or paste one in the sidebar before generating an assessment.")
+            st.stop()
+
+        payload = {
+            "subject": assess_subject,
+            "grade": assess_grade,
+            "difficulty_level": assess_difficulty,
+            "language": assess_language,
+            "topic": assess_topic,
+            "learning_objective": assess_learning_objective,
+            "duration": assess_duration,
+            "confidence_level": assess_confidence,
+            "custom_instruction": assess_custom_instruction,
+            "mcq_enabled": mcq_enabled,
+            "mcq_count": mcq_count,
+            "true_false_enabled": tf_enabled,
+            "true_false_count": tf_count,
+            "short_answer_enabled": sa_enabled,
+            "short_answer_count": sa_count
+        }
+
+        base_url = (
+            f"{api_base_url}/api/session/{session_id}/teacher/{teacher_id}/assessment"
+        )
+        if assessment_stream:
+            url = f"{base_url}?stream=true"
+        else:
+            url = base_url
+
+        st.info(f"Sending assessment request to: `{url}`")
+
+        try:
+            if assessment_stream:
+                placeholder = st.empty()
+                transcript_placeholder = st.empty()
+                metadata_placeholder = st.empty()
+                full_response = ""
+                with st.spinner("Streaming assessment..."):
+                    response = requests.post(url, json=payload, stream=True)
+                    if response.status_code != 200:
+                        st.error(f"Error {response.status_code}: {response.text}")
                     else:
-                        st.markdown(content)
-                else:
-                    st.json(content)
+                        st.success("Streaming connection established")
+                        for line in response.iter_lines():
+                            if not line or not line.startswith(b"data:"):
+                                continue
+                            payload_line = line[5:].strip()
+                            try:
+                                event = json.loads(payload_line.decode("utf-8"))
+                            except json.JSONDecodeError:
+                                continue
+                            event_type = event.get("type")
+                            data = event.get("data", {})
+                            if event_type == "content":
+                                chunk = data.get("chunk", "")
+                                if chunk:
+                                    full_response += chunk
+                                elif data.get("full_response"):
+                                    full_response = data["full_response"]
+                                placeholder.markdown(full_response or "_Waiting for content..._")
+                                if data.get("is_complete"):
+                                    st.success("Streaming complete")
+                            elif event_type == "metadata":
+                                metadata_placeholder.json(data)
+                            elif event_type == "error":
+                                st.error(data.get("message", "Unknown streaming error"))
+                            transcript_placeholder.markdown(full_response)
+                if full_response:
+                    st.subheader("Final Assessment")
+                    st.markdown(full_response)
             else:
-                st.error(f"Error {response.status_code}: {response.text}")
-            
-    except requests.exceptions.ConnectionError:
-        st.error(f"Could not connect to backend at {api_base_url}. Is it running?")
-    except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
+                with st.spinner("Generating assessment..."):
+                    response = requests.post(url, json=payload)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    st.success("Assessment Generated Successfully!")
+                    st.json({
+                        "session_id": data.get("session_id"),
+                        "teacher_id": data.get("teacher_id"),
+                        "type": data.get("type")
+                    })
+                    st.subheader("Assessment Content")
+                    content = data.get("content")
+                    if isinstance(content, str):
+                        st.markdown(content)
+                    else:
+                        st.json(content)
+                else:
+                    st.error(f"Error {response.status_code}: {response.text}")
+        except requests.exceptions.ConnectionError:
+            st.error(f"Could not connect to backend at {api_base_url}. Is it running?")
+        except Exception as exc:
+            st.error(f"An error occurred: {str(exc)}")
