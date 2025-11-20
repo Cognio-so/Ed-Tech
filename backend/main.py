@@ -7,7 +7,6 @@ import inspect
 import json
 import os
 from enum import Enum
-from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 from uuid import uuid4
@@ -18,25 +17,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, validator
 
+from teacher.Content_generation.lesson_plan import generate_lesson_plan
+from teacher.Content_generation.presentation import generate_presentation
+from teacher.Content_generation.Quizz import generate_quizz
+from teacher.Content_generation.worksheet import generate_worksheet
+
+
 load_dotenv()
 
 BASE_DIR = Path(__file__).parent
-CONTENT_DIR = BASE_DIR / "teacher" / "Content_generation"
 
 
-def _load_generator(module_key: str, filename: str, function_name: str):
-    path = CONTENT_DIR / filename
-    if not path.exists():
-        async def dummy_generator(payload: Dict[str, Any]):
-            return {"message": f"Generator for {module_key} not implemented yet."}
-        return dummy_generator
-
-    spec = spec_from_file_location(f"{module_key}_module", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load module for {module_key}.")
-    module = module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return getattr(module, function_name, None)
+GENERATOR_MAP: Dict[str, Callable[..., Awaitable[str]]] = {
+    "lesson_plan": generate_lesson_plan,
+    "presentation": generate_presentation,
+    "quizz": generate_quizz,
+    "worksheet": generate_worksheet,
+}
 
 
 class InstructionDepth(str, Enum):
@@ -132,14 +129,9 @@ async def generate_content(
 ) -> Dict[str, Any]:
     current_session_id = await SessionManager.create_session(teacher_id, session_id)
 
-    generator_func = _load_generator(type, f"{type}.py", f"generate_{type}")
-    
-    if not generator_func:
-         if type == "quizz":
-             generator_func = _load_generator("quizz", "Quizz.py", "generate_quizz")
-    
-    if not generator_func:
-         raise HTTPException(
+    generator_func = GENERATOR_MAP.get(type)
+    if generator_func is None:
+        raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail=f"Generator for {type} is not implemented.",
         )
@@ -155,27 +147,6 @@ async def generate_content(
         if inspect.isawaitable(result):
             return await result
         return result
-
-    async def persist_history(output: Any) -> Dict[str, Any]:
-        session = await SessionManager.get_session(current_session_id)
-        history = session.setdefault("content_generation", [])
-        history.append(
-            {
-                "type": type,
-                "input": request_payload,
-                "output": output,
-            }
-        )
-        await SessionManager.update_session(
-            current_session_id,
-            {"content_generation": history},
-        )
-        return {
-            "session_id": current_session_id,
-            "teacher_id": teacher_id,
-            "type": type,
-            "content": output,
-        }
 
     if stream:
         if not accepts_chunk_callback:
@@ -204,7 +175,12 @@ async def generate_content(
         async def run_and_store():
             try:
                 raw_output = await invoke_generator(chunk_callback=chunk_callback)
-                metadata = await persist_history(raw_output)
+                metadata = {
+                    "session_id": current_session_id,
+                    "teacher_id": teacher_id,
+                    "type": type,
+                    "content": raw_output,
+                }
                 await queue.put(
                     {
                         "type": "content",
@@ -262,7 +238,12 @@ async def generate_content(
             detail=str(exc),
         ) from exc
 
-    return await persist_history(raw_output)
+    return {
+        "session_id": current_session_id,
+        "teacher_id": teacher_id,
+        "type": type,
+        "content": raw_output,
+    }
 
 
 @app.post("/api/teacher/{teacher_id}/sessions", tags=["Session"])
