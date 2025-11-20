@@ -5,6 +5,7 @@ import asyncio
 import inspect
 import json
 import os
+import logging
 from enum import Enum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
@@ -23,6 +24,9 @@ from pydantic import (
     model_validator,
 )
 
+from media_toolkit.websearch_schema import run_search_agent
+from media_toolkit.image_gen import ImageGenerator # Import ImageGenerator
+
 from teacher.Content_generation.lesson_plan import generate_lesson_plan
 from teacher.Content_generation.presentation import generate_presentation
 from teacher.Content_generation.Quizz import generate_quizz
@@ -31,6 +35,10 @@ from teacher.Assessment.assessment import generate_assessment
 
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent
 
@@ -71,6 +79,14 @@ class LessonPlanRequest(BaseModel):
 class ContentGenerationRequest(LessonPlanRequest):
     model_config = ConfigDict(populate_by_name=True)
 
+
+class WebSearchSchemaRequest(BaseModel):
+    topic: str = Field(..., min_length=1)
+    grade_level: str = Field(..., min_length=1)
+    subject: str = Field(..., min_length=1)
+    content_type: str = Field(..., min_length=1, description="e.g., articles, videos")
+    language: str = Field(..., min_length=1)
+    comprehension: str = Field(..., min_length=1, description="e.g., beginner, intermediate")
 
 class AssessmentRequest(BaseModel):
     subject: str = Field(..., min_length=1)
@@ -114,6 +130,17 @@ class AssessmentRequest(BaseModel):
         if not any_enabled:
             raise ValueError("At least one question type must be enabled.")
         return values
+
+# Schema for Image Generation Request
+class ImageGenSchema(BaseModel):
+    topic: str = Field(..., description="Topic for the image")
+    grade_level: str = Field(..., description="Grade level")
+    preferred_visual_type: str = Field(..., description="Visual type: 'image' for general images, 'chart' for data visualizations, 'diagram' for technical diagrams")
+    subject: str = Field(..., description="Subject")
+    instructions: str = Field(..., description="Detailed instructions")
+    difficulty_flag: str = Field("false", description="true/false flag")
+    language: str = Field("English", description="Language for labels (e.g., English, Arabic)")
+
 
 sessions: Dict[str, Dict[str, Any]] = {}
 
@@ -298,6 +325,90 @@ async def generate_content(
     }
 
 
+@app.post(
+    "/api/teacher/{teacher_id}/session/{session_id}/web_search_schema",
+    tags=["Content Generation"],
+    summary="Performs a web search using an AI agent to find educational content.",
+)
+async def web_search_schema(
+    teacher_id: str,
+    payload: WebSearchSchemaRequest,
+    session_id: Optional[str] = None,
+) -> StreamingResponse:
+    """
+    Accepts search criteria, constructs a detailed query, and uses a web search
+    agent to find relevant content, streaming the results back to the client.
+    """
+    current_session_id = await SessionManager.create_session(teacher_id, session_id)
+
+    queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
+    full_response = ""
+
+    async def chunk_callback(chunk: str):
+        nonlocal full_response
+        full_response += chunk
+        await queue.put(
+            {
+                "type": "content",
+                "data": {"chunk": chunk, "full_response": full_response, "is_complete": False},
+            }
+        )
+
+    async def run_and_store():
+        try:
+            # The agent is now called with individual parameters.
+            # The complex query string is no longer constructed here.
+            raw_output = await run_search_agent(
+                topic=payload.topic,
+                grade_level=payload.grade_level,
+                subject=payload.subject,
+                content_type=payload.content_type,
+                language=payload.language,
+                comprehension=payload.comprehension,
+                chunk_callback=chunk_callback,
+            )
+            metadata = {
+                "session_id": current_session_id,
+                "teacher_id": teacher_id,
+                "type": "web_search_schema",
+                "content": raw_output,
+            }
+            await queue.put(
+                {
+                    "type": "content",
+                    "data": {"chunk": "", "full_response": raw_output, "is_complete": True},
+                }
+            )
+            await queue.put({"type": "metadata", "data": metadata})
+        except Exception as exc:
+            await queue.put({"type": "error", "data": {"message": str(exc)}})
+        finally:
+            await queue.put(None)
+
+    asyncio.create_task(run_and_store())
+
+    async def stream_output():
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield f"data: {json.dumps(chunk)}\n\n"
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+        "X-Session-Id": current_session_id,
+        "X-Teacher-Id": teacher_id,
+        "X-Content-Type": "web_search_schema",
+    }
+    return StreamingResponse(
+        stream_output(),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
 @app.post("/api/session/{session_id}/teacher/{teacher_id}/assessment")
 async def create_assessment(
     session_id: str,
@@ -403,6 +514,41 @@ async def create_assessment(
         "type": "assessment",
         "content": raw_output,
     }
+
+# New Image Generation Endpoint
+@app.post(
+    "/api/teacher/{teacher_id}/session/{session_id}/image_generation",
+    tags=["Content Generation"],
+    summary="Generates an educational image based on a detailed schema.",
+)
+async def image_generation_endpoint(
+    teacher_id: str,
+    session_id: str,
+    schema: ImageGenSchema
+):
+    """
+    Generates an image using a schema, ideal for creating educational visuals like
+    diagrams, charts, or illustrations with specific labels and styles.
+    """
+    await SessionManager.get_session(session_id)
+    
+    try:
+        generator = ImageGenerator()
+        schema_dict = schema.model_dump()
+        
+        # Log the visual type for debugging
+        logger.info(f"Generating {schema_dict['preferred_visual_type']} for topic: {schema_dict['topic']}")
+        
+        image_b64 = generator.generate_image_from_schema(schema_dict)
+        if not image_b64:
+            raise HTTPException(status_code=500, detail="Image generation failed.")
+        data_url = f"data:image/png;base64,{image_b64}"
+        return {"image_url": data_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in image generation: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/teacher/{teacher_id}/sessions", tags=["Session"])
