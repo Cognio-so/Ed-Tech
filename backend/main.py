@@ -213,10 +213,7 @@ async def health_check() -> dict[str, str]:
 
 
 
-@app.post(
-    "/api/teacher/{teacher_id}/session/{session_id}/content_generator/{type}",
-    tags=["Content Generation"],
-)
+@app.post("/api/teacher/{teacher_id}/session/{session_id}/content_generator/{type}")
 async def generate_content(
     teacher_id: str,
     type: Literal["lesson_plan", "presentation", "quizz", "worksheet"],
@@ -886,17 +883,21 @@ async def ai_tutor_stream_chat(
         )
     
     session_messages = session.get("messages", [])
+    
+    print(f"[CHAT ENDPOINT] 📜 Loading conversation history: {len(session_messages)} previous messages")
+    session_messages.append({"role": "user", "content": payload.message})
+    recent_messages = session_messages[-3:]
     langchain_messages = []
     
-    for msg in session_messages:
+    print(f"[CHAT ENDPOINT] ✂️ Limiting context to last {len(recent_messages)} messages")
+    
+    for msg in recent_messages:
         if msg.get("role") == "user":
             langchain_messages.append(HumanMessage(content=msg.get("content", "")))
         elif msg.get("role") == "assistant":
             langchain_messages.append(AIMessage(content=msg.get("content", "")))
     
-    langchain_messages.append(HumanMessage(content=payload.message))
-    
-    session_messages.append({"role": "user", "content": payload.message})
+    print(f"[CHAT ENDPOINT] ✅ Total messages sent to graph: {len(langchain_messages)}")
     
     print(f"[CHAT ENDPOINT] 🎯 Creating graph state with doc_url: {payload.doc_url}")
     print(f"[CHAT ENDPOINT] 👤 Teacher ID: {teacher_id}, Topic: {payload.topic}, Subject: {payload.subject}")
