@@ -55,7 +55,7 @@ if not st.session_state.session_id and not st.session_state.auto_session_attempt
 
 tool_selection = st.radio(
     "Choose Generator",
-    ["Content Generator", "Assessment Generator", "Web Search", "Image Generator"],
+    ["Content Generator", "Assessment Generator", "Web Search", "Image Generator", "AI Tutor"],
     horizontal=True,
     help="Switch between different AI-powered tools.",
 )
@@ -313,3 +313,213 @@ elif tool_selection == "Image Generator":
                         st.error(f"Error {response.status_code}: {response.text}")
             except requests.exceptions.RequestException as e:
                 st.error(f"Connection error: {e}")
+
+elif tool_selection == "AI Tutor":
+    st.subheader("🤖 AI Tutor - Interactive Teaching Assistant")
+    st.markdown("Chat with the AI Tutor to get help with teaching, lesson planning, and educational content.")
+    
+    # Initialize chat history
+    if "ai_tutor_history" not in st.session_state:
+        st.session_state.ai_tutor_history = []
+    
+    # Clear history button (outside form)
+    if st.session_state.ai_tutor_history:
+        if st.button("🗑️ Clear Chat History", use_container_width=True):
+            st.session_state.ai_tutor_history = []
+            st.rerun()
+    
+    # Display chat history
+    if st.session_state.ai_tutor_history:
+        st.markdown("### 💬 Conversation History")
+        for msg in st.session_state.ai_tutor_history:
+            if msg["role"] == "user":
+                with st.chat_message("user"):
+                    st.write(msg["content"])
+            else:
+                with st.chat_message("assistant"):
+                    st.write(msg["content"])
+                    if msg.get("image_result"):
+                        st.image(msg["image_result"], caption="Generated Image")
+    
+    with st.form("ai_tutor_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### Teacher & Student Info")
+            tutor_teacher_id = st.text_input("Teacher ID", teacher_id, key="tutor_teacher_id")
+            tutor_student_name = st.text_input("Student Name (optional)", "", key="tutor_student_name")
+            tutor_student_grade = st.text_input("Student Grade (optional)", "", key="tutor_student_grade")
+            tutor_student_learning_style = st.selectbox(
+                "Student Learning Style (optional)",
+                ["", "Visual", "Auditory", "Kinesthetic", "Reading/Writing"],
+                key="tutor_student_learning_style"
+            )
+        with col2:
+            st.markdown("### Content Context")
+            tutor_topic = st.text_input("Topic (optional)", "", key="tutor_topic")
+            tutor_subject = st.text_input("Subject (optional)", "", key="tutor_subject")
+            tutor_content_type = st.selectbox(
+                "Content Type (optional)",
+                ["", "lesson_plan", "presentation", "worksheet", "assessment"],
+                key="tutor_content_type"
+            )
+            tutor_language = st.text_input("Language", "English", key="tutor_language")
+        
+        st.markdown("### Document & Message")
+        tutor_doc_url = st.text_input(
+            "Document URL (optional)",
+            "",
+            help="URL to a document (PDF, DOCX, TXT) that the AI Tutor can reference",
+            key="tutor_doc_url"
+        )
+        tutor_message = st.text_area(
+            "Your Message",
+            "Help me create a lesson plan for teaching Newton's Laws of Motion to 10th grade students.",
+            height=100,
+            key="tutor_message"
+        )
+        
+        tutor_stream = st.checkbox("Stream Output", value=True, key="tutor_stream")
+        tutor_submit = st.form_submit_button("Send to AI Tutor", use_container_width=True)
+    
+    if tutor_submit:
+        session_id = st.session_state.session_id.strip()
+        if not session_id:
+            st.error("Session ID is required. Please create one in the sidebar.")
+        elif not tutor_message.strip():
+            st.error("Please enter a message to send to the AI Tutor.")
+        else:
+            # Build payload
+            payload = {
+                "message": tutor_message,
+                "language": tutor_language,
+            }
+            
+            # Add optional fields only if provided
+            if tutor_topic:
+                payload["topic"] = tutor_topic
+            if tutor_subject:
+                payload["subject"] = tutor_subject
+            if tutor_content_type:
+                payload["content_type"] = tutor_content_type
+            if tutor_doc_url:
+                payload["doc_url"] = tutor_doc_url
+            
+            # Build student_data if any student info provided
+            student_data = {}
+            if tutor_student_name:
+                student_data["name"] = tutor_student_name
+            if tutor_student_grade:
+                student_data["grade"] = tutor_student_grade
+            if tutor_student_learning_style:
+                student_data["learning_style"] = tutor_student_learning_style
+            
+            if student_data:
+                payload["student_data"] = student_data
+            
+            # Teacher data (can be extended)
+            payload["teacher_data"] = {}
+            
+            # Build URL
+            base_url = f"{api_base_url}/api/session/teacher/{tutor_teacher_id}/stream-chat"
+            url = f"{base_url}?session_id={session_id}&stream={str(tutor_stream).lower()}"
+            
+            st.info(f"📡 Sending request to: `{url}`")
+            
+            try:
+                if tutor_stream:
+                    # Stream response
+                    placeholder = st.empty()
+                    full_response = ""
+                    image_result = None
+                    token_usage = {}
+                    
+                    with st.spinner("🤖 AI Tutor is thinking..."):
+                        response = requests.post(url, json=payload, stream=True, timeout=300)
+                        
+                        if response.status_code != 200:
+                            st.error(f"❌ Error {response.status_code}: {response.text}")
+                        else:
+                            for line in response.iter_lines():
+                                if line and line.startswith(b"data:"):
+                                    try:
+                                        event = json.loads(line[5:].strip())
+                                        
+                                        if event.get("type") == "content":
+                                            data = event.get("data", {})
+                                            full_response = data.get("full_response", "")
+                                            is_complete = data.get("is_complete", False)
+                                            
+                                            if is_complete:
+                                                # Final response
+                                                image_result = data.get("image_result")
+                                                token_usage = data.get("token_usage", {})
+                                                
+                                                placeholder.empty()
+                                                
+                                                # Add both user and assistant messages to history
+                                                st.session_state.ai_tutor_history.append({
+                                                    "role": "user",
+                                                    "content": tutor_message
+                                                })
+                                                st.session_state.ai_tutor_history.append({
+                                                    "role": "assistant",
+                                                    "content": full_response,
+                                                    "image_result": image_result
+                                                })
+                                                
+                                                if token_usage:
+                                                    st.caption(f"📊 Token Usage: {token_usage.get('total_tokens', 0)} tokens")
+                                                
+                                                st.success("✅ Response complete!")
+                                                st.rerun()
+                                            else:
+                                                # Streaming in progress
+                                                placeholder.markdown(f"**AI Tutor:** {full_response}▌")
+                                        
+                                        elif event.get("type") == "error":
+                                            error_msg = event.get("data", {}).get("error", "Unknown error")
+                                            st.error(f"❌ Error: {error_msg}")
+                                        
+                                        elif event.get("type") == "metadata":
+                                            metadata = event.get("data", {})
+                                            token_usage = metadata.get("token_usage", {})
+                                            if token_usage:
+                                                st.caption(f"📊 Token Usage: {token_usage.get('total_tokens', 0)} tokens")
+                                        
+                                        elif event.get("type") == "done":
+                                            st.success("✅ Conversation complete!")
+                                    
+                                    except json.JSONDecodeError:
+                                        continue
+                    
+                    # Clear placeholder if still showing
+                    placeholder.empty()
+                
+                else:
+                    # Non-streaming response
+                    with st.spinner("🤖 AI Tutor is thinking..."):
+                        response = requests.post(url, json=payload, timeout=300)
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            st.success("✅ Response received!")
+                            
+                            # Add to history
+                            st.session_state.ai_tutor_history.append({
+                                "role": "user",
+                                "content": tutor_message
+                            })
+                            st.session_state.ai_tutor_history.append({
+                                "role": "assistant",
+                                "content": data.get("full_response", ""),
+                                "image_result": data.get("image_result")
+                            })
+                            
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Error {response.status_code}: {response.text}")
+            
+            except requests.exceptions.Timeout:
+                st.error("⏱️ Request timed out. Please try again.")
+            except requests.exceptions.RequestException as e:
+                st.error(f"❌ Connection error: {e}")
