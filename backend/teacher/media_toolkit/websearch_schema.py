@@ -2,10 +2,16 @@ import os
 import json
 from dotenv import load_dotenv
 import logging
-from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
 from langchain_core.messages import HumanMessage, ToolMessage
 from typing import Callable, Awaitable
+import sys
+from pathlib import Path
+backend_path = Path(__file__).resolve().parents[3]
+if str(backend_path) not in sys.path:
+    sys.path.append(str(backend_path))
+# Import functions from llm.py
+from backend.llm import get_llm, stream_with_token_tracking
 
 load_dotenv()
 
@@ -26,20 +32,9 @@ try:
     if not tavily_api_key:
         raise ValueError("TAVILY_API_KEY not found in environment variables. Please check your .env file.")
 
-    chat = ChatOpenAI(
-        model="openai/gpt-4o-mini",
-        openai_api_base="https://openrouter.ai/api/v1",
-        openai_api_key=openrouter_api_key,
-        temperature=0.9,
-        default_headers={
-            "HTTP-Referer": os.getenv("APP_URL", "http://localhost"),
-            "X-Title": os.getenv("APP_NAME", "My LangGraph App")
-        },
-        model_kwargs={
-            "stream_options": {"include_usage": True}
-        },
-    )
-    logger.info("OpenRouter chat initialized successfully")
+    # Use get_llm from llm.py to initialize the chat model
+    chat = get_llm("x-ai/grok-4.1-fast", 0.6)
+    logger.info("LLM initialized successfully using get_llm")
 
     tavily_tool = TavilySearch(max_results=5, api_key=tavily_api_key, search_depth="advanced", topic="general")
     logger.info("Tavily Search tool initialized successfully")
@@ -90,13 +85,12 @@ async def run_search_agent(
                 ToolMessage(content=json.dumps(search_results), tool_call_id=tool_call["id"])
             )
 
-    full_response = ""
-    async for chunk in chat_with_tools.astream(messages):
-        content = chunk.content
-        if content:
-            full_response += content
-            if chunk_callback:
-                await chunk_callback(content)
+    # Use stream_with_token_tracking to get the final response
+    full_response, token_usage = await stream_with_token_tracking(
+        llm=chat_with_tools,
+        messages=messages,
+        chunk_callback=chunk_callback
+    )
     
-    logger.info("Finished streaming final response.")
+    logger.info(f"Finished streaming final response. Token usage: {token_usage}")
     return full_response
