@@ -24,8 +24,8 @@ from pydantic import (
     model_validator,
 )
 
-from media_toolkit.websearch_schema import run_search_agent
-from media_toolkit.image_gen import ImageGenerator # Import ImageGenerator
+from teacher.media_toolkit.websearch_schema import run_search_agent
+from teacher.media_toolkit.image_gen import ImageGenerator
 
 from teacher.Content_generation.lesson_plan import generate_lesson_plan
 from teacher.Content_generation.presentation import generate_presentation
@@ -36,7 +36,6 @@ from teacher.Assessment.assessment import generate_assessment
 
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -131,7 +130,6 @@ class AssessmentRequest(BaseModel):
             raise ValueError("At least one question type must be enabled.")
         return values
 
-# Schema for Image Generation Request
 class ImageGenSchema(BaseModel):
     topic: str = Field(..., description="Topic for the image")
     grade_level: str = Field(..., description="Grade level")
@@ -327,7 +325,7 @@ async def generate_content(
 
 @app.post(
     "/api/teacher/{teacher_id}/session/{session_id}/web_search_schema",
-    tags=["Content Generation"],
+    tags=["Web Search Schema"],
     summary="Performs a web search using an AI agent to find educational content.",
 )
 async def web_search_schema(
@@ -356,8 +354,6 @@ async def web_search_schema(
 
     async def run_and_store():
         try:
-            # The agent is now called with individual parameters.
-            # The complex query string is no longer constructed here.
             raw_output = await run_search_agent(
                 topic=payload.topic,
                 grade_level=payload.grade_level,
@@ -515,10 +511,9 @@ async def create_assessment(
         "content": raw_output,
     }
 
-# New Image Generation Endpoint
 @app.post(
     "/api/teacher/{teacher_id}/session/{session_id}/image_generation",
-    tags=["Content Generation"],
+    tags=["Image Generation"],
     summary="Generates an educational image based on a detailed schema.",
 )
 async def image_generation_endpoint(
@@ -536,7 +531,6 @@ async def image_generation_endpoint(
         generator = ImageGenerator()
         schema_dict = schema.model_dump()
         
-        # Log the visual type for debugging
         logger.info(f"Generating {schema_dict['preferred_visual_type']} for topic: {schema_dict['topic']}")
         
         image_b64 = generator.generate_image_from_schema(schema_dict)
