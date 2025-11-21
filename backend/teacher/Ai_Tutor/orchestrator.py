@@ -12,12 +12,29 @@ import json
 import re
 import asyncio
 from typing import Dict, Any, List, Optional
+from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from backend.llm import get_llm
 from backend.teacher.Ai_Tutor.graph_type import GraphState
-STATIC_SYS = """<system>
+
+
+def load_orchestrator_prompt() -> str:
+    """Load orchestrator prompt from XML file and pass it directly to the LLM."""
+    prompt_file = Path(__file__).parent / "orchestrator_prompt.xml"
+    try:
+        return prompt_file.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"[Orchestrator] Warning: Prompt file not found at {prompt_file}, using default")
+    except Exception as e:
+        print(f"[Orchestrator] Error loading XML prompt: {e}, using default")
+    return get_default_prompt()
+
+
+def get_default_prompt() -> str:
+    """Fallback default prompt if XML loading fails."""
+    return """<system>
 You are an AI Orchestrator for an educational AI Tutor system.
 Your job is to analyze user queries and decide which processing node should handle them.
 
@@ -40,6 +57,9 @@ Return only valid JSON.
 </system>"""
 
 
+STATIC_SYS = load_orchestrator_prompt()
+
+
 def normalize_route(name: str) -> str:
     """Normalize route name to graph node names."""
     if not name:
@@ -59,17 +79,32 @@ def normalize_route(name: str) -> str:
     return mapping.get(key, "simple_llm")
 
 
-def _format_last_turns(messages, k=3):
-    """Format last k messages for context."""
-    tail = []
-    for m in (messages or [])[-k:]:
-        role = (m.get("type") or m.get("role") or "").lower() if isinstance(m, dict) else (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
-        content = m.get("content") if isinstance(m, dict) else getattr(m, "content", "")
+def _format_conversation_history(messages, max_turns=10):
+    """Format full conversation history for context."""
+    if not messages:
+        return "(no previous conversation)"
+    
+    formatted = []
+    for m in messages[-max_turns:]:
+        if isinstance(m, dict):
+            role = (m.get("type") or m.get("role") or "").lower()
+            content = m.get("content", "")
+        else:
+            role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
+            content = getattr(m, "content", "") if hasattr(m, "content") else str(m)
+        
         if not content:
             continue
+        
         speaker = "User" if role in ("human", "user") else "Assistant"
-        tail.append(f"{speaker}: {content}")
-    return "\n".join(tail)
+        formatted.append(f"{speaker}: {content}")
+    
+    return "\n".join(formatted) if formatted else "(no previous conversation)"
+
+
+def _format_last_turns(messages, k=3):
+    """Format last k messages for context (backward compatibility)."""
+    return _format_conversation_history(messages, max_turns=k)
 
 
 async def analyze_query(
@@ -89,9 +124,9 @@ async def analyze_query(
 {user_message}
 </user_message>
 
-<recent_messages>
-{recent_messages_text[:1000] or '(none)'}
-</recent_messages>
+<conversation_history>
+{recent_messages_text[:2000] or '(no previous conversation)'}
+</conversation_history>
 
 <session_summary>
 {session_summary[:500] or '(none)'}
@@ -108,8 +143,9 @@ async def analyze_query(
 </context>
 
 <task>
-Analyze the query and return JSON with execution_order (list of node names) and reasoning.
+Analyze the query and full conversation history, then return JSON with execution_order (list of node names) and reasoning.
 Available nodes: SimpleLLM, RAG, WebSearch, Image
+Consider the conversation context when making routing decisions.
 </task>"""
         
         messages = [
@@ -188,14 +224,8 @@ Output ONLY the rewritten query, no explanation.
     
     try:
         groq_api_key = os.getenv("GROQ_API_KEY")
-        if groq_api_key:
-            llm = ChatGroq(
-                model="llama-3.1-70b-versatile",
-                temperature=0.4,
-                groq_api_key=groq_api_key
-            )
-        else:
-            llm = get_llm("x-ai/grok-4.1-fast", 0.4)
+        
+        llm = get_llm("x-ai/grok-4.1-fast", 0.4)
         
         result = await llm.ainvoke([
             SystemMessage(content="<system>You are a query rewriter. Output only the rewritten query.</system>"),
@@ -240,16 +270,14 @@ async def orchestrator_node(state: GraphState) -> GraphState:
     last_route = sess.get("last_route")
 
     if not state.get("tasks"):
-        recent_messages_text = _format_last_turns(messages, k=4)
+        conversation_history = _format_conversation_history(messages, max_turns=3)
         session_summary = sess.get("summary", "")
         
-        if session_summary and recent_messages_text:
-            recent_messages_text = f"{recent_messages_text}\n\nEarlier Summary:\n{session_summary}"
-        
+        print(f"[ORCHESTRATOR] 📜 Conversation history: {len(messages)} messages")
         print(f"[ORCHESTRATOR] 🤖 Analyzing query to determine routing (doc_url available: {bool(doc_url)})")
         result = await analyze_query(
             user_message=user_query,
-            recent_messages_text=recent_messages_text,
+            recent_messages_text=conversation_history,
             session_summary=session_summary,
             last_route=last_route,
             doc_url=doc_url,

@@ -9,7 +9,7 @@ if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 
 from typing import Dict, Any
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from backend.llm import get_llm, stream_with_token_tracking
 from backend.teacher.Ai_Tutor.graph_type import GraphState
 
@@ -43,16 +43,25 @@ async def simple_llm_node(state: GraphState) -> GraphState:
     Provide clear, educational, and age-appropriate responses based on the knowledge base.
     """
     
-    user_message = state.get("resolved_query") or state.get("user_query", "")
-    if not user_message and messages:
-        user_message = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
-    
     llm = get_llm("x-ai/grok-4.1-fast", temperature=0.6)
     
-    llm_messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_message)
-    ]
+    llm_messages = [SystemMessage(content=system_prompt)]
+    
+    if messages:
+        for msg in messages:
+            if hasattr(msg, 'content') and msg.content:
+                if hasattr(msg, 'type') or hasattr(msg, 'role'):
+                    msg_type = getattr(msg, 'type', None) or getattr(msg, 'role', None)
+                    if msg_type and msg_type.lower() in ('human', 'user'):
+                        llm_messages.append(HumanMessage(content=msg.content))
+                    elif msg_type and msg_type.lower() in ('ai', 'assistant'):
+                        llm_messages.append(AIMessage(content=msg.content))
+                else:
+                    llm_messages.append(HumanMessage(content=msg.content))
+    else:
+        user_message = state.get("resolved_query") or state.get("user_query", "")
+        if user_message:
+            llm_messages.append(HumanMessage(content=user_message))
     
     full_response, token_usage = await stream_with_token_tracking(
         llm,

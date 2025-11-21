@@ -10,7 +10,7 @@ if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 
 from typing import Dict, Any, List, Optional
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from backend.llm import get_llm, stream_with_token_tracking
 from backend.teacher.Ai_Tutor.graph_type import GraphState
 from backend.teacher.Ai_Tutor.qdrant_utils import retrieve_relevant_documents, get_collection_name
@@ -138,10 +138,23 @@ async def rag_node(state: GraphState) -> GraphState:
     
     llm = get_llm("x-ai/grok-4.1-fast", temperature=0.7)
     
-    llm_messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=query)
-    ]
+    llm_messages = [SystemMessage(content=system_prompt)]
+    
+    if messages:
+        print(f"[RAG] 📜 Using full conversation history ({len(messages)} messages)")
+        for msg in messages:
+            if hasattr(msg, 'content') and msg.content:
+                if hasattr(msg, 'type') or hasattr(msg, 'role'):
+                    msg_type = getattr(msg, 'type', None) or getattr(msg, 'role', None)
+                    if msg_type and msg_type.lower() in ('human', 'user'):
+                        llm_messages.append(HumanMessage(content=msg.content))
+                    elif msg_type and msg_type.lower() in ('ai', 'assistant'):
+                        llm_messages.append(AIMessage(content=msg.content))
+                else:
+                    llm_messages.append(HumanMessage(content=msg.content))
+    else:
+        if query:
+            llm_messages.append(HumanMessage(content=query))
     
     full_response, token_usage = await stream_with_token_tracking(
         llm,
