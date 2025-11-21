@@ -774,24 +774,21 @@ async def ai_tutor_stream_chat(
     print(f"[CHAT ENDPOINT] 📝 Message: {payload.message[:100]}...")
     print(f"[CHAT ENDPOINT] 📎 doc_url: {payload.doc_url}")
     
-    # Auto-process document if doc_url is provided
     if payload.doc_url:
         print(f"[CHAT ENDPOINT] 🔗 Document URL provided: {payload.doc_url}")
         if "uploaded_docs" not in session:
             session["uploaded_docs"] = []
         
-        # Check if document is already processed (has an "id" field which means it was embedded)
         doc_already_processed = any(
             (doc.get("url") == payload.doc_url or doc.get("file_url") == payload.doc_url) 
-            and doc.get("id") is not None  # If it has an ID, it was processed
+            and doc.get("id") is not None
             for doc in session["uploaded_docs"]
         )
         
         if not doc_already_processed:
             print(f"[CHAT ENDPOINT] ⚡ Document not yet processed. Auto-processing and embedding...")
             try:
-                # Extract filename from URL
-                filename = payload.doc_url.split('/')[-1].split('?')[0]  # Remove query params
+                filename = payload.doc_url.split('/')[-1].split('?')[0]
                 file_extension = filename.split('.')[-1].lower() if '.' in filename else 'txt'
                 doc_id = str(uuid4())
                 
@@ -802,7 +799,6 @@ async def ai_tutor_stream_chat(
                     file_content = response.content
                     print(f"[CHAT ENDPOINT] ✅ Downloaded {len(file_content)} bytes")
                 
-                # Extract text
                 print(f"[CHAT ENDPOINT] 🔍 Extracting text from {filename} (type: {file_extension})")
                 text = ""
                 if file_extension == 'pdf':
@@ -819,7 +815,6 @@ async def ai_tutor_stream_chat(
                 else:
                     print(f"[CHAT ENDPOINT] ✅ Extracted {len(text)} characters from {filename}")
                     
-                    # Create document and embed
                     from langchain_core.documents import Document
                     doc_metadata = {
                         "source": payload.doc_url,
@@ -841,7 +836,6 @@ async def ai_tutor_stream_chat(
                     
                     if success:
                         print(f"[CHAT ENDPOINT] ✅ Successfully embedded document in Qdrant")
-                        # Add to session with processed flag
                         session["uploaded_docs"].append({
                             "url": payload.doc_url,
                             "file_url": payload.doc_url,
@@ -854,7 +848,6 @@ async def ai_tutor_stream_chat(
                         await SessionManager.update_session(current_session_id, session)
                     else:
                         print(f"[CHAT ENDPOINT] ❌ Failed to embed document in Qdrant")
-                        # Still add to session but mark as not processed
                         session["uploaded_docs"].append({
                             "url": payload.doc_url,
                             "file_type": file_extension,
@@ -864,7 +857,6 @@ async def ai_tutor_stream_chat(
             except Exception as e:
                 logger.error(f"[CHAT ENDPOINT] Error auto-processing document: {e}", exc_info=True)
                 print(f"[CHAT ENDPOINT] ❌ ERROR auto-processing document: {e}")
-                # Add to session anyway but mark as not processed
                 session["uploaded_docs"].append({
                     "url": payload.doc_url,
                     "file_type": payload.doc_url.split('.')[-1].lower() if '.' in payload.doc_url else 'txt',
