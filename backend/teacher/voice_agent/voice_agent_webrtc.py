@@ -99,7 +99,6 @@ class RealtimeOpenAIService:
         self.audio_task = None # To track the playing task
         
         # State
-        self.user_type = 'student'
         self.selected_voice = 'alloy'
         self.current_emotion = 'neutral'
         self.emotion_detection_enabled = True
@@ -110,9 +109,8 @@ class RealtimeOpenAIService:
         self.on_response_start = None
         self.on_response_complete = None
 
-    async def connect(self, user_type: str = 'teacher', voice_gender: str = 'female'):
+    async def connect(self, voice_gender: str = 'female'):
         try:
-            self.user_type = user_type
             self.selected_voice = self._get_voice_for_gender(voice_gender)
             
             # STUN server
@@ -230,7 +228,7 @@ class RealtimeOpenAIService:
         Updating 'voice' while audio is active causes an OpenAI error.
         """
         if self.dc and self.dc.readyState == "open":
-            prompt = self._create_system_prompt(self.user_type)
+            prompt = self._create_system_prompt()
             prompt = self._add_emotion_instructions(prompt, self.current_emotion)
             
             session_config = {
@@ -242,7 +240,7 @@ class RealtimeOpenAIService:
                 "turn_detection": {
                     "type": "server_vad",
                     "threshold": 0.5,
-                    "prefix_padding_ms": 300,
+                    "prefix_padding_ms": 400,
                     "silence_duration_ms": 500
                 }
             }
@@ -361,24 +359,22 @@ class RealtimeOpenAIService:
         await asyncio.sleep(0.1)
         logger.info("🔌 Disconnected")
 
-    def _create_system_prompt(self, user_type: str) -> str:
-        common_rules = """
+    def _create_system_prompt(self) -> str:
+        """
+        Returns the system prompt for the AI Teaching Assistant.
+        """
+        return """
+You are an expert AI Teaching Assistant.
+
+**CORE RESPONSIBILITIES:**
+1. **Analyze Performance:** Help teachers identify student needs based on descriptions or data.
+2. **Actionable Steps:** Provide 3-5 numbered, concrete steps to address teaching challenges.
+3. **Resource Generation:** Create examples, quiz questions, or explanation strategies when asked.
+
 **CRITICAL INSTRUCTIONS:**
 - Respond in the SAME language as the user's query.
 - For Arabic, ensure right-to-left (RTL) alignment and use Arabic numerals.
 - Mathematical expressions MUST use LaTeX format (e.g., $x^2$).
-"""
-        if user_type == 'student':
-            return f"""You are an expert AI Learning Coach. 
-1. **Step-by-Step Teaching:** Present only ONE step at a time.
-2. **Wait for Confirmation:** Always ask "Does that make sense?" and wait.
-{common_rules}
-"""
-        else:
-            return f"""You are an expert AI Teaching Assistant.
-1. **Analyze Performance:** Help teachers identify student needs.
-2. **Actionable Steps:** Provide 3-5 numbered, concrete steps.
-{common_rules}
 """
 
     def _add_emotion_instructions(self, base_prompt: str, emotion: str) -> str:
@@ -400,12 +396,12 @@ async def main():
     service = RealtimeOpenAIService(api_key)
     
     # Simpler print callbacks
-    service.on_user_transcript = lambda text: print(f"\nUser: {text}")
+    service.on_user_transcript = lambda text: print(f"\nTeacher: {text}")
     service.on_transcript = lambda delta: print(f"{delta}", end="", flush=True)
     
     try:
-        print("Connecting...")
-        await service.connect(user_type='student', voice_gender='female')
+        print("Connecting as Teaching Assistant...")
+        await service.connect(voice_gender='female')
         print("Conversation started. Press Ctrl+C to exit.")
         
         while True:

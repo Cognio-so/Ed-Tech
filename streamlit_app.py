@@ -53,9 +53,10 @@ if "auto_session_attempted" not in st.session_state:
 if not st.session_state.session_id and not st.session_state.auto_session_attempted:
     create_session(show_feedback=False)
 
+# UPDATED: Added "Comic Generator" to the list
 tool_selection = st.radio(
     "Choose Generator",
-    ["Content Generator", "Assessment Generator", "Web Search", "Image Generator", "AI Tutor"],
+    ["Content Generator", "Assessment Generator", "Web Search", "Image Generator", "Comic Generator", "AI Tutor"],
     horizontal=True,
     help="Switch between different AI-powered tools.",
 )
@@ -191,7 +192,6 @@ elif tool_selection == "Assessment Generator":
             base_url = f"{api_base_url}/api/session/{session_id}/teacher/{teacher_id}/assessment"
             url = f"{base_url}?stream=true" if assessment_stream else base_url
             st.info(f"Sending request to: `{url}`")
-            # Streaming logic similar to content generator
             try:
                 if assessment_stream:
                     placeholder = st.empty()
@@ -311,6 +311,94 @@ elif tool_selection == "Image Generator":
                         st.image(data.get("image_url"), caption=f"Generated {img_visual_type} for '{img_topic}'")
                     else:
                         st.error(f"Error {response.status_code}: {response.text}")
+            except requests.exceptions.RequestException as e:
+                st.error(f"Connection error: {e}")
+
+elif tool_selection == "Comic Generator":
+    st.subheader("AI Comic Book Generator")
+    with st.form("comic_gen_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            comic_topic = st.text_input("Comic Topic / Story Idea", "The Life of a Red Blood Cell")
+            comic_grade = st.text_input("Target Grade Level", "3rd Grade")
+        with col2:
+            comic_panels = st.number_input("Number of Panels", min_value=1, max_value=10, value=3)
+            comic_language = st.text_input("Language", "English")
+        
+        comic_submitted = st.form_submit_button("Generate Comic")
+
+    if comic_submitted:
+        session_id = st.session_state.session_id.strip()
+        if not session_id:
+            st.error("Session ID is required.")
+        else:
+            payload = {
+                "instructions": comic_topic,
+                "grade_level": comic_grade,
+                "num_panels": comic_panels,
+                "language": comic_language
+            }
+            url = f"{api_base_url}/api/teacher/{teacher_id}/session/{session_id}/comic_generation"
+            st.info(f"Sending request to: `{url}`")
+            
+            try:
+                # Containers for different parts of the stream
+                status_container = st.empty()
+                story_expander = st.expander("Read Story Script", expanded=False)
+                panels_container = st.container()
+
+                with st.spinner("Starting comic generation..."):
+                    response = requests.post(url, json=payload, stream=True)
+                    
+                    if response.status_code != 200:
+                        st.error(f"Error {response.status_code}: {response.text}")
+                    else:
+                        # Process the stream
+                        for line in response.iter_lines():
+                            if line and line.startswith(b"data:"):
+                                try:
+                                    event = json.loads(line[5:].strip())
+                                    msg_type = event.get("type")
+                                    
+                                    if msg_type == "story_prompts":
+                                        with story_expander:
+                                            st.markdown("### Generated Story & Prompts")
+                                            st.text(event.get("content"))
+                                        status_container.info("Story generated! Creating panels...")
+                                        
+                                    elif msg_type == "panel_info":
+                                        idx = event.get("index")
+                                        status_container.info(f"🎨 Generatng artwork for Panel {idx}...")
+                                        
+                                    elif msg_type == "panel_image":
+                                        idx = event.get("index")
+                                        img_url = event.get("url")
+                                        footer_text = event.get("footer_text", "")
+                                        prompt_used = event.get("prompt_used", "")
+                                        
+                                        with panels_container:
+                                            st.markdown(f"### Panel {idx}")
+                                            st.image(img_url, use_column_width=True)
+                                            if footer_text:
+                                                st.caption(f"**Dialogue:** {footer_text}")
+                                            with st.expander("View Visual Prompt"):
+                                                st.write(prompt_used)
+                                            st.divider()
+                                            
+                                    elif msg_type == "panel_error":
+                                        idx = event.get("index")
+                                        err_msg = event.get("message")
+                                        st.error(f"Error in Panel {idx}: {err_msg}")
+                                        
+                                    elif msg_type == "done":
+                                        status_container.success("✅ Comic Generation Complete!")
+                                        
+                                    elif msg_type == "error":
+                                        st.error(f"Server Error: {event.get('message')}")
+                                        
+                                except json.JSONDecodeError:
+                                    continue
+                                    
             except requests.exceptions.RequestException as e:
                 st.error(f"Connection error: {e}")
 
