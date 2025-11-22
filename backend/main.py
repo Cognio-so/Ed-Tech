@@ -39,7 +39,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from doument_processor import extract_text_from_pdf, extract_text_from_docx, extract_text_from_txt, extract_text_from_json
 from teacher.Ai_Tutor.qdrant_utils import store_documents
 import httpx
-
+from teacher.voice_agent.voice_agent_webrtc import VoiceAgentBridge
 
 load_dotenv()
 
@@ -117,6 +117,16 @@ class ComicsSchema(BaseModel):
     grade_level: str = Field(..., description="Grade level string, e.g., '5' or 'Grade 5'")
     num_panels: int = Field(..., description="Number of panels to generate", ge=1, le=20)
     language: str = Field("English", description="Language for comic text (e.g., English)")
+
+class TeacherVoiceSchema(BaseModel):
+    """Schema for initializing the Voice Agent with context."""
+    sdp: str = Field(..., description="The WebRTC SDP Offer from the client browser")
+    type: str = Field(..., description="SDP type, usually 'offer'")
+    teacher_name: str = Field(..., description="Name of the teacher")
+    subject: str = Field(..., description="Subject being taught")
+    grade: str = Field("General", description="Grade level")
+    instructions: Optional[str] = Field(None, description="Specific instructions for this session")
+    voice: Literal['alloy', 'echo', 'shimmer'] = Field('shimmer', description="Voice preference")
 
 def _parse_enhanced_story_panels(story_text: str) -> List[Dict[str, str]]:
     """
@@ -208,10 +218,10 @@ class AITutorRequest(BaseModel):
 
 sessions: Dict[str, Dict[str, Any]] = {}
 
+# Stores active VoiceAgentBridge instances by session_id
+voice_sessions: Dict[str, VoiceAgentBridge] = {}
 
 class SessionManager:
-    """Global in-memory session management."""
-
     @staticmethod
     async def create_session(teacher_id: str, existing_session_id: Optional[str] = None) -> str:
         session_id = existing_session_id or str(uuid4())
@@ -238,7 +248,6 @@ class SessionManager:
         session.update(updates)
         sessions[session_id] = session
 
-
 app = FastAPI(
     title="Ed-Tech Content Generation API",
     version="0.1.0",
@@ -253,12 +262,75 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.get("/healthz", tags=["System"])
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/api/teacher/{teacher_id}/session/{session_id}/voice_agent/connect")
+async def connect_voice_agent(
+    teacher_id: str,
+    session_id: str,
+    payload: TeacherVoiceSchema
+) -> Dict[str, Any]:
+    """
+    Establishes a WebRTC connection for the Voice Agent.
+    """
+    await SessionManager.create_session(teacher_id, session_id)
+    
+    if session_id in voice_sessions:
+        logger.info(f"Cleaning up existing voice session for {session_id}")
+        await voice_sessions[session_id].disconnect()
+        del voice_sessions[session_id]
+
+    try:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="OpenAI API Key not configured")
+
+        bridge = VoiceAgentBridge(api_key=api_key)
+        
+        context_data = {
+            "teacher_name": payload.teacher_name,
+            "subject": payload.subject,
+            "grade": payload.grade,
+            "instructions": payload.instructions
+        }
+        
+        # Connect
+        answer_sdp = await bridge.connect(
+            offer_sdp=payload.sdp, 
+            context_data=context_data,
+            voice=payload.voice
+        )
+        
+        voice_sessions[session_id] = bridge
+        
+        return {
+            "sdp": answer_sdp["sdp"],
+            "type": answer_sdp["type"]
+        }
+
+    except Exception as e:
+        logger.error(f"Voice Connection Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/teacher/{teacher_id}/session/{session_id}/voice_agent/disconnect")
+async def disconnect_voice_agent(
+    teacher_id: str,
+    session_id: str
+) -> Dict[str, str]:
+    if session_id in voice_sessions:
+        try:
+            await voice_sessions[session_id].disconnect()
+            del voice_sessions[session_id]
+            return {"status": "disconnected", "message": "Voice agent disconnected."}
+        except Exception as e:
+            logger.error(f"Error disconnecting voice session: {e}")
+            raise HTTPException(status_code=500, detail=f"Error disconnecting: {str(e)}")
+    
+    return {"status": "not_found", "message": "No active voice session found."}
 
 @app.post("/api/teacher/{teacher_id}/session/{session_id}/content_generator/{type}")
 async def generate_content(

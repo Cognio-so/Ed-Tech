@@ -2,208 +2,130 @@ import asyncio
 import json
 import logging
 import os
-import time
-from fractions import Fraction
 from typing import Optional, Dict, Any
 
 import aiohttp
-import av
-import numpy as np
-import pyaudio
 from aiortc import (
     RTCPeerConnection, 
     RTCSessionDescription, 
-    MediaStreamTrack, 
     RTCConfiguration, 
     RTCIceServer
 )
-from dotenv import load_dotenv
-from aiortc.contrib.media import MediaPlayer, MediaRecorder
-from aiortc.mediastreams import MediaStreamError
+from aiortc.contrib.media import MediaRelay
 
-load_dotenv()
+# Try importing pyaudio, but don't fail if it's missing (Server environment)
+try:
+    import pyaudio
+    import av
+    import numpy as np
+    from fractions import Fraction
+    from aiortc import MediaStreamTrack
+    HAS_AUDIO_HARDWARE = True
+except ImportError:
+    HAS_AUDIO_HARDWARE = False
 
-# --- LOGGING CONFIGURATION ---
-# Filter out noisy aioice/ice connection errors (harmless binding errors on Windows)
+logger = logging.getLogger("VoiceAgent")
 logging.basicConfig(level=logging.INFO)
-logging.getLogger("aioice").setLevel(logging.WARNING) 
-logger = logging.getLogger("RealtimeOpenAI")
 
-class AudioStreamTrack(MediaStreamTrack):
+class VoiceAgentBridge:
     """
-    A MediaStreamTrack that reads from the system microphone via PyAudio.
+    Acts as a WebRTC Bridge (B2BUA) between the Client (Browser) and OpenAI.
+    Browser <==> [VoiceAgentBridge] <==> OpenAI Realtime API
     """
-    kind = "audio"
-
-    def __init__(self):
-        super().__init__()
-        self.p = pyaudio.PyAudio()
-        self.rate = 24000  # OpenAI Realtime preferred rate
-        self.channels = 1
-        self.format = pyaudio.paInt16
-        self.frame_length = 0.02  # 20ms
-        self.chunk = int(self.rate * self.frame_length)
-        
-        self.stream = self.p.open(
-            format=self.format,
-            channels=self.channels,
-            rate=self.rate,
-            input=True,
-            frames_per_buffer=self.chunk
-        )
-        self.pts = 0
-        self._running = True
-
-    async def recv(self):
-        """Called by aiortc to get the next audio frame."""
-        if self.readyState != "live" or not self._running:
-            raise MediaStreamError
-
-        try:
-            # Read raw data from microphone
-            loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(None, self.stream.read, self.chunk, False)
-            
-            # Convert to numpy
-            np_data = np.frombuffer(data, dtype=np.int16)
-            np_data = np_data.reshape(1, -1)
-            
-            frame = av.AudioFrame.from_ndarray(np_data, format='s16', layout='mono')
-            frame.sample_rate = self.rate
-            frame.pts = self.pts
-            frame.time_base = Fraction(1, self.rate)
-            
-            self.pts += self.chunk
-            return frame
-        except Exception:
-            raise MediaStreamError
-
-    def stop(self):
-        self._running = False
-        super().stop()
-        if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
-        self.p.terminate()
-
-class RealtimeOpenAIService:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.pc: Optional[RTCPeerConnection] = None
-        self.dc = None
-        self.is_connected = False
+        # Connection to the Client (Browser)
+        self.pc_client: Optional[RTCPeerConnection] = None
+        # Connection to OpenAI
+        self.pc_openai: Optional[RTCPeerConnection] = None
         
-        # Audio Hardware
-        self.mic_track: Optional[AudioStreamTrack] = None
-        self.pyaudio_instance = pyaudio.PyAudio()
-        self.audio_task = None # To track the playing task
+        self.relay = MediaRelay()
+        self.client_dc = None
+        self.openai_dc = None
         
-        # State
-        self.selected_voice = 'alloy'
-        self.current_emotion = 'neutral'
-        self.emotion_detection_enabled = True
-        
-        # Callbacks
-        self.on_transcript = None
-        self.on_user_transcript = None
-        self.on_response_start = None
-        self.on_response_complete = None
+        self.context_data = {}
 
-    async def connect(self, voice_gender: str = 'female'):
-        try:
-            self.selected_voice = self._get_voice_for_gender(voice_gender)
-            
-            # STUN server
-            config = RTCConfiguration(
-                iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])]
-            )
-            self.pc = RTCPeerConnection(configuration=config)
-            
-            await self._setup_audio()
-            self._setup_data_channel()
-            await self._establish_connection()
-            
-            self.is_connected = True
-            logger.info(f"✅ Connected to OpenAI with voice: {self.selected_voice}")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to connect to OpenAI: {e}")
-            await self.disconnect()
-            raise e
-
-    async def _setup_audio(self):
-        # 1. Input: Add Microphone Track
-        self.mic_track = AudioStreamTrack()
-        self.pc.addTrack(self.mic_track)
+    async def connect(self, offer_sdp: str, context_data: Dict[str, Any], voice: str = "shimmer") -> Dict[str, str]:
+        """
+        1. Sets up PC for Client.
+        2. Sets up PC for OpenAI.
+        3. Relays tracks and Data Channels.
+        4. Returns Answer SDP for Client.
+        """
+        self.context_data = context_data
         
-        # 2. Output: Handle incoming audio
-        @self.pc.on("track")
-        def on_track(track):
+        # 1. Initialize Client Connection (Browser -> Server)
+        self.pc_client = RTCPeerConnection()
+        
+        # 2. Initialize OpenAI Connection (Server -> OpenAI)
+        # Using Google STUN for reliability, though OpenAI connection is usually direct via REST handshake
+        self.pc_openai = RTCPeerConnection(RTCConfiguration(
+            iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])]
+        ))
+
+        # --- SETUP TRACK RELAYING ---
+        
+        # Handle tracks coming FROM Client (Browser Mic) -> Send TO OpenAI
+        @self.pc_client.on("track")
+        def on_client_track(track):
+            logger.info(f"🎤 Received Client Track: {track.kind}")
             if track.kind == "audio":
-                # Store task to cancel it later
-                self.audio_task = asyncio.ensure_future(self._play_remote_audio(track))
+                self.pc_openai.addTrack(self.relay.subscribe(track))
 
-    async def _play_remote_audio(self, track):
-        """
-        Consumes the remote audio track, resamples it to 24kHz, and plays it.
-        """
-        OUTPUT_RATE = 24000
+        # Handle tracks coming FROM OpenAI (AI Voice) -> Send TO Client
+        @self.pc_openai.on("track")
+        def on_openai_track(track):
+            logger.info(f"🤖 Received OpenAI Track: {track.kind}")
+            if track.kind == "audio":
+                self.pc_client.addTrack(self.relay.subscribe(track))
+
+        # --- SETUP DATA CHANNEL RELAYING ---
         
-        output_stream = self.pyaudio_instance.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=OUTPUT_RATE,
-            output=True
-        )
-        
-        resampler = av.AudioResampler(
-            format='s16',
-            layout='mono',
-            rate=OUTPUT_RATE
-        )
-
-        loop = asyncio.get_event_loop()
-
-        try:
-            while True:
-                frame = await track.recv()
-                frame_resampled_iterator = resampler.resample(frame)
-                
-                for resampled_frame in frame_resampled_iterator:
-                    p_bytes = resampled_frame.to_ndarray().tobytes()
-                    await loop.run_in_executor(None, output_stream.write, p_bytes)
-                
-        except (MediaStreamError, asyncio.CancelledError):
-            # Normal shutdown
-            pass
-        except Exception as e:
-            logger.error(f"Error playing audio: {e}")
-        finally:
-            if output_stream.is_active():
-                output_stream.stop_stream()
-            output_stream.close()
-
-    def _setup_data_channel(self):
-        self.dc = self.pc.createDataChannel("oai-events")
-        
-        @self.dc.on("open")
-        def on_open():
-            logger.info("📡 Data Channel Open")
-            # Initial session setup (MUST include voice)
-            self._send_session_update(include_voice=True)
+        # Handle Data Channel FROM Client
+        @self.pc_client.on("datachannel")
+        def on_client_datachannel(channel):
+            logger.info(f"📡 Client DataChannel opened: {channel.label}")
+            self.client_dc = channel
             
-        @self.dc.on("message")
-        def on_message(msg):
-            try:
-                message = json.loads(msg)
-                self._handle_message(message)
-            except Exception as e:
-                logger.error(f"Error handling message: {e}")
+            @channel.on("message")
+            def on_client_message(message):
+                # Relay message to OpenAI
+                if self.openai_dc and self.openai_dc.readyState == "open":
+                    self.openai_dc.send(message)
 
-    async def _establish_connection(self):
-        offer = await self.pc.createOffer()
-        await self.pc.setLocalDescription(offer)
+        # Create Data Channel TO OpenAI
+        self.openai_dc = self.pc_openai.createDataChannel("oai-events")
         
+        @self.openai_dc.on("open")
+        def on_openai_dc_open():
+            logger.info("✅ OpenAI DataChannel Open")
+            # Send initial session configuration
+            self._send_session_update(voice)
+
+        @self.openai_dc.on("message")
+        def on_openai_message(message):
+            # 1. Intercept and log transcription events
+            self._log_transcription(message)
+            
+            # 2. Relay message to Client (Browser) so JS can also use it
+            if self.client_dc and self.client_dc.readyState == "open":
+                self.client_dc.send(message)
+
+        # --- SIGNALING HANDSHAKE ---
+
+        # A. Set Remote Description from Client Offer
+        client_offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
+        await self.pc_client.setRemoteDescription(client_offer)
+
+        # B. Prepare Offer for OpenAI
+        # We need to add a transceiver or track to OpenAI to initiate audio
+        if not self.pc_client.getTransceivers():
+            self.pc_openai.addTransceiver("audio", direction="sendrecv")
+        
+        openai_offer = await self.pc_openai.createOffer()
+        await self.pc_openai.setLocalDescription(openai_offer)
+
+        # C. Send Offer to OpenAI API via REST
         url = "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -211,211 +133,212 @@ class RealtimeOpenAIService:
         }
         
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=self.pc.localDescription.sdp, headers=headers) as response:
+            async with session.post(url, data=self.pc_openai.localDescription.sdp, headers=headers) as response:
                 if response.status not in [200, 201]:
                     text = await response.text()
                     raise Exception(f"OpenAI API Error {response.status}: {text}")
-                
-                answer_sdp = await response.text()
-        
-        answer = RTCSessionDescription(sdp=answer_sdp, type="answer")
-        await self.pc.setRemoteDescription(answer)
+                openai_answer_sdp = await response.text()
 
-    def _send_session_update(self, include_voice: bool = False):
-        """
-        Sends session update. 
-        IMPORTANT: Only include 'voice' if it's the initial setup or a deliberate voice change.
-        Updating 'voice' while audio is active causes an OpenAI error.
-        """
-        if self.dc and self.dc.readyState == "open":
-            prompt = self._create_system_prompt()
-            prompt = self._add_emotion_instructions(prompt, self.current_emotion)
-            
-            session_config = {
-                "modalities": ["text", "audio"],
-                "instructions": prompt,
-                # "input_audio_format": "pcm16",
-                # "output_audio_format": "pcm16",
-                "input_audio_transcription": {"model": "gpt-4o-transcribe"},
-                "turn_detection": {
-                    "type": "server_vad",
-                    "threshold": 0.5,
-                    "prefix_padding_ms": 400,
-                    "silence_duration_ms": 500
-                }
+        # D. Set Remote Description from OpenAI Answer
+        openai_answer = RTCSessionDescription(sdp=openai_answer_sdp, type="answer")
+        await self.pc_openai.setRemoteDescription(openai_answer)
+
+        # E. Create Answer for Client
+        client_answer = await self.pc_client.createAnswer()
+        await self.pc_client.setLocalDescription(client_answer)
+
+        return {
+            "sdp": self.pc_client.localDescription.sdp,
+            "type": self.pc_client.localDescription.type
+        }
+
+    def _send_session_update(self, voice: str):
+        """Constructs system instructions and sends session update to OpenAI."""
+        if not self.openai_dc:
+            return
+
+        instructions = self._create_dynamic_prompt()
+        
+        session_config = {
+            "modalities": ["text", "audio"],
+            "instructions": instructions,
+            "voice": voice,
+            # EXPLICITLY REQUEST INPUT TRANSCRIPTION (Whisper)
+            "input_audio_transcription": {
+                "model": "gpt-4o-transcribe"
+            },
+            "turn_detection": {
+                "type": "server_vad",
+                "threshold": 0.5,
+                "prefix_padding_ms": 300,
+                "silence_duration_ms": 500
             }
-
-            # FIX: Only send voice if explicitly requested (Initial connection or manual switch)
-            if include_voice:
-                session_config["voice"] = self.selected_voice
-
-            message = {
-                "type": "session.update",
-                "session": session_config
-            }
-            
-            # Log what we are doing
-            log_msg = f"📡 Sending session update. Emotion: {self.current_emotion}"
-            if include_voice:
-                log_msg += f", Voice set to: {self.selected_voice}"
-            logger.info(log_msg)
-            
-            self.dc.send(json.dumps(message))
-
-    def _handle_message(self, message: Dict[str, Any]):
-        msg_type = message.get("type")
+        }
         
-        if msg_type == "response.audio_transcript.delta":
-            if self.on_transcript:
-                self.on_transcript(message.get("delta"))
-                
-        elif msg_type == "response.audio_transcript.done":
-            if self.on_response_complete:
-                self.on_response_complete()
-                
-        elif msg_type == "conversation.item.input_audio_transcription.completed":
-            transcript = message.get("transcript", "")
-            if self.on_user_transcript:
-                self.on_user_transcript(transcript)
-            
-            if self.emotion_detection_enabled:
-                self._detect_and_update_emotion(transcript)
-                
-        elif msg_type == "response.created":
-            if self.on_response_start:
-                self.on_response_start()
-                
-        elif msg_type == "output_audio_buffer.started":
-            pass # Suppressed log to reduce noise
-            
-        elif msg_type == "error":
-            logger.error(f"❌ OpenAI Error: {message.get('error')}")
+        msg = {
+            "type": "session.update",
+            "session": session_config
+        }
+        self.openai_dc.send(json.dumps(msg))
+        logger.info("📡 Sent Session Update (Enabled Input Transcription)")
 
-    def update_voice(self, gender: str):
-        new_voice = self._get_voice_for_gender(gender)
-        if new_voice != self.selected_voice:
-            self.selected_voice = new_voice
-            logger.info(f"🎤 Switching voice to {new_voice}")
-            # We explicitly want to change voice here, so include_voice=True
-            self._send_session_update(include_voice=True)
+    def _log_transcription(self, raw_message):
+        """Parses JSON events to find and log transcriptions."""
+        try:
+            data = json.loads(raw_message)
+            event_type = data.get("type")
 
-    def update_emotion(self, emotion: str):
-        if self.current_emotion != emotion:
-            self.current_emotion = emotion
-            logger.info(f"🎭 Manual emotion update: {emotion}")
-            # Just updating instructions, do not resend voice to avoid lock error
-            self._send_session_update(include_voice=False)
+            # 1. Teacher (User) Transcription
+            # OpenAI Event: conversation.item.input_audio_transcription.completed
+            if event_type == "conversation.item.input_audio_transcription.completed":
+                transcript = data.get("transcript", "").strip()
+                if transcript:
+                    print(f"\n[TEACHER]: {transcript}")
+                    logger.info(f"🗣️ [TEACHER]: {transcript}")
 
-    def _detect_and_update_emotion(self, user_input: str):
-        detected = self._detect_emotion_from_text(user_input)
-        if detected != "neutral" and detected != self.current_emotion:
-            logger.info(f"🎭 Auto-detected emotion: {detected}")
-            self.update_emotion(detected)
+            # 2. AI Agent Transcription
+            # OpenAI Event: response.audio_transcript.done
+            elif event_type == "response.audio_transcript.done":
+                transcript = data.get("transcript", "").strip()
+                if transcript:
+                    print(f"\n[AI AGENT]: {transcript}")
+                    logger.info(f"🤖 [AI AGENT]: {transcript}")
 
-    def _detect_emotion_from_text(self, text: str) -> str:
-        text = text.lower()
-        if any(x in text for x in ['help', 'confused', 'hard', 'stress', 'panic', 'مساعدة', 'صعب']):
-            return 'calm'
-        if any(x in text for x in ['great', 'understand', 'yes', 'perfect', 'correct', 'ممتاز', 'فهمت']):
-            return 'excited'
-        if any(x in text for x in ['wrong', 'mistake', 'error', 'fail', 'خطأ']):
-            return 'reassuring'
-        if any(x in text for x in ['how', 'what', 'why', 'explain', 'كيف', 'لماذا']):
-            return 'friendly'
-        return 'neutral'
+        except json.JSONDecodeError:
+            pass
+        except Exception as e:
+            logger.error(f"Error parsing transcription: {e}")
 
-    def _get_voice_for_gender(self, gender: str) -> str:
-        return 'shimmer' if gender == 'female' else 'echo'
+    def _create_dynamic_prompt(self) -> str:
+        """Generates the system prompt using teacher context."""
+        name = self.context_data.get("teacher_name", "Teacher")
+        subject = self.context_data.get("subject", "General")
+        grade = self.context_data.get("grade", "General")
+        extra_inst = self.context_data.get("instructions", "")
 
-    async def disconnect(self):
-        self.is_connected = False
-        logger.info("🔌 Disconnecting...")
-        
-        # 1. Stop Mic
-        if self.mic_track:
-            self.mic_track.stop()
-            
-        # 2. Cancel Audio Player Task
-        if self.audio_task:
-            self.audio_task.cancel()
-            try:
-                await self.audio_task
-            except asyncio.CancelledError:
-                pass
-
-        # 3. Close Data Channel
-        if self.dc:
-            self.dc.close()
-            
-        # 4. Close Peer Connection (Crucial for aioice cleanup)
-        if self.pc:
-            await self.pc.close()
-        
-        # 5. Terminate PyAudio
-        if self.pyaudio_instance:
-            self.pyaudio_instance.terminate()
-            
-        # Give asyncio a moment to clean up pending transport tasks
-        await asyncio.sleep(0.1)
-        logger.info("🔌 Disconnected")
-
-    def _create_system_prompt(self) -> str:
-        """
-        Returns the system prompt for the AI Teaching Assistant.
-        """
-        return """
-You are an expert AI Teaching Assistant.
+        return f"""
+You are an AI Teaching Assistant for {name}.
+Subject: {subject}
+Grade Level: {grade}
 
 **CORE RESPONSIBILITIES:**
-1. **Analyze Performance:** Help teachers identify student needs based on descriptions or data.
-2. **Actionable Steps:** Provide 3-5 numbered, concrete steps to address teaching challenges.
-3. **Resource Generation:** Create examples, quiz questions, or explanation strategies when asked.
+1. Assist the teacher by answering queries, generating quick examples, or brainstorming.
+2. If the teacher asks for content, speak clearly and concisely.
+3. Keep responses brief and conversational suitable for a voice call.
 
-**CRITICAL INSTRUCTIONS:**
-- Respond in the SAME language as the user's query.
-- For Arabic, ensure right-to-left (RTL) alignment and use Arabic numerals.
-- Mathematical expressions MUST use LaTeX format (e.g., $x^2$).
+**SPECIFIC INSTRUCTIONS:**
+{extra_inst}
+
+**RESPONSE FORMAT:**
+- Respond in the same language as the user.
+- Use a helpful, encouraging tone.
 """
 
-    def _add_emotion_instructions(self, base_prompt: str, emotion: str) -> str:
-        emotions = {
-            'friendly': "\n**TONE: FRIENDLY**\nBe warm, approachable, and encouraging.",
-            'excited': "\n**TONE: EXCITED**\nCelebrate achievements with high energy.",
-            'calm': "\n**TONE: CALM**\nSpeak slowly, patiently, and reassuringly.",
-            'reassuring': "\n**TONE: REASSURING**\nFocus on learning opportunities.",
-            'neutral': "\n**TONE: NEUTRAL**\nBe professional and clear."
-        }
-        return base_prompt + emotions.get(emotion, emotions['neutral'])
-
-async def main():
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("Please set OPENAI_API_KEY environment variable")
-        return
-
-    service = RealtimeOpenAIService(api_key)
-    
-    # Simpler print callbacks
-    service.on_user_transcript = lambda text: print(f"\nTeacher: {text}")
-    service.on_transcript = lambda delta: print(f"{delta}", end="", flush=True)
-    
-    try:
-        print("Connecting as Teaching Assistant...")
-        await service.connect(voice_gender='female')
-        print("Conversation started. Press Ctrl+C to exit.")
-        
-        while True:
-            await asyncio.sleep(1)
+    async def disconnect(self):
+        """Closes all connections."""
+        logger.info("🔌 Closing Voice Bridge...")
+        if self.client_dc:
+            self.client_dc.close()
+        if self.openai_dc:
+            self.openai_dc.close()
             
-    except KeyboardInterrupt:
-        print("\nStopping...")
-    finally:
-        # Ensure clean disconnect even on errors
-        await service.disconnect()
+        if self.pc_client:
+            await self.pc_client.close()
+        if self.pc_openai:
+            await self.pc_openai.close()
+        logger.info("🔌 Voice Bridge Closed")
+
+# --- Original Local Implementation (Legacy/Local Testing) ---
+if HAS_AUDIO_HARDWARE:
+    class AudioStreamTrack(MediaStreamTrack):
+        kind = "audio"
+        def __init__(self):
+            super().__init__()
+            self.p = pyaudio.PyAudio()
+            self.rate = 24000
+            self.channels = 1
+            self.format = pyaudio.paInt16
+            self.chunk = int(self.rate * 0.02)
+            self.stream = self.p.open(
+                format=self.format, channels=self.channels, rate=self.rate,
+                input=True, frames_per_buffer=self.chunk
+            )
+            self.pts = 0
+            self._running = True
+
+        async def recv(self):
+            if not self._running: raise Exception("Track stopped")
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(None, self.stream.read, self.chunk, False)
+            np_data = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
+            frame = av.AudioFrame.from_ndarray(np_data, format='s16', layout='mono')
+            frame.sample_rate = self.rate
+            frame.pts = self.pts
+            frame.time_base = Fraction(1, self.rate)
+            self.pts += self.chunk
+            return frame
+
+        def stop(self):
+            self._running = False
+            super().stop()
+            self.stream.stop_stream()
+            self.stream.close()
+            self.p.terminate()
+
+    class RealtimeOpenAIService:
+        """Legacy class for local testing with PyAudio."""
+        def __init__(self, api_key: str):
+            self.api_key = api_key
+            self.pc = None
+            self.mic_track = None
+            self.pyaudio_instance = pyaudio.PyAudio()
+
+        async def connect(self, voice_gender: str = 'female'):
+            self.pc = RTCPeerConnection()
+            self.mic_track = AudioStreamTrack()
+            self.pc.addTrack(self.mic_track)
+            
+            @self.pc.on("track")
+            def on_track(track):
+                if track.kind == "audio":
+                    asyncio.ensure_future(self._play_audio(track))
+
+            offer = await self.pc.createOffer()
+            await self.pc.setLocalDescription(offer)
+            
+            url = "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
+            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/sdp"}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=self.pc.localDescription.sdp, headers=headers) as res:
+                    ans = await res.text()
+            
+            await self.pc.setRemoteDescription(RTCSessionDescription(sdp=ans, type="answer"))
+
+        async def _play_audio(self, track):
+            out_stream = self.pyaudio_instance.open(format=pyaudio.paInt16, channels=1, rate=24000, output=True)
+            resampler = av.AudioResampler(format='s16', layout='mono', rate=24000)
+            try:
+                while True:
+                    frame = await track.recv()
+                    for f in resampler.resample(frame):
+                        out_stream.write(f.to_ndarray().tobytes())
+            except Exception: pass
+            finally: out_stream.stop_stream(); out_stream.close()
+
+        async def disconnect(self):
+            if self.mic_track: self.mic_track.stop()
+            if self.pc: await self.pc.close()
+            self.pyaudio_instance.terminate()
 
 if __name__ == "__main__":
+    async def main():
+        key = os.getenv("OPENAI_API_KEY")
+        if HAS_AUDIO_HARDWARE and key:
+            svc = RealtimeOpenAIService(key)
+            await svc.connect()
+            print("Connected locally. Ctrl+C to stop.")
+            await asyncio.sleep(3600)
     try:
         asyncio.run(main())
-    except Exception as e:
-        # Catch any final event loop errors
-        print(f"Application exited with: {e}")
+    except: pass
