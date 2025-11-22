@@ -34,13 +34,10 @@ try:
 
     # Use get_llm from llm.py to initialize the chat model
     chat = get_llm("x-ai/grok-4.1-fast", 0.6)
-    logger.info("LLM initialized successfully using get_llm")
 
     tavily_tool = TavilySearch(max_results=5, api_key=tavily_api_key, search_depth="advanced", topic="general")
-    logger.info("Tavily Search tool initialized successfully")
-
+    
     chat_with_tools = chat.bind_tools([tavily_tool])
-    logger.info("Tavily tool bound to the chat model")
 
 except ImportError as e:
     logger.warning(f"Could not import a required library: {e}")
