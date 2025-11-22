@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import json
 import os
+import streamlit.components.v1 as components  # Required for WebRTC/JS
 
 # Set page configuration
 st.set_page_config(
@@ -53,13 +54,24 @@ if "auto_session_attempted" not in st.session_state:
 if not st.session_state.session_id and not st.session_state.auto_session_attempted:
     create_session(show_feedback=False)
 
-# UPDATED: Added "Comic Generator" to the list
+# UPDATED: Added "Teacher Voice Agent" to the list
 tool_selection = st.radio(
     "Choose Generator",
-    ["Content Generator", "Assessment Generator", "Web Search", "Image Generator", "Comic Generator", "AI Tutor"],
+    [
+        "Content Generator", 
+        "Assessment Generator", 
+        "Web Search", 
+        "Image Generator", 
+        "Comic Generator", 
+        "AI Tutor",
+        "Teacher Voice Agent"
+    ],
     horizontal=True,
     help="Switch between different AI-powered tools.",
 )
+
+# --- EXISTING TOOLS (Content, Assessment, Web Search, Image, Comic, AI Tutor) ---
+# (Keeping previous logic collapsed for brevity, inserting new logic below)
 
 if tool_selection == "Content Generator":
     with st.form("content_generation_form"):
@@ -611,3 +623,276 @@ elif tool_selection == "AI Tutor":
                 st.error("⏱️ Request timed out. Please try again.")
             except requests.exceptions.RequestException as e:
                 st.error(f"❌ Connection error: {e}")
+
+elif tool_selection == "Teacher Voice Agent":
+    st.subheader("🎙️ Realtime Teacher Voice Agent")
+    st.markdown("""
+    Speak with the AI Teaching Assistant in real-time. 
+    **Note:** This uses your browser microphone. Ensure you have granted permission.
+    """)
+
+    # Inputs for the voice agent context
+    col1, col2 = st.columns(2)
+    with col1:
+        v_teacher_name = st.text_input("Teacher Name", "Mr. Anderson")
+        v_subject = st.text_input("Subject Context", "Physics")
+    with col2:
+        v_grade = st.text_input("Grade Level", "10th Grade")
+        v_voice = st.selectbox("AI Voice", ["shimmer", "alloy", "echo"])
+
+    v_instructions = st.text_area("Specific Instructions for this Session", 
+                                "I need help brainstorming ideas for explaining relativity.")
+
+    # Check session
+    session_id = st.session_state.session_id.strip()
+    if not session_id:
+        st.error("⚠️ Session ID is missing. Please create one in the sidebar first.")
+    else:
+        # APIs for JS
+        connect_url = f"{api_base_url}/api/teacher/{teacher_id}/session/{session_id}/voice_agent/connect"
+        disconnect_url = f"{api_base_url}/api/teacher/{teacher_id}/session/{session_id}/voice_agent/disconnect"
+        
+        # Prepare initial payload data for the JS to send
+        context_data = {
+            "teacher_name": v_teacher_name,
+            "subject": v_subject,
+            "grade": v_grade,
+            "instructions": v_instructions,
+            "voice": v_voice,
+            "type": "offer"
+        }
+        context_json = json.dumps(context_data)
+
+        # HTML/JS Component with Transcription Logic
+        components.html(
+            f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: sans-serif; color: #333; padding: 10px; background: transparent; }}
+                    .controls {{ display: flex; gap: 10px; margin-bottom: 10px; }}
+                    button {{
+                        padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;
+                        transition: background 0.2s;
+                    }}
+                    #startBtn {{ background-color: #28a745; color: white; }}
+                    #startBtn:disabled {{ background-color: #94d3a2; cursor: not-allowed; }}
+                    #stopBtn {{ background-color: #dc3545; color: white; }}
+                    #stopBtn:disabled {{ background-color: #e4babc; cursor: not-allowed; }}
+                    
+                    #status {{ margin-top: 10px; font-size: 0.9em; padding: 5px; border-radius: 4px; margin-bottom: 10px; }}
+                    .status-ready {{ background-color: #e2e3e5; color: #383d41; }}
+                    .status-connecting {{ background-color: #fff3cd; color: #856404; }}
+                    .status-active {{ background-color: #d4edda; color: #155724; }}
+                    .status-error {{ background-color: #f8d7da; color: #721c24; }}
+                    
+                    .visualizer {{ height: 4px; background: #ddd; width: 100%; margin-top: 10px; border-radius: 2px; overflow: hidden; }}
+                    .bar {{ height: 100%; width: 0%; background: #007bff; transition: width 0.1s; }}
+                    
+                    /* Chat/Transcription Area */
+                    #transcriptBox {{
+                        margin-top: 20px;
+                        border: 1px solid #ddd;
+                        border-radius: 8px;
+                        padding: 10px;
+                        height: 300px;
+                        overflow-y: auto;
+                        background-color: #f9f9f9;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 10px;
+                    }}
+                    .msg {{ padding: 8px 12px; border-radius: 12px; max-width: 80%; font-size: 0.95em; line-height: 1.4; }}
+                    .msg-teacher {{ align-self: flex-end; background-color: #dcf8c6; color: #000; border-bottom-right-radius: 2px; }}
+                    .msg-ai {{ align-self: flex-start; background-color: #fff; border: 1px solid #eee; color: #333; border-bottom-left-radius: 2px; }}
+                    .sender {{ font-size: 0.75em; color: #666; margin-bottom: 2px; display: block; }}
+                </style>
+            </head>
+            <body>
+                <div class="controls">
+                    <button id="startBtn" onclick="startCall()">📞 Start Call</button>
+                    <button id="stopBtn" onclick="stopCall()" disabled>⏹️ End Call</button>
+                </div>
+                <div id="status" class="status-ready">Ready to connect...</div>
+                
+                <div class="visualizer"><div id="audioBar" class="bar"></div></div>
+                
+                <!-- Transcription Display -->
+                <div id="transcriptBox">
+                    <div style="text-align:center; color:#999; font-size:0.9em; margin-top:100px;" id="emptyMsg">
+                        <i>Transcriptions will appear here...</i>
+                    </div>
+                </div>
+
+                <!-- Hidden audio element -->
+                <audio id="remoteAudio" autoplay></audio>
+
+                <script>
+                    let pc = null;
+                    let localStream = null;
+                    let dc = null; // Data Channel
+                    
+                    const CONNECT_URL = "{connect_url}";
+                    const DISCONNECT_URL = "{disconnect_url}";
+                    const CONTEXT_DATA = {context_json};
+
+                    const startBtn = document.getElementById('startBtn');
+                    const stopBtn = document.getElementById('stopBtn');
+                    const statusDiv = document.getElementById('status');
+                    const audioBar = document.getElementById('audioBar');
+                    const transcriptBox = document.getElementById('transcriptBox');
+                    const emptyMsg = document.getElementById('emptyMsg');
+
+                    function updateStatus(msg, type) {{
+                        statusDiv.textContent = msg;
+                        statusDiv.className = 'status-' + type;
+                    }}
+
+                    function addTranscript(role, text) {{
+                        if (emptyMsg) emptyMsg.style.display = 'none';
+                        
+                        const div = document.createElement('div');
+                        div.className = 'msg ' + (role === 'You' ? 'msg-teacher' : 'msg-ai');
+                        
+                        const sender = document.createElement('span');
+                        sender.className = 'sender';
+                        sender.innerText = role;
+                        
+                        const content = document.createElement('span');
+                        content.innerText = text;
+                        
+                        div.appendChild(sender);
+                        div.appendChild(content);
+                        transcriptBox.appendChild(div);
+                        
+                        // Scroll to bottom
+                        transcriptBox.scrollTop = transcriptBox.scrollHeight;
+                    }}
+
+                    async function startCall() {{
+                        startBtn.disabled = true;
+                        updateStatus("Requesting Microphone...", "connecting");
+
+                        try {{
+                            // 1. Get User Media
+                            localStream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
+                            setupVisualizer(localStream);
+
+                            // 2. Create Peer Connection
+                            pc = new RTCPeerConnection();
+
+                            // 3. Add Audio Tracks
+                            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+                            // 4. Handle Incoming Audio
+                            pc.ontrack = (event) => {{
+                                const remoteAudio = document.getElementById('remoteAudio');
+                                remoteAudio.srcObject = event.streams[0];
+                                updateStatus("Voice Agent Connected", "active");
+                                stopBtn.disabled = false;
+                            }};
+
+                            // 5. Create Data Channel (for Events/Transcription)
+                            // We create it here, so the server can accept it and relay OAI events back
+                            dc = pc.createDataChannel("oai-events");
+                            
+                            dc.onopen = () => console.log("Data Channel Opened");
+                            
+                            dc.onmessage = (event) => {{
+                                try {{
+                                    const data = JSON.parse(event.data);
+                                    
+                                    // 1. Teacher Transcription Event
+                                    if (data.type === 'conversation.item.input_audio_transcription.completed') {{
+                                        const text = data.transcript;
+                                        if (text) addTranscript("You", text);
+                                    }}
+                                    
+                                    // 2. AI Transcription Event
+                                    else if (data.type === 'response.audio_transcript.done') {{
+                                        const text = data.transcript;
+                                        if (text) addTranscript("AI Tutor", text);
+                                    }}
+                                }} catch (e) {{
+                                    console.error("Error parsing DC message", e);
+                                }}
+                            }};
+
+                            // 6. Create Offer
+                            const offer = await pc.createOffer();
+                            await pc.setLocalDescription(offer);
+
+                            updateStatus("Connecting to AI Server...", "connecting");
+
+                            // 7. Send to Backend
+                            const payload = {{
+                                ...CONTEXT_DATA,
+                                sdp: offer.sdp
+                            }};
+
+                            const response = await fetch(CONNECT_URL, {{
+                                method: "POST",
+                                headers: {{ "Content-Type": "application/json" }},
+                                body: JSON.stringify(payload)
+                            }});
+
+                            if (!response.ok) throw new Error("Server Error: " + response.statusText);
+
+                            const data = await response.json();
+
+                            // 8. Set Remote Description
+                            const answer = new RTCSessionDescription({{
+                                type: data.type,
+                                sdp: data.sdp
+                            }});
+                            await pc.setRemoteDescription(answer);
+
+                        }} catch (err) {{
+                            console.error(err);
+                            updateStatus("Error: " + err.message, "error");
+                            stopCall();
+                        }}
+                    }}
+
+                    async function stopCall() {{
+                        updateStatus("Disconnecting...", "ready");
+                        if (dc) {{ dc.close(); dc = null; }}
+                        if (pc) {{ pc.close(); pc = null; }}
+                        if (localStream) {{
+                            localStream.getTracks().forEach(track => track.stop());
+                            localStream = null;
+                        }}
+                        startBtn.disabled = false;
+                        stopBtn.disabled = true;
+                        audioBar.style.width = '0%';
+                        
+                        try {{
+                            await fetch(DISCONNECT_URL, {{ method: "POST" }});
+                            updateStatus("Call Ended", "ready");
+                        }} catch (e) {{ console.log("Disconnect signal failed", e); }}
+                    }}
+
+                    function setupVisualizer(stream) {{
+                        const audioContext = new AudioContext();
+                        const src = audioContext.createMediaStreamSource(stream);
+                        const analyser = audioContext.createAnalyser();
+                        src.connect(analyser);
+                        analyser.fftSize = 32;
+                        const bufferLength = analyser.frequencyBinCount;
+                        const dataArray = new Uint8Array(bufferLength);
+
+                        function renderFrame() {{
+                            if (!localStream) return;
+                            requestAnimationFrame(renderFrame);
+                            analyser.getByteFrequencyData(dataArray);
+                            const avg = dataArray.reduce((a,b) => a+b, 0) / bufferLength;
+                            audioBar.style.width = Math.min(100, avg * 2) + '%';
+                        }}
+                        renderFrame();
+                    }}
+                </script>
+            </body>
+            </html>
+            """,
+            height=500, # Increased height for chat box
+        )
