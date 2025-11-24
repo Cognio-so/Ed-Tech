@@ -54,12 +54,13 @@ if "auto_session_attempted" not in st.session_state:
 if not st.session_state.session_id and not st.session_state.auto_session_attempted:
     create_session(show_feedback=False)
 
-# UPDATED: Added "Teacher Voice Agent" to the list
+
 tool_selection = st.radio(
     "Choose Generator",
     [
         "Content Generator", 
-        "Assessment Generator", 
+        "Assessment Generator",
+        "Presentation Generator (SlideSpeak)", 
         "Web Search", 
         "Image Generator", 
         "Comic Generator", 
@@ -69,9 +70,6 @@ tool_selection = st.radio(
     horizontal=True,
     help="Switch between different AI-powered tools.",
 )
-
-# --- EXISTING TOOLS (Content, Assessment, Web Search, Image, Comic, AI Tutor) ---
-# (Keeping previous logic collapsed for brevity, inserting new logic below)
 
 if tool_selection == "Content Generator":
     with st.form("content_generation_form"):
@@ -231,6 +229,94 @@ elif tool_selection == "Assessment Generator":
                             st.json(response.json())
                         else: st.error(f"Error {response.status_code}: {response.text}")
             except requests.exceptions.RequestException as e: st.error(f"Connection error: {e}")
+
+# --- NEW SECTION: Presentation Generator (SlideSpeak) ---
+elif tool_selection == "Presentation Generator (SlideSpeak)":
+    st.subheader("📊 Professional Slide Deck Generator (via SlideSpeak)")
+    
+    with st.form("slidespeak_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            ppt_plain_text = st.text_area(
+                "Presentation Topic / Content", 
+                "The History of Artificial Intelligence: From Turing to Transformers",
+                height=150,
+                help="The main text or topic to generate slides from."
+            )
+            ppt_custom_instructions = st.text_area(
+                "Custom Instructions", 
+                "Focus on key milestones and include dates.",
+                height=100
+            )
+
+        with col2:
+            ppt_length = st.number_input("Number of Slides", min_value=1, max_value=50, value=10)
+            ppt_language = st.selectbox("Language", ["ENGLISH", "HINDI"])
+            ppt_template = st.selectbox(
+                "Template Style", 
+                ["default", "aurora", "lavender", "monarch", "serene", "iris", "clyde", "adam", "nebula", "bruno"]
+            )
+            ppt_tone = st.selectbox(
+                "Tone", 
+                ["educational", "playful", "professional", "persuasive", "inspirational"]
+            )
+            ppt_verbosity = st.selectbox(
+                "Verbosity", 
+                ["standard", "concise", "text-heavy"]
+            )
+            ppt_fetch_images = st.checkbox("Fetch Stock Images", value=True)
+
+        ppt_submit = st.form_submit_button("Generate Presentation", use_container_width=True)
+
+    if ppt_submit:
+        session_id = st.session_state.session_id.strip()
+        if not session_id:
+            st.error("Session ID is required. Please create one.")
+        elif not ppt_plain_text:
+            st.error("Please provide a topic or content for the presentation.")
+        else:
+            payload = {
+                "plain_text": ppt_plain_text,
+                "custom_user_instructions": ppt_custom_instructions,
+                "length": ppt_length,
+                "language": ppt_language,
+                "fetch_images": ppt_fetch_images,
+                "verbosity": ppt_verbosity,
+                "tone": ppt_tone,
+                "template": ppt_template
+            }
+            
+            url = f"{api_base_url}/api/teacher/{teacher_id}/session/{session_id}/presentation_slidespeak"
+            
+            st.info(f"Sending request to: `{url}`")
+            
+            try:
+                with st.spinner("Generating presentation... (This interacts with SlideSpeak and may take a minute)"):
+                    # Use a longer timeout because presentation generation involves polling
+                    response = requests.post(url, json=payload, timeout=360) 
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        download_url = data.get("presentation_url")
+                        
+                        st.success("✅ Presentation Generated Successfully!")
+                        
+                        if download_url:
+                            st.markdown(f"### [📥 Download PowerPoint (.pptx)]({download_url})")
+                            st.info(f"URL: {download_url}")
+                        else:
+                            st.warning("Presentation marked as success, but no URL was returned.")
+                            
+                        with st.expander("View Raw API Response"):
+                            st.json(data)
+                    else:
+                        st.error(f"Error {response.status_code}: {response.text}")
+            
+            except requests.exceptions.Timeout:
+                st.error("The request timed out. The presentation might still be processing on the server.")
+            except requests.exceptions.RequestException as e:
+                st.error(f"Connection error: {e}")
 
 elif tool_selection == "Web Search":
     st.subheader("Web Search Agent")

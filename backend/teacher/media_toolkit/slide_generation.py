@@ -1,29 +1,70 @@
 import os
-import time
-import requests
+import asyncio
+import logging
+import aiohttp
+from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+
+# Configure logging for production
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-class SlideSpeakGenerator:
-    """
-    A class to generate and retrieve SlideSpeak presentations.
-    """
-    def __init__(self, api_key=None):
-        """
-        Initializes the SlideSpeakGenerator.
+class SlideSpeakError(Exception):
+    """Base exception for SlideSpeak errors."""
+    pass
 
-        Args:
-            api_key (str, optional): The SlideSpeak API key. If not provided,
-                                     it's retrieved from the SLIDESPEAK_API_KEY
-                                     environment variable.
-        """
-        self.api_key = os.getenv("SLIDESPEAK_API_KEY")
+class SlideSpeakAuthError(SlideSpeakError):
+    """Raised when API key is invalid."""
+    pass
+
+class SlideSpeakTimeoutError(SlideSpeakError):
+    """Raised when generation takes too long."""
+    pass
+
+class AsyncSlideSpeakGenerator:
+    """
+    An asynchronous production-ready class to generate SlideSpeak presentations.
+    Designed to handle high concurrency using asyncio.
+    """
+    def __init__(self, api_key: Optional[str] = None, base_url: str = "https://api.slidespeak.co/api/v1"):
+        self.api_key = api_key or os.getenv("SLIDESPEAK_API_KEY")
         if not self.api_key:
             raise ValueError("SLIDESPEAK_API_KEY not provided or set as an environment variable.")
-        self.base_url = "https://api.slidespeak.co/api/v1"
+        self.base_url = base_url
+        self.headers = {
+            "Content-Type": "application/json",
+            "X-API-Key": self.api_key,
+        }
 
-    def generate_presentation(
+    async def _post_request(self, session: aiohttp.ClientSession, endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Internal helper for POST requests with error handling."""
+        url = f"{self.base_url}{endpoint}"
+        try:
+            async with session.post(url, json=payload, headers=self.headers) as response:
+                if response.status == 401:
+                    raise SlideSpeakAuthError("Invalid API Key.")
+                response.raise_for_status()
+                return await response.json()
+        except aiohttp.ClientResponseError as e:
+            logger.error(f"API Request Failed: {e}")
+            raise SlideSpeakError(f"API Request failed: {str(e)}")
+
+    async def _get_request(self, session: aiohttp.ClientSession, url: str) -> Dict[str, Any]:
+        """Internal helper for GET requests."""
+        try:
+            async with session.get(url, headers=self.headers) as response:
+                response.raise_for_status()
+                return await response.json()
+        except aiohttp.ClientError as e:
+            logger.error(f"API Status Check Failed: {e}")
+            raise SlideSpeakError(f"Status check failed: {str(e)}")
+
+    async def generate_presentation(
         self,
         plain_text: str,
         custom_user_instructions: str,
@@ -32,28 +73,15 @@ class SlideSpeakGenerator:
         fetch_images: bool = True,
         verbosity: str = "standard",
         tone: str = "educational",
-        template: str = "default"
-    ):
+        template: str = "default",
+        timeout_seconds: int = 300  # Stop polling after 5 minutes
+    ) -> Dict[str, Any]:
         """
-        Generates and retrieves a SlideSpeak presentation by polling the task status.
-
-        Args:
-            plain_text (str): The main topic or plain_text of the presentation.
-            custom_user_instructions (str): Specific instructions for the AI.
-            length (int): The desired number of slides.
-            language (str, optional): The language of the presentation. Defaults to "ENGLISH".
-            fetch_images (bool, optional): Whether to include stock images. Defaults to True.
-            verbosity (str, optional): The desired text verbosity. Defaults to "standard".
-            tone (str, optional): The tone of the presentation. Defaults to "educational".
-            template (str): The name of the template or the ID of a custom template. Defaults to "default".
-
-        Returns:
-            dict: The final JSON response from the SlideSpeak API.
+        Generates a presentation asynchronously.
+        
+        This method starts the task and polls for completion without blocking 
+        the event loop, allowing other users to be served simultaneously.
         """
-        headers = {
-            "Content-Type": "application/json",
-            "X-API-Key": self.api_key,
-        }
         payload = {
             "plain_text": plain_text,
             "custom_user_instructions": custom_user_instructions,
@@ -65,73 +93,39 @@ class SlideSpeakGenerator:
             "template": template
         }
 
-        try:
-            initial_response = requests.post(f"{self.base_url}/presentation/generate", headers=headers, json=payload)
-            initial_response.raise_for_status()
-            initial_data = initial_response.json()
-
-            if "task_id" not in initial_data:
-                return {"error": "task_id not found in initial response", "details": initial_data}
-
-            task_id = initial_data["task_id"]
-            print(f"Presentation generation started with task_id: {task_id}")
-
+        # Use a single session for the lifecycle of this request
+        async with aiohttp.ClientSession() as session:
+            # 1. Start Generation
+            logger.info(f"Initiating generation request for topic: '{plain_text[:30]}...'")
+            initial_data = await self._post_request(session, "/presentation/generate", payload)
+            
+            task_id = initial_data.get("task_id")
+            if not task_id:
+                raise SlideSpeakError(f"task_id not found in response: {initial_data}")
+            
+            logger.info(f"Task started. ID: {task_id}")
+            
+            # 2. Poll Status
             status_url = f"{self.base_url}/task_status/{task_id}"
-            while True:
-                print("Checking task status...")
-                status_response = requests.get(status_url, headers=headers)
-                status_response.raise_for_status()
-                status_data = status_response.json()
+            start_time = asyncio.get_running_loop().time()
 
+            while True:
+                # check timeout
+                if asyncio.get_running_loop().time() - start_time > timeout_seconds:
+                    raise SlideSpeakTimeoutError(f"Task {task_id} timed out after {timeout_seconds}s")
+
+                status_data = await self._get_request(session, status_url)
                 task_status = status_data.get("task_status")
 
                 if task_status == "SUCCESS":
-                    print("Presentation generated successfully!")
+                    logger.info(f"Task {task_id} completed successfully.")
                     return status_data
+                
                 elif task_status == "FAILURE":
-                    print("Presentation generation failed.")
-                    return status_data
+                    logger.error(f"Task {task_id} failed.")
+                    raise SlideSpeakError(f"Generation failed: {status_data}")
+                
                 else:
-                    print(f"Status is '{task_status}'. Waiting for 5 seconds...")
-                    time.sleep(5)
-
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
-
-def main():
-    """
-    Main function to run the SlideSpeak presentation generator from the command line.
-    """
-    print("--- SlideSpeak Presentation Generator ---")
-    print("Please provide the following details for your presentation:")
-
-    presentation_plain_text = input("Plain Text: ")
-    user_instructions = input("Custom Instructions: ")
-    num_slides = int(input("Number of Slides: "))
-    presentation_language = input("Language (e.g., ENGLISH): ").upper()
-    fetch_images_input = input("Fetch Images (true/false): ").lower()
-    presentation_verbosity = input("Verbosity (concise/standard/text-heavy): ").lower()
-    presentation_tone = "educational"
-    presentation_template = input("Template (leave blank for default): ") or "default"
-
-    fetch_images_bool = fetch_images_input == "true"
-
-    generator = SlideSpeakGenerator()
-
-    print("\nGenerating your presentation...")
-    final_result = generator.generate_presentation(
-        plain_text=presentation_plain_text,
-        custom_user_instructions=user_instructions,
-        length=num_slides,
-        language=presentation_language,
-        fetch_images=fetch_images_bool,
-        verbosity=presentation_verbosity,
-        tone=presentation_tone,
-        template=presentation_template
-    )
-
-    print("\n--- Final API Response ---")
-    print(final_result)
-
-if __name__ == "__main__":
-    main()
+                    # Non-blocking sleep: lets other tasks run
+                    logger.debug(f"Task {task_id} status: {task_status}. Waiting...")
+                    await asyncio.sleep(5)
