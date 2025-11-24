@@ -28,6 +28,7 @@ from pydantic import (
 from teacher.media_toolkit.websearch_schema import run_search_agent
 from teacher.media_toolkit.image_gen import ImageGenerator
 from teacher.media_toolkit.comic_generation import create_comical_story_prompt, generate_comic_image
+from teacher.media_toolkit.slide_generation import AsyncSlideSpeakGenerator, SlideSpeakError, SlideSpeakAuthError, SlideSpeakTimeoutError
 from teacher.Content_generation.lesson_plan import generate_lesson_plan
 from teacher.Content_generation.presentation import generate_presentation
 from teacher.Content_generation.Quizz import generate_quizz
@@ -117,6 +118,17 @@ class ComicsSchema(BaseModel):
     grade_level: str = Field(..., description="Grade level string, e.g., '5' or 'Grade 5'")
     num_panels: int = Field(..., description="Number of panels to generate", ge=1, le=20)
     language: str = Field("English", description="Language for comic text (e.g., English)")
+
+class PresentationSchema(BaseModel):
+    plain_text: str = Field(..., description="The main topic or content of the presentation.", example="Introduction to Machine Learning")
+    custom_user_instructions: str = Field("", description="Specific instructions for the AI.", example="Focus on practical applications")
+    length: int = Field(..., description="The desired number of slides.", example=10, ge=1, le=50)
+    language: str = Field("ENGLISH", description="The language of the presentation.", example="ENGLISH", pattern="^(ENGLISH|HINDI)$")
+    fetch_images: bool = Field(True, description="Whether to include stock images in the presentation.")
+    verbosity: str = Field("standard", description="The desired text verbosity.", example="standard", pattern="^(concise|standard|text-heavy)$")
+    # Added tone to match the generator capabilities, defaulting to educational
+    tone: str = Field("educational", description="The tone of the presentation.", example="educational", pattern="^(educational|playful|professional|persuasive|inspirational)$") 
+    template: str = Field("default", description="The template style for the presentation.", example="default", pattern="^(default|aurora|lavender|monarch|serene|iris|clyde|adam|nebula|bruno)$")
 
 class TeacherVoiceSchema(BaseModel):
     """Schema for initializing the Voice Agent with context."""
@@ -670,6 +682,86 @@ async def image_generation_endpoint(
     except Exception as e:
         logger.error(f"Error in image generation: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/teacher/{teacher_id}/session/{session_id}/presentation_slidespeak")
+async def generate_slidespeak_presentation(
+    teacher_id: str,
+    session_id: str,
+    schema: PresentationSchema
+) -> Dict[str, Any]:
+    """
+    Generates a SlideSpeak presentation asynchronously.
+    Returns the complete task result including the presentation URL.
+    """
+    # 1. Manage Session
+    await SessionManager.create_session(teacher_id, session_id)
+    
+    try:
+        # 2. Initialize Generator
+        # Note: API Key is fetched from os.getenv("SLIDESPEAK_API_KEY") inside the class
+        generator = AsyncSlideSpeakGenerator()
+        
+        logger.info(f"Generating SlideSpeak presentation for session {session_id}. Topic: {schema.plain_text}")
+
+        # 3. Generate Presentation (Direct Await)
+        # We map the schema fields to the generator's arguments
+        result = await generator.generate_presentation(
+            plain_text=schema.plain_text,
+            custom_user_instructions=schema.custom_user_instructions,
+            length=schema.length,
+            language=schema.language,
+            fetch_images=schema.fetch_images,
+            verbosity=schema.verbosity,
+            tone=schema.tone, 
+            template=schema.template
+        )
+
+        # 4. Handle Response
+        if result.get("task_status") == "SUCCESS":
+            download_url = result.get("task_result", {}).get("url")
+            logger.info(f"Presentation generated successfully: {download_url}")
+            
+            # Optional: Store in session content history
+            await SessionManager.update_session(session_id, {
+                "last_generated_presentation": download_url
+            })
+            
+            return {
+                "status": "success",
+                "session_id": session_id,
+                "teacher_id": teacher_id,
+                "presentation_url": download_url,
+                "full_result": result
+            }
+            
+        elif result.get("task_status") == "FAILURE":
+            error_msg = result.get("task_result", {}).get("error", "Unknown error occurred")
+            logger.error(f"SlideSpeak generation failed: {error_msg}")
+            raise HTTPException(status_code=422, detail=f"Generation failed: {error_msg}")
+            
+        else:
+            raise HTTPException(status_code=500, detail=f"Unexpected status: {result.get('task_status')}")
+
+    except SlideSpeakAuthError as e:
+        logger.error(f"SlideSpeak Auth Error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid SlideSpeak API Key.")
+        
+    except SlideSpeakTimeoutError as e:
+        logger.error(f"SlideSpeak Timeout: {e}")
+        raise HTTPException(status_code=408, detail="Presentation generation timed out.")
+        
+    except SlideSpeakError as e:
+        logger.error(f"SlideSpeak General Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    except ValueError as e:
+        # Usually raised if API key is missing entirely
+        logger.error(f"Configuration Error: {e}")
+        raise HTTPException(status_code=500, detail="Server configuration error (API Key missing).")
+        
+    except Exception as e:
+        logger.error(f"Unhandled error in presentation endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @app.post("/api/teacher/{teacher_id}/session/{session_id}/comic_generation")
 async def comics_stream_endpoint(
