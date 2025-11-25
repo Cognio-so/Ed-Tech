@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import json
 import os
+import uuid
 import streamlit.components.v1 as components  # Required for WebRTC/JS
 
 # Set page configuration
@@ -65,6 +66,7 @@ tool_selection = st.radio(
         "Image Generator", 
         "Comic Generator", 
         "AI Tutor",
+        "Student AI Tutor",
         "Teacher Voice Agent"
     ],
     horizontal=True,
@@ -709,6 +711,253 @@ elif tool_selection == "AI Tutor":
                 st.error("⏱️ Request timed out. Please try again.")
             except requests.exceptions.RequestException as e:
                 st.error(f"❌ Connection error: {e}")
+
+elif tool_selection == "Student AI Tutor":
+    st.subheader("🎓 Student AI Tutor - Study Buddy")
+    st.markdown("Chat with your AI Study Buddy to get help with homework, assignments, and learning concepts.")
+    
+    # Initialize chat history
+    if "student_ai_tutor_history" not in st.session_state:
+        st.session_state.student_ai_tutor_history = []
+    
+    # Clear history button (outside form)
+    if st.session_state.student_ai_tutor_history:
+        if st.button("🗑️ Clear Chat History", use_container_width=True, key="clear_student_history"):
+            st.session_state.student_ai_tutor_history = []
+            st.rerun()
+    
+    # Display chat history
+    if st.session_state.student_ai_tutor_history:
+        st.markdown("### 💬 Conversation History")
+        for msg in st.session_state.student_ai_tutor_history:
+            if msg["role"] == "user":
+                with st.chat_message("user"):
+                    st.write(msg["content"])
+            else:
+                with st.chat_message("assistant"):
+                    st.write(msg["content"])
+                    if msg.get("image_result"):
+                        st.image(msg["image_result"], caption="Generated Image")
+    
+    with st.form("student_ai_tutor_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### Student Profile")
+            student_id = st.text_input("Student ID", "student_123", key="student_tutor_id")
+            student_name = st.text_input("Student Name", "", key="student_name")
+            student_grade = st.text_input("Grade Level", "", key="student_grade")
+            student_learning_style = st.selectbox(
+                "Learning Style",
+                ["", "Visual", "Auditory", "Kinesthetic", "Reading/Writing"],
+                key="student_learning_style"
+            )
+        with col2:
+            st.markdown("### Study Context")
+            student_topic = st.text_input("Topic (optional)", "", key="student_topic")
+            student_subject = st.text_input("Subject (optional)", "", key="student_subject")
+            student_language = st.text_input("Language", "English", key="student_language")
+        
+        st.markdown("### Assignments & Achievements")
+        col3, col4 = st.columns(2)
+        with col3:
+            pending_assignments_text = st.text_area(
+                "Pending Assignments (one per line)",
+                "",
+                help="List assignments you're working on, e.g., 'Math homework - Chapter 5', 'Science project - Water cycle'",
+                key="student_assignments",
+                height=100
+            )
+        with col4:
+            achievements_text = st.text_area(
+                "Recent Achievements (one per line)",
+                "",
+                help="List recent accomplishments, e.g., 'Completed Algebra quiz', 'Submitted essay'",
+                key="student_achievements",
+                height=100
+            )
+        
+        st.markdown("### Document & Message")
+        student_doc_url = st.text_input(
+            "Document URL (optional)",
+            "",
+            help="URL to a document (PDF, DOCX, TXT) that the Study Buddy can reference",
+            key="student_doc_url"
+        )
+        student_message = st.text_area(
+            "Your Question or Message",
+            "Help me understand photosynthesis. I'm confused about how plants make food.",
+            height=100,
+            key="student_message"
+        )
+        
+        student_stream = st.checkbox("Stream Output", value=True, key="student_stream")
+        student_submit = st.form_submit_button("Send to Study Buddy", use_container_width=True)
+    
+    if student_submit:
+        # Session will be created automatically by the endpoint if not provided
+        student_session_id = st.session_state.get("student_session_id", "")
+        
+        if not student_session_id:
+            # Generate a session ID (will be created by backend if needed)
+            student_session_id = str(uuid.uuid4())
+            st.session_state.student_session_id = student_session_id
+        
+        if student_submit:
+            if not student_message.strip():
+                st.error("Please enter a message to send to the Study Buddy.")
+            else:
+                # Build payload
+                payload = {
+                    "message": student_message,
+                    "language": student_language,
+                }
+                
+                # Add optional fields
+                if student_topic:
+                    payload["topic"] = student_topic
+                if student_subject:
+                    payload["subject"] = student_subject
+                if student_doc_url:
+                    payload["doc_url"] = student_doc_url
+                
+                # Build student_profile
+                student_profile = {}
+                if student_name:
+                    student_profile["name"] = student_name
+                if student_grade:
+                    student_profile["grade"] = student_grade
+                if student_learning_style:
+                    student_profile["learning_style"] = student_learning_style
+                
+                if student_profile:
+                    payload["student_profile"] = student_profile
+                
+                # Parse pending assignments
+                if pending_assignments_text.strip():
+                    assignments = [{"title": line.strip(), "status": "pending"} 
+                                 for line in pending_assignments_text.strip().split("\n") 
+                                 if line.strip()]
+                    if assignments:
+                        payload["pending_assignments"] = assignments
+                
+                # Parse achievements
+                if achievements_text.strip():
+                    achievements = [line.strip() 
+                                  for line in achievements_text.strip().split("\n") 
+                                  if line.strip()]
+                    if achievements:
+                        payload["achievements"] = achievements
+                
+                # Build URL
+                base_url = f"{api_base_url}/api/session/student/{student_id}/stream-chat"
+                url = f"{base_url}?session_id={student_session_id}&stream={str(student_stream).lower()}"
+                
+                st.info(f"📡 Sending request to: `{url}`")
+                
+                try:
+                    if student_stream:
+                        # Stream response
+                        placeholder = st.empty()
+                        full_response = ""
+                        image_result = None
+                        token_usage = {}
+                        
+                        with st.spinner("🎓 Study Buddy is thinking..."):
+                            response = requests.post(url, json=payload, stream=True, timeout=300)
+                            
+                            if response.status_code != 200:
+                                st.error(f"❌ Error {response.status_code}: {response.text}")
+                            else:
+                                for line in response.iter_lines():
+                                    if line and line.startswith(b"data:"):
+                                        try:
+                                            event = json.loads(line[5:].strip())
+                                            
+                                            if event.get("type") == "status":
+                                                # Handle status updates
+                                                status_data = event.get("data", {})
+                                                status_msg = status_data.get("message", "Processing...")
+                                                placeholder.markdown(f"**{status_msg}**")
+                                            
+                                            elif event.get("type") == "content":
+                                                data = event.get("data", {})
+                                                full_response = data.get("full_response", "")
+                                                is_complete = data.get("is_complete", False)
+                                                
+                                                if is_complete:
+                                                    # Final response
+                                                    image_result = data.get("image_result")
+                                                    token_usage = data.get("token_usage", {})
+                                                    
+                                                    placeholder.empty()
+                                                    
+                                                    # Add both user and assistant messages to history
+                                                    st.session_state.student_ai_tutor_history.append({
+                                                        "role": "user",
+                                                        "content": student_message
+                                                    })
+                                                    st.session_state.student_ai_tutor_history.append({
+                                                        "role": "assistant",
+                                                        "content": full_response,
+                                                        "image_result": image_result
+                                                    })
+                                                    
+                                                    if token_usage:
+                                                        st.caption(f"📊 Token Usage: {token_usage.get('total_tokens', 0)} tokens")
+                                                    
+                                                    st.success("✅ Response complete!")
+                                                    st.rerun()
+                                                else:
+                                                    # Streaming in progress
+                                                    placeholder.markdown(f"**Study Buddy:** {full_response}▌")
+
+                                            elif event.get("type") == "error":
+                                                error_msg = event.get("data", {}).get("error", "Unknown error")
+                                                st.error(f"❌ Error: {error_msg}")
+                                            
+                                            elif event.get("type") == "metadata":
+                                                metadata = event.get("data", {})
+                                                token_usage = metadata.get("token_usage", {})
+                                                if token_usage:
+                                                    st.caption(f"📊 Token Usage: {token_usage.get('total_tokens', 0)} tokens")
+                                            
+                                            elif event.get("type") == "done":
+                                                st.success("✅ Conversation complete!")
+                                        
+                                        except json.JSONDecodeError:
+                                            continue
+                        
+                        # Clear placeholder if still showing
+                        placeholder.empty()
+                    
+                    else:
+                        # Non-streaming response
+                        with st.spinner("🎓 Study Buddy is thinking..."):
+                            response = requests.post(url, json=payload, timeout=300)
+                            
+                            if response.status_code == 200:
+                                data = response.json()
+                                st.success("✅ Response received!")
+                                
+                                # Add to history
+                                st.session_state.student_ai_tutor_history.append({
+                                    "role": "user",
+                                    "content": student_message
+                                })
+                                st.session_state.student_ai_tutor_history.append({
+                                    "role": "assistant",
+                                    "content": data.get("full_response", ""),
+                                    "image_result": data.get("image_result")
+                                })
+                                
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Error {response.status_code}: {response.text}")
+                
+                except requests.exceptions.Timeout:
+                    st.error("⏱️ Request timed out. Please try again.")
+                except requests.exceptions.RequestException as e:
+                    st.error(f"❌ Connection error: {e}")
 
 elif tool_selection == "Teacher Voice Agent":
     st.subheader("🎙️ Realtime Teacher Voice Agent")
