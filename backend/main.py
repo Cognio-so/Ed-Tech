@@ -12,7 +12,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, status, Path as PathParam, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, status, Path as PathParam, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
@@ -29,6 +29,7 @@ from teacher.media_toolkit.websearch_schema import run_search_agent
 from teacher.media_toolkit.image_gen import ImageGenerator
 from teacher.media_toolkit.comic_generation import create_comical_story_prompt, generate_comic_image
 from teacher.media_toolkit.slide_generation import AsyncSlideSpeakGenerator, SlideSpeakError, SlideSpeakAuthError, SlideSpeakTimeoutError
+from teacher.media_toolkit.video_generation import CloudinaryStorage, PPTXToHeyGenVideo
 from teacher.Content_generation.lesson_plan import generate_lesson_plan
 from teacher.Content_generation.presentation import generate_presentation
 from teacher.Content_generation.Quizz import generate_quizz
@@ -88,6 +89,14 @@ class LessonPlanRequest(BaseModel):
     def normalize_language(cls, value: str) -> str:
         return value.capitalize()
 
+
+video_generation_tasks: Dict[str, Dict[str, Any]] = {}
+cloudinary_storage_manager: Optional[CloudinaryStorage] = None
+
+try:
+    cloudinary_storage_manager = CloudinaryStorage()
+except Exception as e:
+    logger.error(f"Failed to initialize Cloudinary Storage: {e}")
 
 class ContentGenerationRequest(LessonPlanRequest):
     model_config = ConfigDict(populate_by_name=True)
@@ -251,6 +260,24 @@ sessions: Dict[str, Dict[str, Any]] = {}
 # Stores active VoiceAgentBridge instances by session_id
 voice_sessions: Dict[str, VoiceAgentBridge] = {}
 student_sessions: Dict[str, Dict[str, Any]] = {}
+student_voice_sessions: Dict[str, StudyBuddyBridge] = {}
+
+class StudentVoiceSchema(BaseModel):
+    """Schema for initializing the Student Voice Agent (Study Buddy)."""
+    sdp: str = Field(..., description="The WebRTC SDP Offer from the client browser")
+    type: str = Field(..., description="SDP type, usually 'offer'")
+    student_name: str = Field(..., description="Name of the student")
+    grade: str = Field(..., description="Grade level")
+    subject: str = Field(..., description="Subject being studied")
+    pending_assignments: Optional[List[Dict[str, Any]]] = Field(
+        default=[], 
+        description="List of pending assignments (e.g., [{'title': 'Math HW', 'due': 'tomorrow'}])"
+    )
+    completed_assignments: Optional[List[Dict[str, Any]]] = Field(
+        default=[], 
+        description="List of recently completed assignments"
+    )
+    voice: Literal['alloy', 'echo', 'shimmer'] = Field('shimmer', description="Voice preference")
 
 class SessionManager:
     @staticmethod
@@ -325,6 +352,217 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+async def generate_video_background(
+    task_id: str, 
+    pptx_bytes: bytes, 
+    original_filename: str, 
+    voice_id: str, 
+    avatar_id: str, 
+    title: str, 
+    language: str
+):
+    """
+    Background task to handle the synchronous video generation process.
+    """
+    temp_file_path = None
+    try:
+        logger.info(f"Starting background video generation for task: {task_id}")
+        video_generation_tasks[task_id]["status"] = "uploading"
+
+        # 1. Write bytes to a temporary local file 
+        # (CloudinaryStorage.upload_file expects a file path)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as temp_file:
+            temp_file.write(pptx_bytes)
+            temp_file_path = temp_file.name
+
+        # 2. Upload to Cloudinary
+        # We use a unique public_id to prevent collisions
+        public_id = f"video_presentations/{task_id}_{original_filename}"
+        
+        # Run sync upload in threadpool
+        success, result_id_or_error = await run_in_threadpool(
+            cloudinary_storage_manager.upload_file,
+            file_path=temp_file_path,
+            public_id=public_id
+        )
+
+        if not success:
+            raise Exception(f"Cloudinary upload failed: {result_id_or_error}")
+
+        pptx_public_id = result_id_or_error
+        logger.info(f"Uploaded to Cloudinary: {pptx_public_id}")
+        
+        video_generation_tasks[task_id]["status"] = "generating"
+
+        # 3. Initialize Converter
+        converter = PPTXToHeyGenVideo(
+            storage_manager=cloudinary_storage_manager,
+            pptx_avatar_id=avatar_id,
+            pptx_voice_id=voice_id,
+            language=language
+        )
+
+        # 4. Run Conversion (Heavy processing: Aspose -> OpenAI -> HeyGen)
+        result = await run_in_threadpool(
+            converter.convert,
+            pptx_public_id=pptx_public_id,
+            title=title
+        )
+
+        # 5. Update Status
+        video_generation_tasks[task_id].update({
+            "status": "completed",
+            "video_id": result.get("video_id"),
+            "video_url": result.get("video_url"),
+            "slides_processed": result.get("slides_processed"),
+            "completed_at": datetime.now().isoformat()
+        })
+        logger.info(f"Video generation task {task_id} completed successfully.")
+
+    except Exception as e:
+        logger.error(f"Error in video background task {task_id}: {e}", exc_info=True)
+        video_generation_tasks[task_id].update({
+            "status": "failed",
+            "error": str(e),
+            "failed_at": datetime.now().isoformat()
+        })
+    finally:
+        # Cleanup local temp file
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass
+
+
+@app.post("/api/teacher/{teacher_id}/session/{session_id}/video_generation/generate")
+async def generate_video_presentation(
+    teacher_id: str,
+    session_id: str,
+    pptx_file: UploadFile = File(..., description="The PowerPoint (.pptx) file"),
+    voice_id: str = Form(..., description="HeyGen Voice ID"),
+    talking_photo_id: str = Form(..., description="HeyGen Avatar/Talking Photo ID"),
+    title: str = Form(..., description="Title for the video"),
+    language: str = Form("english", description="Language for the script generation")
+):
+    """
+    Uploads a PPTX file and starts the video generation process asynchronously.
+    Returns a task_id to poll for status.
+    """
+    # Ensure session exists
+    await SessionManager.create_session(teacher_id, session_id)
+
+    if not cloudinary_storage_manager:
+        raise HTTPException(
+            status_code=500, 
+            detail="Cloudinary storage is not configured on the server."
+        )
+    
+    # Validate file type
+    if not pptx_file.filename.lower().endswith(".pptx"):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid file format. Only .pptx files are supported."
+        )
+
+    try:
+        task_id = str(uuid4())
+        logger.info(f"Received video request. Task ID: {task_id}, File: {pptx_file.filename}")
+
+        # Read file content into memory to pass to background task
+        # Note: For extremely large files, stream processing might be needed, 
+        # but PPTX files are usually manageable in memory.
+        content = await pptx_file.read()
+
+        # Initialize Task State
+        video_generation_tasks[task_id] = {
+            "session_id": session_id,
+            "teacher_id": teacher_id,
+            "status": "processing",
+            "title": title,
+            "filename": pptx_file.filename,
+            "created_at": datetime.now().isoformat(),
+            "error": None
+        }
+
+        # Start Background Task
+        asyncio.create_task(generate_video_background(
+            task_id=task_id,
+            pptx_bytes=content,
+            original_filename=pptx_file.filename,
+            voice_id=voice_id,
+            avatar_id=talking_photo_id,
+            title=title,
+            language=language
+        ))
+
+        return {
+            "success": True,
+            "task_id": task_id,
+            "status": "processing",
+            "message": "Video generation started successfully."
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to start video generation: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to start process: {str(e)}")
+
+
+@app.get("/api/teacher/{teacher_id}/session/{session_id}/video_generation/status/{task_id}")
+async def check_video_generation_status(
+    teacher_id: str,
+    session_id: str,
+    task_id: str
+):
+    """
+    Checks the status of a video generation task.
+    """
+    # Verify session (optional, but good practice for security/logging)
+    await SessionManager.get_session(session_id)
+
+    if task_id not in video_generation_tasks:
+        raise HTTPException(status_code=404, detail="Task ID not found.")
+
+    task_info = video_generation_tasks[task_id]
+
+    # simple auth check to ensure task belongs to this session/teacher
+    if task_info.get("teacher_id") != teacher_id:
+        raise HTTPException(status_code=403, detail="Unauthorized access to this task.")
+
+    response = {
+        "task_id": task_id,
+        "status": task_info["status"],
+        "title": task_info["title"],
+        "created_at": task_info["created_at"]
+    }
+
+    if task_info["status"] == "completed":
+        response.update({
+            "video_id": task_info.get("video_id"),
+            "video_url": task_info.get("video_url"),
+            "slides_processed": task_info.get("slides_processed"),
+            "completed_at": task_info.get("completed_at")
+        })
+        
+        # Optional: Save to session history if not already done
+        session = await SessionManager.get_session(session_id)
+        if "generated_videos" not in session:
+            session["generated_videos"] = []
+        
+        # Avoid duplicates
+        if not any(v.get("video_id") == task_info.get("video_id") for v in session["generated_videos"]):
+            session["generated_videos"].append(response)
+            await SessionManager.update_session(session_id, session)
+
+    elif task_info["status"] == "failed":
+        response.update({
+            "error": task_info.get("error"),
+            "failed_at": task_info.get("failed_at")
+        })
+
+    return response
+
+
 @app.post("/api/teacher/{teacher_id}/session/{session_id}/voice_agent/connect")
 async def connect_voice_agent(
     teacher_id: str,
@@ -389,6 +627,95 @@ async def disconnect_voice_agent(
             raise HTTPException(status_code=500, detail=f"Error disconnecting: {str(e)}")
     
     return {"status": "not_found", "message": "No active voice session found."}
+
+@app.post("/api/session/student/{student_id}/voice_agent/connect")
+async def connect_student_voice_agent(
+    student_id: str,
+    session_id: str,
+    payload: StudentVoiceSchema
+) -> Dict[str, Any]:
+    """
+    Establishes a WebRTC connection for the Student Voice Agent (Study Buddy).
+    """
+    # 1. Ensure Student Session Exists
+    await StudentSessionManager.create_session(student_id, session_id)
+    
+    # 2. Cleanup existing voice session if strictly replacing
+    if session_id in student_voice_sessions:
+        logger.info(f"Cleaning up existing student voice session for {session_id}")
+        await student_voice_sessions[session_id].disconnect()
+        del student_voice_sessions[session_id]
+
+    try:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="OpenAI API Key not configured")
+
+        # 3. Initialize the Bridge
+        bridge = StudyBuddyBridge(api_key=api_key)
+        
+        # 4. Format assignments for the AI context
+        # Convert list of dicts into a readable string for the System Prompt
+        pending_str = "None"
+        if payload.pending_assignments:
+            pending_str = ", ".join(
+                [f"{a.get('title', 'Unknown Task')} (Due: {a.get('due', 'Unknown')})" 
+                 for a in payload.pending_assignments]
+            )
+
+        completed_str = "None"
+        if payload.completed_assignments:
+            completed_str = ", ".join(
+                [a.get('title', 'Unknown Task') for a in payload.completed_assignments]
+            )
+
+        # 5. Prepare Context Data
+        context_data = {
+            "student_name": payload.student_name,
+            "subject": payload.subject,
+            "grade": payload.grade,
+            "pending_assignments": pending_str,
+            "instructions": f"The student has completed: {completed_str}. Focus on their pending work: {pending_str}."
+        }
+        
+        # 6. Connect (WebRTC Handshake)
+        answer_sdp = await bridge.connect(
+            offer_sdp=payload.sdp, 
+            context_data=context_data,
+            voice=payload.voice
+        )
+        
+        # 7. Store the active bridge
+        student_voice_sessions[session_id] = bridge
+        
+        return {
+            "sdp": answer_sdp["sdp"],
+            "type": answer_sdp["type"]
+        }
+
+    except Exception as e:
+        logger.error(f"Student Voice Connection Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/session/student/{student_id}/voice_agent/disconnect")
+async def disconnect_student_voice_agent(
+    student_id: str,
+    session_id: str
+) -> Dict[str, str]:
+    """
+    Disconnects the Student Voice Agent and cleans up resources.
+    """
+    if session_id in student_voice_sessions:
+        try:
+            await student_voice_sessions[session_id].disconnect()
+            del student_voice_sessions[session_id]
+            return {"status": "disconnected", "message": "Study Buddy disconnected."}
+        except Exception as e:
+            logger.error(f"Error disconnecting student voice session: {e}")
+            raise HTTPException(status_code=500, detail=f"Error disconnecting: {str(e)}")
+    
+    return {"status": "not_found", "message": "No active study buddy session found."}
 
 @app.post("/api/teacher/{teacher_id}/session/{session_id}/content_generator/{type}")
 async def generate_content(
