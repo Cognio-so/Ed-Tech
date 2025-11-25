@@ -49,3 +49,5 @@ websockets
 aiortc
 pyaudio
 sounddevice
+asposeslidescloud
+python-pptx
