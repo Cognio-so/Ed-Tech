@@ -41,6 +41,10 @@ from doument_processor import extract_text_from_pdf, extract_text_from_docx, ext
 from teacher.Ai_Tutor.qdrant_utils import store_documents
 import httpx
 from teacher.voice_agent.voice_agent_webrtc import VoiceAgentBridge
+from Student.Ai_tutor.graph import create_student_ai_tutor_graph
+from Student.Ai_tutor.graph_type import StudentGraphState
+from Student.Ai_tutor.qdrant_utils import store_documents as store_student_documents
+from Student.student_voice_agent.student_voice_agent import StudyBuddyBridge
 
 load_dotenv()
 
@@ -50,6 +54,7 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).parent
 
 ai_tutor_graph = create_ai_tutor_graph()
+student_ai_tutor_graph = create_student_ai_tutor_graph()
 
 GENERATOR_MAP: Dict[str, Callable[..., Awaitable[str]]] = {
     "lesson_plan": generate_lesson_plan,
@@ -139,6 +144,19 @@ class TeacherVoiceSchema(BaseModel):
     grade: str = Field("General", description="Grade level")
     instructions: Optional[str] = Field(None, description="Specific instructions for this session")
     voice: Literal['alloy', 'echo', 'shimmer'] = Field('shimmer', description="Voice preference")
+
+
+
+class StudentAITutorRequest(BaseModel):
+    message: str = Field(..., description="Student's question or input")
+    student_profile: Optional[Dict[str, Any]] = Field(None, description="Profile data such as name, grade, preferences")
+    subject: Optional[str] = Field(None, description="Subject for the session")
+    topic: Optional[str] = Field(None, description="Topic focus")
+    doc_url: Optional[str] = Field(None, description="Optional document to analyze")
+    language: str = Field("English", description="Conversation language")
+    pending_assignments: Optional[List[Dict[str, Any]]] = Field(None, description="Assignments to keep in mind")
+    achievements: Optional[List[str]] = Field(None, description="Recent accomplishments")
+    assessment_data: Optional[Dict[str, Any]] = Field(None, description="Assessment details for personalization")
 
 def _parse_enhanced_story_panels(story_text: str) -> List[Dict[str, str]]:
     """
@@ -232,6 +250,7 @@ sessions: Dict[str, Dict[str, Any]] = {}
 
 # Stores active VoiceAgentBridge instances by session_id
 voice_sessions: Dict[str, VoiceAgentBridge] = {}
+student_sessions: Dict[str, Dict[str, Any]] = {}
 
 class SessionManager:
     @staticmethod
@@ -259,6 +278,33 @@ class SessionManager:
         session = await SessionManager.get_session(session_id)
         session.update(updates)
         sessions[session_id] = session
+
+
+class StudentSessionManager:
+    @staticmethod
+    async def create_session(student_id: str, existing_session_id: Optional[str] = None) -> str:
+        session_id = existing_session_id or str(uuid4())
+        if session_id not in student_sessions:
+            student_sessions[session_id] = {
+                "session_id": session_id,
+                "student_id": student_id,
+                "created_at": str(uuid4()),
+                "messages": [],
+            }
+        return session_id
+
+    @staticmethod
+    async def get_session(session_id: str) -> Dict[str, Any]:
+        session = student_sessions.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Student session not found")
+        return session
+
+    @staticmethod
+    async def update_session(session_id: str, updates: Dict[str, Any]) -> None:
+        session = await StudentSessionManager.get_session(session_id)
+        session.update(updates)
+        student_sessions[session_id] = session
 
 app = FastAPI(
     title="Ed-Tech Content Generation API",
@@ -1414,6 +1460,282 @@ async def ai_tutor_stream_chat(
         "X-Content-Type": "ai_tutor",
     }
     
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
+@app.post("/api/session/student/{student_id}/stream-chat")
+async def student_ai_tutor_stream_chat(
+    student_id: str,
+    payload: StudentAITutorRequest,
+    session_id: Optional[str] = None,
+    stream: bool = True,
+) -> StreamingResponse:
+    """
+    Student AI Tutor streaming chat endpoint.
+    """
+    current_session_id = await StudentSessionManager.create_session(student_id, session_id)
+    session = await StudentSessionManager.get_session(current_session_id)
+
+    print(f"[STUDENT CHAT] 📥 Request received - student_id: {student_id}, session_id: {current_session_id}")
+    print(f"[STUDENT CHAT] 📝 Message: {payload.message[:100]}...")
+    print(f"[STUDENT CHAT] 📎 doc_url: {payload.doc_url}")
+
+    if payload.doc_url:
+        session.setdefault("uploaded_docs", [])
+        doc_already_processed = any(
+            (doc.get("url") == payload.doc_url or doc.get("file_url") == payload.doc_url)
+            and doc.get("id") is not None
+            for doc in session["uploaded_docs"]
+        )
+
+        if not doc_already_processed:
+            print(f"[STUDENT CHAT] ⚡ Processing provided document for embedding...")
+            try:
+                filename = payload.doc_url.split("/")[-1].split("?")[0]
+                file_extension = filename.split(".")[-1].lower() if "." in filename else "txt"
+                doc_id = str(uuid4())
+
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(payload.doc_url, timeout=30.0)
+                    response.raise_for_status()
+                    file_content = response.content
+
+                if file_extension == "pdf":
+                    text = await asyncio.to_thread(extract_text_from_pdf, file_content)
+                elif file_extension == "docx":
+                    text = await asyncio.to_thread(extract_text_from_docx, file_content)
+                elif file_extension == "json":
+                    text = extract_text_from_json(file_content)
+                else:
+                    text = extract_text_from_txt(file_content)
+
+                if text.strip():
+                    from langchain_core.documents import Document
+
+                    document = Document(
+                        page_content=text,
+                        metadata={
+                            "source": payload.doc_url,
+                            "file_type": file_extension,
+                            "doc_id": doc_id,
+                            "filename": filename,
+                        },
+                    )
+
+                    success = await store_student_documents(
+                        student_id=student_id,
+                        documents=[document],
+                        collection_type="user_docs",
+                        is_hybrid=False,
+                        clear_existing=False,
+                        metadata={
+                            "source_url": payload.doc_url,
+                            "file_type": file_extension,
+                            "doc_id": doc_id,
+                            "filename": filename,
+                        },
+                    )
+
+                    session["uploaded_docs"].append(
+                        {
+                            "url": payload.doc_url,
+                            "file_url": payload.doc_url,
+                            "file_type": file_extension,
+                            "id": doc_id if success else None,
+                            "filename": filename,
+                            "processed": success,
+                            "size": len(file_content),
+                        }
+                    )
+                    await StudentSessionManager.update_session(current_session_id, session)
+                else:
+                    print(f"[STUDENT CHAT] ⚠️ No text extracted from {filename}")
+            except Exception as exc:
+                logger.error(f"[STUDENT CHAT] Error auto-processing document: {exc}", exc_info=True)
+                session["uploaded_docs"].append(
+                    {
+                        "url": payload.doc_url,
+                        "file_type": payload.doc_url.split(".")[-1].lower() if "." in payload.doc_url else "txt",
+                        "processed": False,
+                    }
+                )
+                await StudentSessionManager.update_session(current_session_id, session)
+        else:
+            print(f"[STUDENT CHAT] ✅ Document already processed.")
+    else:
+        print(f"[STUDENT CHAT] ℹ️ No document URL provided.")
+
+    queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
+    full_response = ""
+
+    async def chunk_callback(chunk: str):
+        nonlocal full_response
+        full_response += chunk
+        await queue.put(
+            {
+                "type": "content",
+                "data": {
+                    "chunk": chunk,
+                    "full_response": full_response,
+                    "is_complete": False,
+                },
+            }
+        )
+
+    session_messages = session.setdefault("messages", [])
+    session_messages.append({"role": "user", "content": payload.message})
+    recent_messages = session_messages[-3:]
+
+    langchain_messages = []
+    for msg in recent_messages:
+        if msg.get("role") == "user":
+            langchain_messages.append(HumanMessage(content=msg.get("content", "")))
+        elif msg.get("role") == "assistant":
+            langchain_messages.append(AIMessage(content=msg.get("content", "")))
+
+    state: StudentGraphState = {
+        "messages": langchain_messages,
+        "user_query": payload.message,
+        "student_id": student_id,
+        "student_profile": payload.student_profile,
+        "pending_assignments": payload.pending_assignments,
+        "assessment_data": payload.assessment_data,
+        "achievements": payload.achievements,
+        "topic": payload.topic,
+        "subject": payload.subject,
+        "doc_url": payload.doc_url,
+        "language": payload.language,
+        "context": {
+            "session": {
+                "summary": session.get("summary", ""),
+                "last_route": session.get("last_route"),
+            }
+        },
+        "should_continue": True,
+        "chunk_callback": chunk_callback,
+        "token_usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+    }
+
+    async def generate_stream():
+        try:
+            # Send initial status message immediately
+            initial_status = {
+                "type": "status",
+                "data": {
+                    "status": "processing",
+                    "message": "Study Buddy is thinking..."
+                }
+            }
+            yield f"data: {json.dumps(initial_status)}\n\n"
+            
+            final_state = None
+            stream_error_message = None
+
+            async def run_graph():
+                nonlocal final_state, stream_error_message
+                try:
+                    logger.info("Starting Student AI Tutor graph execution")
+                    async for node_result in student_ai_tutor_graph.astream(state):
+                        final_state = node_result
+                        for node_name, node_state in node_result.items():
+                            if isinstance(node_state, dict):
+                                state.update(node_state)
+                except Exception as exc:
+                    logger.error(f"Student graph execution error: {exc}", exc_info=True)
+                    stream_error_message = str(exc) or "Unexpected error"
+                    await queue.put({"type": "error", "data": {"error": stream_error_message}})
+                finally:
+                    await queue.put(None)
+
+            async def consume_and_yield():
+                nonlocal stream_error_message
+                while True:
+                    try:
+                        # Add timeout to prevent indefinite blocking
+                        item = await asyncio.wait_for(queue.get(), timeout=300.0)
+                        if item is None:
+                            break
+                        if item.get("type") == "error":
+                            stream_error_message = item["data"].get("error")
+                            continue
+                        if stream_error_message:
+                            continue
+                        yield item
+                    except asyncio.TimeoutError:
+                        logger.error("Timeout waiting for queue item")
+                        yield {
+                            "type": "error",
+                            "data": {"error": "Request timeout - no response from AI tutor"}
+                        }
+                        break
+
+            graph_task = asyncio.create_task(run_graph())
+            async for chunk in consume_and_yield():
+                yield f"data: {json.dumps(chunk)}\n\n"
+            await graph_task
+
+            response = ""
+            if final_state:
+                for _, node_state in final_state.items():
+                    if isinstance(node_state, dict):
+                        response = (
+                            node_state.get("final_answer")
+                            or node_state.get("rag_response")
+                            or node_state.get("simple_llm_response")
+                            or node_state.get("websearch_results")
+                            or node_state.get("response")
+                            or response
+                        )
+                        if response:
+                            break
+
+            if not response:
+                response = full_response
+
+            token_usage = state.get("token_usage", {})
+            final_chunk = {
+                "type": "content",
+                "data": {
+                    "content": "",
+                    "is_complete": True,
+                    "full_response": response or full_response,
+                    "image_result": state.get("image_result"),
+                    "token_usage": token_usage,
+                    "error_message": stream_error_message,
+                },
+            }
+            yield f"data: {json.dumps(final_chunk)}\n\n"
+
+            if response or full_response:
+                session_messages.append({"role": "assistant", "content": response or full_response})
+            if state.get("context", {}).get("session", {}).get("summary"):
+                session["summary"] = state["context"]["session"]["summary"]
+            if state.get("context", {}).get("session", {}).get("last_route"):
+                session["last_route"] = state["context"]["session"]["last_route"]
+            if state.get("route"):
+                session["last_route"] = state["route"]
+
+            await StudentSessionManager.update_session(current_session_id, session)
+
+            yield f"data: {json.dumps({'type': 'done', 'data': {'session_id': current_session_id}})}\n\n"
+        except Exception as exc:
+            logger.error(f"Error in student stream generation: {exc}", exc_info=True)
+            error_chunk = json.dumps({"type": "error", "data": {"error": str(exc)}})
+            yield f"data: {error_chunk}\n\n"
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+        "X-Session-Id": current_session_id,
+        "X-Student-Id": student_id,
+        "X-Content-Type": "student_ai_tutor",
+    }
+
     return StreamingResponse(
         generate_stream(),
         media_type="text/event-stream",
