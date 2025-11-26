@@ -11,7 +11,7 @@ load_dotenv()
 class ImageGenerator:
     """
     A class to generate images based on a structured schema using OpenAI's
-    GPT-Image-1 model, with prompts enhanced by gpt-4o-mini.
+    GPT-Image-1 model, with prompts enhanced by gpt-4o-mini via OpenRouter.
 
     This class provides a method to convert a dictionary-based schema
     into a detailed, effective prompt for the image generation AI.
@@ -20,20 +20,35 @@ class ImageGenerator:
 
     def __init__(self):
         """
-        Initializes the ImageGenerator and the OpenAI client.
+        Initializes the ImageGenerator, the OpenAI client for images, 
+        and the OpenRouter client for text prompt generation.
 
-        It retrieves the OpenAI API key from the environment variables.
-        Raises an exception if the API key is not found.
+        It retrieves the OpenAI API key and OpenRouter API key from the environment variables.
         """
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not self.openai_api_key:
             raise ValueError("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
-        self.client = openai.OpenAI(api_key=api_key)
+        self.client = openai.OpenAI(api_key=self.openai_api_key)
+
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+        
+        if self.openrouter_api_key:
+            self.openrouter_client = openai.OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=self.openrouter_api_key,
+                default_headers={
+                    "HTTP-Referer": "https://localhost:8000", 
+                    "X-Title": "Ed-Tech Content Generator"
+                }
+            )
+        else:
+            print("Warning: OPENROUTER_API_KEY not found. Falling back to standard OpenAI client for prompt rephrasing.")
+            self.openrouter_client = self.client
 
     def _rephrase_schema_to_prompt(self, schema: dict) -> str:
         """
         Rephrases a schema dictionary into a detailed and meaningful prompt
-        for the GPT-Image-1 image generation model using gpt-4o-mini.
+        for the GPT-Image-1 image generation model using gpt-4o-mini via OpenRouter.
 
         Args:
             schema: A dictionary containing the image generation parameters.
@@ -104,11 +119,13 @@ class ImageGenerator:
         if schema.get('difficulty_flag', 'false').lower() == 'true':
             comic_prompt += f"\n- **Difficulty:** Advanced. The {visual_type} should be detailed and comprehensive with enhanced visual elements."
 
-        print("Requesting prompt rephrasing from gpt-4o-mini...")
+        print("Requesting prompt rephrasing from gpt-4o-mini (via OpenRouter)...")
 
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+            model_name = "openai/gpt-4o-mini" if self.openrouter_api_key else "gpt-4o-mini"
+            
+            response = self.openrouter_client.chat.completions.create(
+                model=model_name, 
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that creates effective prompts for image generation."},
                     {"role": "user", "content": comic_prompt}
@@ -122,7 +139,7 @@ class ImageGenerator:
             return rephrased_prompt
 
         except openai.APIError as e:
-            print(f"An OpenAI API error occurred while rephrasing the prompt: {e}")
+            print(f"An OpenAI/OpenRouter API error occurred while rephrasing the prompt: {e}")
             return f"A high-quality {schema['preferred_visual_type']} about {schema['topic']} for a {schema['subject']} lesson at grade {schema['grade_level']}. Instructions: {schema['instructions']}. Labels should be in {schema['language']}."
         except Exception as e:
             print(f"An unexpected error occurred during prompt rephrasing: {e}")
@@ -253,7 +270,7 @@ if __name__ == "__main__":
 
         if generated_image_base64:
             print("\nGenerated Image Base64:")
-            print(generated_image_base64)
+            print(generated_image_base64[:100] + "...")
         else:
             print("\nImage generation failed.")
             
