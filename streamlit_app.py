@@ -1265,237 +1265,239 @@ elif tool_selection == "Student Voice Agent":
                 # Schema expects list of dicts
                 sv_pending_assignments.append({"title": line.strip(), "due": "Upcoming"})
 
-    # Check session
-    session_id = st.session_state.session_id.strip()
+    # Initialize Student Session ID independent of Teacher/Global session
+    if "student_session_id" not in st.session_state or not st.session_state.student_session_id:
+        st.session_state.student_session_id = str(uuid.uuid4())
     
-    if not session_id:
-        st.error("⚠️ Session ID is missing. Please create one in the sidebar first.")
-    else:
-        # Build URLs
-        # Endpoint: /api/session/student/{student_id}/voice_agent/connect
-        connect_url = f"{api_base_url}/api/session/student/{sv_student_id}/voice_agent/connect?session_id={session_id}"
-        disconnect_url = f"{api_base_url}/api/session/student/{sv_student_id}/voice_agent/disconnect?session_id={session_id}"
-        
-        # Prepare Context Data matching StudentVoiceSchema
-        context_data = {
-            "student_name": sv_name,
-            "grade": sv_grade,
-            "subject": sv_subject,
-            "pending_assignments": sv_pending_assignments,
-            "completed_assignments": [], # Optional, leaving empty for now
-            "voice": sv_voice,
-            "type": "offer"
-        }
-        context_json = json.dumps(context_data)
+    st.markdown("### Session Configuration")
+    student_session_id = st.text_input("Student Session ID", st.session_state.student_session_id, key="voice_student_sess_id")
+    st.session_state.student_session_id = student_session_id
 
-        # Reuse the HTML/JS Component (Logic is identical, just endpoints and context differ)
-        components.html(
-            f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: sans-serif; color: #333; padding: 10px; background: transparent; }}
-                    .controls {{ display: flex; gap: 10px; margin-bottom: 10px; }}
-                    button {{
-                        padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;
-                        transition: background 0.2s;
-                    }}
-                    #startBtn {{ background-color: #007bff; color: white; }}
-                    #startBtn:disabled {{ background-color: #8bbaf0; cursor: not-allowed; }}
-                    #stopBtn {{ background-color: #dc3545; color: white; }}
-                    #stopBtn:disabled {{ background-color: #e4babc; cursor: not-allowed; }}
-                    
-                    #status {{ margin-top: 10px; font-size: 0.9em; padding: 5px; border-radius: 4px; margin-bottom: 10px; }}
-                    .status-ready {{ background-color: #e2e3e5; color: #383d41; }}
-                    .status-connecting {{ background-color: #fff3cd; color: #856404; }}
-                    .status-active {{ background-color: #d4edda; color: #155724; }}
-                    .status-error {{ background-color: #f8d7da; color: #721c24; }}
-                    
-                    .visualizer {{ height: 4px; background: #ddd; width: 100%; margin-top: 10px; border-radius: 2px; overflow: hidden; }}
-                    .bar {{ height: 100%; width: 0%; background: #28a745; transition: width 0.1s; }}
-                    
-                    /* Chat/Transcription Area */
-                    #transcriptBox {{
-                        margin-top: 20px;
-                        border: 1px solid #ddd;
-                        border-radius: 8px;
-                        padding: 10px;
-                        height: 300px;
-                        overflow-y: auto;
-                        background-color: #f9f9f9;
-                        display: flex;
-                        flex-direction: column;
-                        gap: 10px;
-                    }}
-                    .msg {{ padding: 8px 12px; border-radius: 12px; max-width: 80%; font-size: 0.95em; line-height: 1.4; }}
-                    .msg-student {{ align-self: flex-end; background-color: #cce5ff; color: #004085; border-bottom-right-radius: 2px; }}
-                    .msg-ai {{ align-self: flex-start; background-color: #fff; border: 1px solid #eee; color: #333; border-bottom-left-radius: 2px; }}
-                    .sender {{ font-size: 0.75em; color: #666; margin-bottom: 2px; display: block; }}
-                </style>
-            </head>
-            <body>
-                <div class="controls">
-                    <button id="startBtn" onclick="startCall()">🎧 Start Session</button>
-                    <button id="stopBtn" onclick="stopCall()" disabled>⏹️ End Session</button>
-                </div>
-                <div id="status" class="status-ready">Ready to study...</div>
+    # Build URLs using student_session_id
+    # Endpoint: /api/session/student/{student_id}/voice_agent/connect
+    connect_url = f"{api_base_url}/api/session/student/{sv_student_id}/voice_agent/connect?session_id={student_session_id}"
+    disconnect_url = f"{api_base_url}/api/session/student/{sv_student_id}/voice_agent/disconnect?session_id={student_session_id}"
+    
+    # Prepare Context Data matching StudentVoiceSchema
+    context_data = {
+        "student_name": sv_name,
+        "grade": sv_grade,
+        "subject": sv_subject,
+        "pending_assignments": sv_pending_assignments,
+        "completed_assignments": [], # Optional, leaving empty for now
+        "voice": sv_voice,
+        "type": "offer"
+    }
+    context_json = json.dumps(context_data)
+
+    # Reuse the HTML/JS Component (Logic is identical, just endpoints and context differ)
+    components.html(
+        f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: sans-serif; color: #333; padding: 10px; background: transparent; }}
+                .controls {{ display: flex; gap: 10px; margin-bottom: 10px; }}
+                button {{
+                    padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;
+                    transition: background 0.2s;
+                }}
+                #startBtn {{ background-color: #007bff; color: white; }}
+                #startBtn:disabled {{ background-color: #8bbaf0; cursor: not-allowed; }}
+                #stopBtn {{ background-color: #dc3545; color: white; }}
+                #stopBtn:disabled {{ background-color: #e4babc; cursor: not-allowed; }}
                 
-                <div class="visualizer"><div id="audioBar" class="bar"></div></div>
+                #status {{ margin-top: 10px; font-size: 0.9em; padding: 5px; border-radius: 4px; margin-bottom: 10px; }}
+                .status-ready {{ background-color: #e2e3e5; color: #383d41; }}
+                .status-connecting {{ background-color: #fff3cd; color: #856404; }}
+                .status-active {{ background-color: #d4edda; color: #155724; }}
+                .status-error {{ background-color: #f8d7da; color: #721c24; }}
                 
-                <div id="transcriptBox">
-                    <div style="text-align:center; color:#999; font-size:0.9em; margin-top:100px;" id="emptyMsg">
-                        <i>Conversation transcript...</i>
-                    </div>
+                .visualizer {{ height: 4px; background: #ddd; width: 100%; margin-top: 10px; border-radius: 2px; overflow: hidden; }}
+                .bar {{ height: 100%; width: 0%; background: #28a745; transition: width 0.1s; }}
+                
+                /* Chat/Transcription Area */
+                #transcriptBox {{
+                    margin-top: 20px;
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    padding: 10px;
+                    height: 300px;
+                    overflow-y: auto;
+                    background-color: #f9f9f9;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                }}
+                .msg {{ padding: 8px 12px; border-radius: 12px; max-width: 80%; font-size: 0.95em; line-height: 1.4; }}
+                .msg-student {{ align-self: flex-end; background-color: #cce5ff; color: #004085; border-bottom-right-radius: 2px; }}
+                .msg-ai {{ align-self: flex-start; background-color: #fff; border: 1px solid #eee; color: #333; border-bottom-left-radius: 2px; }}
+                .sender {{ font-size: 0.75em; color: #666; margin-bottom: 2px; display: block; }}
+            </style>
+        </head>
+        <body>
+            <div class="controls">
+                <button id="startBtn" onclick="startCall()">🎧 Start Session</button>
+                <button id="stopBtn" onclick="stopCall()" disabled>⏹️ End Session</button>
+            </div>
+            <div id="status" class="status-ready">Ready to study...</div>
+            
+            <div class="visualizer"><div id="audioBar" class="bar"></div></div>
+            
+            <div id="transcriptBox">
+                <div style="text-align:center; color:#999; font-size:0.9em; margin-top:100px;" id="emptyMsg">
+                    <i>Conversation transcript...</i>
                 </div>
+            </div>
 
-                <audio id="remoteAudio" autoplay></audio>
+            <audio id="remoteAudio" autoplay></audio>
 
-                <script>
-                    let pc = null;
-                    let localStream = null;
-                    let dc = null;
+            <script>
+                let pc = null;
+                let localStream = null;
+                let dc = null;
+                
+                const CONNECT_URL = "{connect_url}";
+                const DISCONNECT_URL = "{disconnect_url}";
+                const CONTEXT_DATA = {context_json};
+
+                const startBtn = document.getElementById('startBtn');
+                const stopBtn = document.getElementById('stopBtn');
+                const statusDiv = document.getElementById('status');
+                const audioBar = document.getElementById('audioBar');
+                const transcriptBox = document.getElementById('transcriptBox');
+                const emptyMsg = document.getElementById('emptyMsg');
+
+                function updateStatus(msg, type) {{
+                    statusDiv.textContent = msg;
+                    statusDiv.className = 'status-' + type;
+                }}
+
+                function addTranscript(role, text) {{
+                    if (emptyMsg) emptyMsg.style.display = 'none';
+                    const div = document.createElement('div');
+                    div.className = 'msg ' + (role === 'You' ? 'msg-student' : 'msg-ai');
                     
-                    const CONNECT_URL = "{connect_url}";
-                    const DISCONNECT_URL = "{disconnect_url}";
-                    const CONTEXT_DATA = {context_json};
+                    const sender = document.createElement('span');
+                    sender.className = 'sender';
+                    sender.innerText = role;
+                    
+                    const content = document.createElement('span');
+                    content.innerText = text;
+                    
+                    div.appendChild(sender);
+                    div.appendChild(content);
+                    transcriptBox.appendChild(div);
+                    transcriptBox.scrollTop = transcriptBox.scrollHeight;
+                }}
 
-                    const startBtn = document.getElementById('startBtn');
-                    const stopBtn = document.getElementById('stopBtn');
-                    const statusDiv = document.getElementById('status');
-                    const audioBar = document.getElementById('audioBar');
-                    const transcriptBox = document.getElementById('transcriptBox');
-                    const emptyMsg = document.getElementById('emptyMsg');
+                async function startCall() {{
+                    startBtn.disabled = true;
+                    updateStatus("Requesting Microphone...", "connecting");
 
-                    function updateStatus(msg, type) {{
-                        statusDiv.textContent = msg;
-                        statusDiv.className = 'status-' + type;
-                    }}
+                    try {{
+                        localStream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
+                        setupVisualizer(localStream);
 
-                    function addTranscript(role, text) {{
-                        if (emptyMsg) emptyMsg.style.display = 'none';
-                        const div = document.createElement('div');
-                        div.className = 'msg ' + (role === 'You' ? 'msg-student' : 'msg-ai');
+                        pc = new RTCPeerConnection();
+                        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+                        pc.ontrack = (event) => {{
+                            const remoteAudio = document.getElementById('remoteAudio');
+                            remoteAudio.srcObject = event.streams[0];
+                            updateStatus("Study Buddy Connected", "active");
+                            stopBtn.disabled = false;
+                        }};
+
+                        dc = pc.createDataChannel("oai-events");
+                        dc.onopen = () => console.log("Data Channel Opened");
                         
-                        const sender = document.createElement('span');
-                        sender.className = 'sender';
-                        sender.innerText = role;
-                        
-                        const content = document.createElement('span');
-                        content.innerText = text;
-                        
-                        div.appendChild(sender);
-                        div.appendChild(content);
-                        transcriptBox.appendChild(div);
-                        transcriptBox.scrollTop = transcriptBox.scrollHeight;
+                        dc.onmessage = (event) => {{
+                            try {{
+                                const data = JSON.parse(event.data);
+                                if (data.type === 'conversation.item.input_audio_transcription.completed') {{
+                                    const text = data.transcript;
+                                    if (text) addTranscript("You", text);
+                                }}
+                                else if (data.type === 'response.audio_transcript.done') {{
+                                    const text = data.transcript;
+                                    if (text) addTranscript("Buddy", text);
+                                }}
+                            }} catch (e) {{ console.error(e); }}
+                        }};
+
+                        const offer = await pc.createOffer();
+                        await pc.setLocalDescription(offer);
+
+                        updateStatus("Connecting to AI Server...", "connecting");
+
+                        // Payload matches StudentVoiceSchema
+                        const payload = {{
+                            ...CONTEXT_DATA,
+                            sdp: offer.sdp
+                        }};
+
+                        const response = await fetch(CONNECT_URL, {{
+                            method: "POST",
+                            headers: {{ "Content-Type": "application/json" }},
+                            body: JSON.stringify(payload)
+                        }});
+
+                        if (!response.ok) throw new Error("Server Error: " + response.statusText);
+
+                        const data = await response.json();
+                        const answer = new RTCSessionDescription({{
+                            type: data.type,
+                            sdp: data.sdp
+                        }});
+                        await pc.setRemoteDescription(answer);
+
+                    }} catch (err) {{
+                        console.error(err);
+                        updateStatus("Error: " + err.message, "error");
+                        stopCall();
                     }}
+                }}
 
-                    async function startCall() {{
-                        startBtn.disabled = true;
-                        updateStatus("Requesting Microphone...", "connecting");
-
-                        try {{
-                            localStream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
-                            setupVisualizer(localStream);
-
-                            pc = new RTCPeerConnection();
-                            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-                            pc.ontrack = (event) => {{
-                                const remoteAudio = document.getElementById('remoteAudio');
-                                remoteAudio.srcObject = event.streams[0];
-                                updateStatus("Study Buddy Connected", "active");
-                                stopBtn.disabled = false;
-                            }};
-
-                            dc = pc.createDataChannel("oai-events");
-                            dc.onopen = () => console.log("Data Channel Opened");
-                            
-                            dc.onmessage = (event) => {{
-                                try {{
-                                    const data = JSON.parse(event.data);
-                                    if (data.type === 'conversation.item.input_audio_transcription.completed') {{
-                                        const text = data.transcript;
-                                        if (text) addTranscript("You", text);
-                                    }}
-                                    else if (data.type === 'response.audio_transcript.done') {{
-                                        const text = data.transcript;
-                                        if (text) addTranscript("Buddy", text);
-                                    }}
-                                }} catch (e) {{ console.error(e); }}
-                            }};
-
-                            const offer = await pc.createOffer();
-                            await pc.setLocalDescription(offer);
-
-                            updateStatus("Connecting to AI Server...", "connecting");
-
-                            // Payload matches StudentVoiceSchema
-                            const payload = {{
-                                ...CONTEXT_DATA,
-                                sdp: offer.sdp
-                            }};
-
-                            const response = await fetch(CONNECT_URL, {{
-                                method: "POST",
-                                headers: {{ "Content-Type": "application/json" }},
-                                body: JSON.stringify(payload)
-                            }});
-
-                            if (!response.ok) throw new Error("Server Error: " + response.statusText);
-
-                            const data = await response.json();
-                            const answer = new RTCSessionDescription({{
-                                type: data.type,
-                                sdp: data.sdp
-                            }});
-                            await pc.setRemoteDescription(answer);
-
-                        }} catch (err) {{
-                            console.error(err);
-                            updateStatus("Error: " + err.message, "error");
-                            stopCall();
-                        }}
+                async function stopCall() {{
+                    updateStatus("Disconnecting...", "ready");
+                    if (dc) {{ dc.close(); dc = null; }}
+                    if (pc) {{ pc.close(); pc = null; }}
+                    if (localStream) {{
+                        localStream.getTracks().forEach(track => track.stop());
+                        localStream = null;
                     }}
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                    audioBar.style.width = '0%';
+                    
+                    try {{
+                        await fetch(DISCONNECT_URL, {{ method: "POST" }});
+                        updateStatus("Session Ended", "ready");
+                    }} catch (e) {{ console.log("Disconnect signal failed", e); }}
+                }}
 
-                    async function stopCall() {{
-                        updateStatus("Disconnecting...", "ready");
-                        if (dc) {{ dc.close(); dc = null; }}
-                        if (pc) {{ pc.close(); pc = null; }}
-                        if (localStream) {{
-                            localStream.getTracks().forEach(track => track.stop());
-                            localStream = null;
-                        }}
-                        startBtn.disabled = false;
-                        stopBtn.disabled = true;
-                        audioBar.style.width = '0%';
-                        
-                        try {{
-                            await fetch(DISCONNECT_URL, {{ method: "POST" }});
-                            updateStatus("Session Ended", "ready");
-                        }} catch (e) {{ console.log("Disconnect signal failed", e); }}
+                function setupVisualizer(stream) {{
+                    const audioContext = new AudioContext();
+                    const src = audioContext.createMediaStreamSource(stream);
+                    const analyser = audioContext.createAnalyser();
+                    src.connect(analyser);
+                    analyser.fftSize = 32;
+                    const bufferLength = analyser.frequencyBinCount;
+                    const dataArray = new Uint8Array(bufferLength);
+
+                    function renderFrame() {{
+                        if (!localStream) return;
+                        requestAnimationFrame(renderFrame);
+                        analyser.getByteFrequencyData(dataArray);
+                        const avg = dataArray.reduce((a,b) => a+b, 0) / bufferLength;
+                        audioBar.style.width = Math.min(100, avg * 2) + '%';
                     }}
-
-                    function setupVisualizer(stream) {{
-                        const audioContext = new AudioContext();
-                        const src = audioContext.createMediaStreamSource(stream);
-                        const analyser = audioContext.createAnalyser();
-                        src.connect(analyser);
-                        analyser.fftSize = 32;
-                        const bufferLength = analyser.frequencyBinCount;
-                        const dataArray = new Uint8Array(bufferLength);
-
-                        function renderFrame() {{
-                            if (!localStream) return;
-                            requestAnimationFrame(renderFrame);
-                            analyser.getByteFrequencyData(dataArray);
-                            const avg = dataArray.reduce((a,b) => a+b, 0) / bufferLength;
-                            audioBar.style.width = Math.min(100, avg * 2) + '%';
-                        }}
-                        renderFrame();
-                    }}
-                </script>
-            </body>
-            </html>
-            """,
-            height=500,
-        )
+                    renderFrame();
+                }}
+            </script>
+        </body>
+        </html>
+        """,
+        height=500,
+    )
