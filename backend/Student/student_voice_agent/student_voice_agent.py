@@ -13,7 +13,6 @@ from aiortc import (
 )
 from aiortc.contrib.media import MediaRelay
 
-# Try importing pyaudio, but don't fail if it's missing (Server environment)
 try:
     import pyaudio
     import av
@@ -34,9 +33,7 @@ class StudyBuddyBridge:
     """
     def __init__(self, api_key: str):
         self.api_key = api_key
-        # Connection to the Client (Browser)
         self.pc_client: Optional[RTCPeerConnection] = None
-        # Connection to OpenAI
         self.pc_openai: Optional[RTCPeerConnection] = None
         
         self.relay = MediaRelay()
@@ -54,34 +51,24 @@ class StudyBuddyBridge:
         """
         self.context_data = context_data
         
-        # 1. Initialize Client Connection (Browser -> Server)
         self.pc_client = RTCPeerConnection()
         
-        # 2. Initialize OpenAI Connection (Server -> OpenAI)
-        # Using Google STUN for reliability, though OpenAI connection is usually direct via REST handshake
         self.pc_openai = RTCPeerConnection(RTCConfiguration(
             iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])]
         ))
 
-        # --- SETUP TRACK RELAYING ---
-        
-        # Handle tracks coming FROM Client (Browser Mic) -> Send TO OpenAI
         @self.pc_client.on("track")
         def on_client_track(track):
             logger.info(f"🎤 Received Student Track: {track.kind}")
             if track.kind == "audio":
                 self.pc_openai.addTrack(self.relay.subscribe(track))
 
-        # Handle tracks coming FROM OpenAI (AI Voice) -> Send TO Client
         @self.pc_openai.on("track")
         def on_openai_track(track):
             logger.info(f"🤖 Received AI Track: {track.kind}")
             if track.kind == "audio":
                 self.pc_client.addTrack(self.relay.subscribe(track))
 
-        # --- SETUP DATA CHANNEL RELAYING ---
-        
-        # Handle Data Channel FROM Client
         @self.pc_client.on("datachannel")
         def on_client_datachannel(channel):
             logger.info(f"📡 Student DataChannel opened: {channel.label}")
@@ -89,43 +76,32 @@ class StudyBuddyBridge:
             
             @channel.on("message")
             def on_client_message(message):
-                # Relay message to OpenAI
                 if self.openai_dc and self.openai_dc.readyState == "open":
                     self.openai_dc.send(message)
 
-        # Create Data Channel TO OpenAI
         self.openai_dc = self.pc_openai.createDataChannel("oai-events")
         
         @self.openai_dc.on("open")
         def on_openai_dc_open():
             logger.info("✅ OpenAI DataChannel Open")
-            # Send initial session configuration
             self._send_session_update(voice)
 
         @self.openai_dc.on("message")
         def on_openai_message(message):
-            # 1. Intercept and log transcription events
             self._log_transcription(message)
             
-            # 2. Relay message to Client (Browser) so JS can also use it
             if self.client_dc and self.client_dc.readyState == "open":
                 self.client_dc.send(message)
 
-        # --- SIGNALING HANDSHAKE ---
-
-        # A. Set Remote Description from Client Offer
         client_offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
         await self.pc_client.setRemoteDescription(client_offer)
 
-        # B. Prepare Offer for OpenAI
-        # We need to add a transceiver or track to OpenAI to initiate audio
         if not self.pc_client.getTransceivers():
             self.pc_openai.addTransceiver("audio", direction="sendrecv")
         
         openai_offer = await self.pc_openai.createOffer()
         await self.pc_openai.setLocalDescription(openai_offer)
 
-        # C. Send Offer to OpenAI API via REST
         url = "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -139,11 +115,9 @@ class StudyBuddyBridge:
                     raise Exception(f"OpenAI API Error {response.status}: {text}")
                 openai_answer_sdp = await response.text()
 
-        # D. Set Remote Description from OpenAI Answer
         openai_answer = RTCSessionDescription(sdp=openai_answer_sdp, type="answer")
         await self.pc_openai.setRemoteDescription(openai_answer)
 
-        # E. Create Answer for Client
         client_answer = await self.pc_client.createAnswer()
         await self.pc_client.setLocalDescription(client_answer)
 
@@ -163,7 +137,6 @@ class StudyBuddyBridge:
             "modalities": ["text", "audio"],
             "instructions": instructions,
             "voice": voice,
-            # EXPLICITLY REQUEST INPUT TRANSCRIPTION (Whisper)
             "input_audio_transcription": {
                 "model": "gpt-4o-transcribe"
             },
@@ -188,16 +161,12 @@ class StudyBuddyBridge:
             data = json.loads(raw_message)
             event_type = data.get("type")
 
-            # 1. Student (User) Transcription
-            # OpenAI Event: conversation.item.input_audio_transcription.completed
             if event_type == "conversation.item.input_audio_transcription.completed":
                 transcript = data.get("transcript", "").strip()
                 if transcript:
                     print(f"\n[STUDENT]: {transcript}")
                     logger.info(f"🗣️ [STUDENT]: {transcript}")
 
-            # 2. AI Agent Transcription
-            # OpenAI Event: response.audio_transcript.done
             elif event_type == "response.audio_transcript.done":
                 transcript = data.get("transcript", "").strip()
                 if transcript:
@@ -342,7 +311,6 @@ When including mathematical expressions, equations, or formulas, you MUST use st
             await self.pc_openai.close()
         logger.info("🔌 Study Buddy Bridge Closed")
 
-# --- Original Local Implementation (Legacy/Local Testing) ---
 if HAS_AUDIO_HARDWARE:
     class AudioStreamTrack(MediaStreamTrack):
         kind = "audio"

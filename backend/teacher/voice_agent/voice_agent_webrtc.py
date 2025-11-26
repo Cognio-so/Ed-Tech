@@ -13,7 +13,6 @@ from aiortc import (
 )
 from aiortc.contrib.media import MediaRelay
 
-# Try importing pyaudio, but don't fail if it's missing (Server environment)
 try:
     import pyaudio
     import av
@@ -34,9 +33,7 @@ class VoiceAgentBridge:
     """
     def __init__(self, api_key: str):
         self.api_key = api_key
-        # Connection to the Client (Browser)
         self.pc_client: Optional[RTCPeerConnection] = None
-        # Connection to OpenAI
         self.pc_openai: Optional[RTCPeerConnection] = None
         
         self.relay = MediaRelay()
@@ -54,34 +51,24 @@ class VoiceAgentBridge:
         """
         self.context_data = context_data
         
-        # 1. Initialize Client Connection (Browser -> Server)
         self.pc_client = RTCPeerConnection()
         
-        # 2. Initialize OpenAI Connection (Server -> OpenAI)
-        # Using Google STUN for reliability, though OpenAI connection is usually direct via REST handshake
         self.pc_openai = RTCPeerConnection(RTCConfiguration(
             iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])]
         ))
-
-        # --- SETUP TRACK RELAYING ---
-        
-        # Handle tracks coming FROM Client (Browser Mic) -> Send TO OpenAI
         @self.pc_client.on("track")
         def on_client_track(track):
             logger.info(f"🎤 Received Client Track: {track.kind}")
             if track.kind == "audio":
                 self.pc_openai.addTrack(self.relay.subscribe(track))
 
-        # Handle tracks coming FROM OpenAI (AI Voice) -> Send TO Client
         @self.pc_openai.on("track")
         def on_openai_track(track):
             logger.info(f"🤖 Received OpenAI Track: {track.kind}")
             if track.kind == "audio":
                 self.pc_client.addTrack(self.relay.subscribe(track))
 
-        # --- SETUP DATA CHANNEL RELAYING ---
         
-        # Handle Data Channel FROM Client
         @self.pc_client.on("datachannel")
         def on_client_datachannel(channel):
             logger.info(f"📡 Client DataChannel opened: {channel.label}")
@@ -89,43 +76,31 @@ class VoiceAgentBridge:
             
             @channel.on("message")
             def on_client_message(message):
-                # Relay message to OpenAI
                 if self.openai_dc and self.openai_dc.readyState == "open":
                     self.openai_dc.send(message)
 
-        # Create Data Channel TO OpenAI
         self.openai_dc = self.pc_openai.createDataChannel("oai-events")
         
         @self.openai_dc.on("open")
         def on_openai_dc_open():
             logger.info("✅ OpenAI DataChannel Open")
-            # Send initial session configuration
             self._send_session_update(voice)
 
         @self.openai_dc.on("message")
         def on_openai_message(message):
-            # 1. Intercept and log transcription events
             self._log_transcription(message)
             
-            # 2. Relay message to Client (Browser) so JS can also use it
             if self.client_dc and self.client_dc.readyState == "open":
                 self.client_dc.send(message)
-
-        # --- SIGNALING HANDSHAKE ---
-
-        # A. Set Remote Description from Client Offer
         client_offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
         await self.pc_client.setRemoteDescription(client_offer)
 
-        # B. Prepare Offer for OpenAI
-        # We need to add a transceiver or track to OpenAI to initiate audio
         if not self.pc_client.getTransceivers():
             self.pc_openai.addTransceiver("audio", direction="sendrecv")
         
         openai_offer = await self.pc_openai.createOffer()
         await self.pc_openai.setLocalDescription(openai_offer)
 
-        # C. Send Offer to OpenAI API via REST
         url = "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -139,11 +114,9 @@ class VoiceAgentBridge:
                     raise Exception(f"OpenAI API Error {response.status}: {text}")
                 openai_answer_sdp = await response.text()
 
-        # D. Set Remote Description from OpenAI Answer
         openai_answer = RTCSessionDescription(sdp=openai_answer_sdp, type="answer")
         await self.pc_openai.setRemoteDescription(openai_answer)
 
-        # E. Create Answer for Client
         client_answer = await self.pc_client.createAnswer()
         await self.pc_client.setLocalDescription(client_answer)
 
@@ -163,7 +136,6 @@ class VoiceAgentBridge:
             "modalities": ["text", "audio"],
             "instructions": instructions,
             "voice": voice,
-            # EXPLICITLY REQUEST INPUT TRANSCRIPTION (Whisper)
             "input_audio_transcription": {
                 "model": "gpt-4o-transcribe"
             },
@@ -172,8 +144,7 @@ class VoiceAgentBridge:
                 "threshold": 0.5,
                 "prefix_padding_ms": 300,
                 "silence_duration_ms": 500
-            },
-            "tools": [{"type": "web_search"}]
+            }
         }
         
         msg = {
@@ -189,16 +160,19 @@ class VoiceAgentBridge:
             data = json.loads(raw_message)
             event_type = data.get("type")
 
-            # 1. Teacher (User) Transcription
-            # OpenAI Event: conversation.item.input_audio_transcription.completed
             if event_type == "conversation.item.input_audio_transcription.completed":
                 transcript = data.get("transcript", "").strip()
+                
+                if not transcript and "item" in data:
+                    content_list = data["item"].get("content", [])
+                    if content_list and len(content_list) > 0:
+                        transcript = content_list[0].get("transcript", "").strip()
+                
                 if transcript:
                     print(f"\n[TEACHER]: {transcript}")
                     logger.info(f"🗣️ [TEACHER]: {transcript}")
 
-            # 2. AI Agent Transcription
-            # OpenAI Event: response.audio_transcript.done
+
             elif event_type == "response.audio_transcript.done":
                 transcript = data.get("transcript", "").strip()
                 if transcript:
@@ -230,9 +204,79 @@ Grade Level: {grade}
 **SPECIFIC INSTRUCTIONS:**
 {extra_inst}
 
-**RESPONSE FORMAT:**
-- Respond in the same language as the user.
+**RESPONSE GUIDELINES:**
+- **Language Detection:** You MUST listen carefully to the language the teacher is speaking. 
+- **Response Language:** Always respond in the SAME language as the teacher. If they speak Hindi, you speak Hindi. If they speak English, you speak English.
+- **Transcription:** Your context helps the transcription engine. Assume the teacher might switch languages.
+
+**FORMAT:**
 - Use a helpful, encouraging tone.
+- Do NOT use HTML tags. Use markdown only if necessary, but remember this is primarily a voice interface.
+
+
+You are an expert AI Teaching Assistant. Your mission is to help teachers analyze student performance and provide step-by-step guidance.
+
+**RESPONSE GUIDELINES:**
+
+1. **Natural Greeting:** Start with a warm, professional greeting that varies based on context. Examples:
+   - "Hello! I'm here to help you enhance your teaching strategies."
+   - "Hi there! Let's work together to improve student outcomes."
+   - "Great to connect! I have some valuable insights to share with you."
+   - "Welcome! I'm ready to guide you through some important teaching approaches."
+
+2. **Step-by-Step Structure:** Always provide 3-5 numbered steps with detailed explanations:
+   **Step 1:** [First action with detailed explanation]
+   **Step 2:** [Second action with detailed explanation]  
+   **Step 3:** [Third action with detailed explanation]
+   **Step 4:** [Fourth action with detailed explanation]
+   **Step 5:** [Fifth action with detailed explanation]
+
+3. **Natural Closing:** End with an encouraging question that varies:
+   - "Does this approach work for your classroom?"
+   - "Are these strategies clear and actionable?"
+   - "Do you feel confident implementing these steps?"
+   - "Is there anything you'd like me to elaborate on?"
+
+**CRITICAL INSTRUCTIONS:**
+
+**Language and Formatting Requirement:**
+- You MUST respond in the SAME language as the teacher's query.
+- **CRITICAL:** Generate ONLY pure Markdown content. DO NOT use HTML tags like \`<div dir="rtl">\` or any other HTML wrapper tags.
+
+**CRITICAL LaTeX/Mathematical Notation Requirement:**
+When including mathematical expressions, equations, or formulas, you MUST use standard LaTeX notation:
+- For inline math: Use single dollar signs: $expression$
+- For display/block math: Use double dollar signs: $$expression$$
+- Use standard LaTeX commands: \\frac{{}}{{}}, \\sqrt{{}}, \\int, \\sum, etc.
+- NEVER use backslash-parenthesis \\( \\) or backslash-bracket \\[ \\] notation
+- NEVER use standalone backslashes or brackets without dollar signs
+- NEVER use \\left or \\right commands
+- **EXAMPLES OF CORRECT FORMAT (English):**
+  - Inline: $x^2 + 5x + 6 = 0$
+  - Display: $$\\frac{{x^3}}{{3}} + x^2 + C$$
+- **EXAMPLES OF INCORRECT FORMAT (DO NOT USE):**
+  -  \\( \\frac{{1}}{{2}} \\)
+  -  \\[ \\frac{{1}}{{2}} \\]
+  -  \\left( \\frac{{1}}{{2}} \\right)
+  -  $$\\frac{{1}}{{2}}$$
+
+3. **NEVER ASK:** "How can I help?" or "What would you like to know?" or "How can I assist you today?"
+
+2. **VARY YOUR RESPONSES:** Use different greetings and closings to make interactions feel natural and engaging.
+
+**EXAMPLE RESPONSE:**
+Hello! I'm here to help you enhance your teaching strategies.
+
+**Step 1: Basic Concept**
+[Detailed explanation]
+
+**Step 2: Core Functions** 
+[Detailed explanation]
+
+**Step 3: Examples**
+[Detailed explanation]
+
+Does this approach work for your classroom?
 """
 
     async def disconnect(self):
@@ -249,7 +293,6 @@ Grade Level: {grade}
             await self.pc_openai.close()
         logger.info("🔌 Voice Bridge Closed")
 
-# --- Original Local Implementation (Legacy/Local Testing) ---
 if HAS_AUDIO_HARDWARE:
     class AudioStreamTrack(MediaStreamTrack):
         kind = "audio"
