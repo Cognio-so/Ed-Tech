@@ -149,7 +149,6 @@ class TeacherVoiceSchema(BaseModel):
     sdp: str = Field(..., description="The WebRTC SDP Offer from the client browser")
     type: str = Field(..., description="SDP type, usually 'offer'")
     teacher_name: str = Field(..., description="Name of the teacher")
-    subject: str = Field(..., description="Subject being taught")
     grade: str = Field("General", description="Grade level")
     instructions: Optional[str] = Field(None, description="Specific instructions for this session")
     voice: Literal['alloy', 'echo', 'shimmer'] = Field('shimmer', description="Voice preference")
@@ -588,7 +587,6 @@ async def connect_voice_agent(
         
         context_data = {
             "teacher_name": payload.teacher_name,
-            "subject": payload.subject,
             "grade": payload.grade,
             "instructions": payload.instructions
         }

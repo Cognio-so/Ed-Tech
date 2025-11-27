@@ -968,12 +968,12 @@ elif tool_selection == "Teacher Voice Agent":
     """)
 
     # Inputs for the voice agent context
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         v_teacher_name = st.text_input("Teacher Name", "Mr. Anderson")
-        v_subject = st.text_input("Subject Context", "Physics")
     with col2:
         v_grade = st.text_input("Grade Level", "10th Grade")
+    with col3:
         v_voice = st.selectbox("AI Voice", ["shimmer", "alloy", "echo"])
 
     v_instructions = st.text_area("Specific Instructions for this Session", 
@@ -991,7 +991,6 @@ elif tool_selection == "Teacher Voice Agent":
         # Prepare initial payload data for the JS to send
         context_data = {
             "teacher_name": v_teacher_name,
-            "subject": v_subject,
             "grade": v_grade,
             "instructions": v_instructions,
             "voice": v_voice,
