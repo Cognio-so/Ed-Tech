@@ -101,7 +101,7 @@ class VoiceAgentBridge:
         openai_offer = await self.pc_openai.createOffer()
         await self.pc_openai.setLocalDescription(openai_offer)
 
-        url = "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
+        url = "https://api.openai.com/v1/realtime?model=gpt-realtime-mini-2025-10-06"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/sdp"
@@ -137,7 +137,7 @@ class VoiceAgentBridge:
             "instructions": instructions,
             "voice": voice,
             "input_audio_transcription": {
-                "model": "gpt-4o-transcribe"
+                "model": "gpt-4o-mini-transcribe"
             },
             "turn_detection": {
                 "type": "server_vad",
