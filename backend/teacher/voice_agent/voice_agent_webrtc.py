@@ -161,17 +161,11 @@ class VoiceAgentBridge:
             event_type = data.get("type")
 
             if event_type == "conversation.item.input_audio_transcription.completed":
+                # Simplified logic matching student_voice_agent.py
                 transcript = data.get("transcript", "").strip()
-                
-                if not transcript and "item" in data:
-                    content_list = data["item"].get("content", [])
-                    if content_list and len(content_list) > 0:
-                        transcript = content_list[0].get("transcript", "").strip()
-                
                 if transcript:
                     print(f"\n[TEACHER]: {transcript}")
                     logger.info(f"🗣️ [TEACHER]: {transcript}")
-
 
             elif event_type == "response.audio_transcript.done":
                 transcript = data.get("transcript", "").strip()
