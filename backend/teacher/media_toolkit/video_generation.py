@@ -125,14 +125,18 @@ class PPTXToHeyGenVideo:
 
         self.storage_manager = storage_manager
         self.heygen_api_key = heygen_api_key or os.getenv("HEYGEN_API_KEY")
-        self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        
+        # Initialize OpenAI Client (Support for OpenRouter)
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+        # Priority: Explicit Argument > OpenRouter Env > OpenAI Env
+        self.openai_api_key = openai_api_key or self.openrouter_api_key or os.getenv("OPENAI_API_KEY")
+        
         self.aspose_client_id = os.getenv("ASPOSE_CLIENT_ID")
         self.aspose_client_secret = os.getenv("ASPOSE_CLIENT_SECRET")
 
         self.avatar_id = pptx_avatar_id or os.getenv("HEYGEN_AVATAR_ID")
         self.voice_id = pptx_voice_id or os.getenv("HEYGEN_VOICE_ID")
         self.language = language
-        self.model = model
         self.width = width
         self.height = height
         self.background_color = "#FFFFFF"
@@ -142,13 +146,33 @@ class PPTXToHeyGenVideo:
 
         if not self.storage_manager: raise ValueError("Storage manager required.")
         if not self.heygen_api_key: raise ValueError("Missing HEYGEN_API_KEY")
-        if not self.openai_api_key: raise ValueError("Missing OPENAI_API_KEY")
+        if not self.openai_api_key: raise ValueError("Missing LLM API Key (OPENROUTER_API_KEY or OPENAI_API_KEY)")
         if not self.aspose_client_id: raise ValueError("Missing ASPOSE_CLIENT_ID")
         if not self.aspose_client_secret: raise ValueError("Missing ASPOSE_CLIENT_SECRET")
         if not self.avatar_id: raise ValueError("Missing HEYGEN_AVATAR_ID")
         if not self.voice_id: raise ValueError("Missing HEYGEN_VOICE_ID")
 
-        self._openai_client = OpenAI(api_key=self.openai_api_key)
+        # Configure OpenAI Client
+        if self.openai_api_key == self.openrouter_api_key:
+            logging.info("Using OpenRouter for LLM generation.")
+            self._openai_client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=self.openai_api_key,
+                default_headers={
+                    "HTTP-Referer": os.getenv("APP_URL", "http://localhost:8000"),
+                    "X-Title": "Ed-Tech Content Gen",
+                }
+            )
+            # Update default model string for OpenRouter if it's the standard default
+            if model == "gpt-4o":
+                self.model = "openai/gpt-4o"
+            else:
+                self.model = model
+        else:
+            logging.info("Using Standard OpenAI for LLM generation.")
+            self._openai_client = OpenAI(api_key=self.openai_api_key)
+            self.model = model
+
         self._heygen_base_v2 = "https://api.heygen.com/v2"
         self._headers = {
             "Accept": "application/json",
@@ -297,7 +321,7 @@ class PPTXToHeyGenVideo:
             time.sleep(self.poll_interval_s)
 
     def generate_speaker_notes(self, slide_texts: List[str]) -> List[str]:
-        logging.info(f"Generating AI speaker notes for {len(slide_texts)} slides...")
+        logging.info(f"Generating AI speaker notes for {len(slide_texts)} slides using model: {self.model}")
         notes = []
         for i, text in enumerate(slide_texts):
             try:
@@ -309,6 +333,8 @@ class PPTXToHeyGenVideo:
                     f"You are a professional presenter. Summarize the following slide content into a spoken script "
                     f"in {self.language}. Keep it concise (under 30 seconds of speech)."
                 )
+                
+                # The client is already configured with the correct base_url and api_key in __init__
                 response = self._openai_client.chat.completions.create(
                     model=self.model,
                     messages=[
@@ -319,7 +345,7 @@ class PPTXToHeyGenVideo:
                 )
                 notes.append(response.choices[0].message.content.strip())
             except Exception as e:
-                logging.error(f"OpenAI error for slide {i+1}: {e}")
+                logging.error(f"LLM generation error for slide {i+1}: {e}")
                 notes.append(f"Slide {i+1}: {text[:100]}...")
         return notes
 
