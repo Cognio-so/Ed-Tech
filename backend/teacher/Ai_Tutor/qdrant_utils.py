@@ -7,11 +7,10 @@ backend_path = Path(__file__).resolve().parents[3]
 if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 
-import os
 import uuid
 import asyncio
 from typing import List, Dict, Any, Optional
-from qdrant_client import QdrantClient, models
+from qdrant_client import models
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from backend.embedding import embed_chunks_parallel, embed_query
@@ -20,22 +19,13 @@ import re
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 import dill
 
-QDRANT_URL = os.getenv("QDRANT_URL", ":memory:")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-QDRANT_TIMEOUT = float(os.getenv("QDRANT_TIMEOUT", "60"))
-VECTOR_SIZE = 1536
-QDRANT_UPSERT_BATCH_SIZE = int(os.getenv("QDRANT_UPSERT_BATCH_SIZE", "64"))
+from backend.qdrant_service import (
+    get_qdrant_client,
+    VECTOR_SIZE,
+    QDRANT_UPSERT_BATCH_SIZE,
+)
 
-try:
-    if QDRANT_URL == ":memory:":
-        QDRANT_CLIENT = QdrantClient(":memory:", timeout=QDRANT_TIMEOUT)
-    else:
-        QDRANT_CLIENT = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=QDRANT_TIMEOUT)
-        QDRANT_CLIENT.get_collections()
-        print(f"[Qdrant] Connected to remote Qdrant at {QDRANT_URL}")
-except Exception as e:
-    print(f"[Qdrant] Remote Qdrant failed, falling back to in-memory: {e}")
-    QDRANT_CLIENT = QdrantClient(":memory:")
+QDRANT_CLIENT = get_qdrant_client()
 
 
 def tokenize(text: str):

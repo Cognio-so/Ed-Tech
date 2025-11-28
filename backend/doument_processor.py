@@ -5,25 +5,45 @@ import json
 from io import BytesIO
 import uuid
 from fastapi import UploadFile
-from models import DocumentInfo
-import fitz
+from backend.models import DocumentInfo
+
+# Try to import fitz (PyMuPDF), fallback to pypdf if not available
+try:
+    import fitz
+    HAS_FITZ = True
+except ImportError:
+    HAS_FITZ = False
+
 def extract_text_from_pdf(file_content: bytes) -> str:
-    """Extract text from PDF file using PyMuPDF (fitz)"""
+    """Extract text from PDF file using PyMuPDF (fitz) or pypdf as fallback"""
+    # Try PyMuPDF first (fitz) - better quality extraction
+    if HAS_FITZ:
+        try:
+            doc = fitz.open(stream=file_content, filetype="pdf")
+            text = ""
+            
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                page_text = page.get_text()
+                if page_text.strip():  
+                    text += page_text + "\n"
+            
+            doc.close()
+            return text.strip()
+        except Exception as e:
+            print(f"Error reading PDF with PyMuPDF: {e}, trying pypdf fallback...")
+    
+    # Fallback to pypdf
     try:
-        doc = fitz.open(stream=file_content, filetype="pdf")
+        pdf_reader = pypdf.PdfReader(BytesIO(file_content))
         text = ""
-        
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            page_text = page.get_text()
-            if page_text.strip():  
+        for page in pdf_reader.pages:
+            page_text = page.extract_text()
+            if page_text.strip():
                 text += page_text + "\n"
-        
-        doc.close()
         return text.strip()
-        
     except Exception as e:
-        print(f"Error reading PDF with PyMuPDF: {e}")
+        print(f"Error reading PDF with pypdf: {e}")
         return ""
 
 def extract_text_from_docx(file_content: bytes) -> str:

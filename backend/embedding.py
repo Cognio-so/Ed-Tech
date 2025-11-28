@@ -1,7 +1,7 @@
 
 import os
 from langchain_openai import OpenAIEmbeddings
-from typing import List
+from typing import List, Dict
 import httpx
 import asyncio
 
@@ -14,7 +14,7 @@ _persistent_http_client = httpx.Client(
     },
 )
 
-_cached_embedding_model: OpenAIEmbeddings = None
+_cached_embedding_models: Dict[str, OpenAIEmbeddings] = {}
 
 
 def get_embedding_model(model: str = "text-embedding-3-small") -> OpenAIEmbeddings:
@@ -33,17 +33,17 @@ def get_embedding_model(model: str = "text-embedding-3-small") -> OpenAIEmbeddin
     Returns:
         Cached OpenAIEmbeddings instance
     """
-    global _cached_embedding_model
+    global _cached_embedding_models
     
-    if _cached_embedding_model is None:
-        _cached_embedding_model = OpenAIEmbeddings(
+    if model not in _cached_embedding_models:
+        _cached_embedding_models[model] = OpenAIEmbeddings(
             model=model,
             http_client=_persistent_http_client,
             show_progress_bar=False
         )
         print(f"[Embeddings] ✅ Initialized cached embedding model: {model}")
     
-    return _cached_embedding_model
+    return _cached_embedding_models[model]
 
 
 async def embed_chunks_parallel(
