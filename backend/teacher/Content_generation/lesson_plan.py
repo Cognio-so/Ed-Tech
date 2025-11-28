@@ -4,11 +4,65 @@ backend_path = Path(__file__).resolve().parents[3]
 if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 
-from typing import Any, Dict, Awaitable, Callable, Optional
+import asyncio
+from typing import Any, Dict, Awaitable, Callable, Optional, List
+
 from backend.llm import get_llm, stream_with_token_tracking
 from backend.utils.websearch import get_youtube_links
+from backend.embedding import embed_query
+from backend.qdrant_service import get_qdrant_client
 from langchain_core.messages import HumanMessage, SystemMessage
+from qdrant_client import models
 
+LANGUAGES = {
+    "English": "en",
+    "Hindi": "hi"
+}
+
+QDRANT_CLIENT = get_qdrant_client()
+
+
+async def retrieve_kb_context(collection_name: str, query_text: str, top_k: int = 5) -> List[str]:
+    """
+    Fetch relevant knowledge base chunks using the modern Qdrant 'query_points' API.
+    """
+    try:
+        print(f"[LessonPlan RAG] 🔍 Searching collection '{collection_name}' for query: {query_text[:120]}...")
+
+        # 1. Check if collection exists
+        collections_response = await asyncio.to_thread(QDRANT_CLIENT.get_collections)
+        existing = [c.name for c in collections_response.collections]
+        if collection_name not in existing:
+            print(f"[LessonPlan RAG] Collection '{collection_name}' not found")
+            return []
+
+        # 2. Generate the Dense Vector (Standard embedding)
+        query_vector = await embed_query(query_text)
+        results_response = await asyncio.to_thread(
+            QDRANT_CLIENT.query_points,
+            collection_name=collection_name,
+            query=query_vector,  # Pass the dense vector list here
+            limit=top_k,
+            with_payload=True,
+            # score_threshold=0.65,
+        )
+        
+        # 4. Extract points (The response object wraps the list in .points)
+        results = results_response.points
+        print(f"[LessonPlan RAG] Retrieved {results} results from Qdrant")
+        contexts: List[str] = []
+        for res in results:
+            text = (res.payload or {}).get("text")
+            if text:
+                contexts.append(text.strip())
+
+        print(f"[LessonPlan RAG] ✅ Retrieved {len(contexts)} context chunk(s) (limit {top_k})")
+        return contexts
+    except Exception as exc:
+        print(f"[LessonPlan RAG] Retrieval failed: {exc}")
+        import traceback
+        traceback.print_exc()
+        return []
 async def generate_lesson_plan(
     data: Dict[str, Any],
     chunk_callback: Optional[Callable[[str], Awaitable[None]]] = None
@@ -29,10 +83,52 @@ async def generate_lesson_plan(
     instruction_depth = data.get("instruction_depth", "Standard")
     number_of_sessions = data.get("number_of_sessions", "Not specified")
     duration_of_session = data.get("duration_of_session", "Not specified")
-
+    
     multimedia_links = []
+    subject_normalized = subject.lower().replace(" ", "_")
+    lang_code = LANGUAGES.get(language, language).lower()
+    collection_name=f"kb_grad_{grade}_sub_{subject_normalized}_lang_{lang_code}"
+    print(f"[LessonPlan] Target KB collection: {collection_name}")
+    
+    rag_query_parts = [topic]
+    if learning_objective:
+        rag_query_parts.append(learning_objective)
+    rag_query = " ".join(part for part in rag_query_parts if part and part.lower() not in {"unknown topic"})
+    tasks = []
+    if rag_query.strip():
+        tasks.append(("rag", retrieve_kb_context(collection_name, rag_query.strip())))
     if multimedia_suggestion:
-        multimedia_links = await get_youtube_links(topic, max_results=3)
+        tasks.append(("websearch", get_youtube_links(topic, max_results=3)))
+    results = {}
+    if tasks:
+        print(f"[LessonPlan] Running {len(tasks)} task(s) in parallel: {[t[0] for t in tasks]}")
+        task_results = await asyncio.gather(*[task[1] for task in tasks], return_exceptions=True)
+        for (task_name, _), result in zip(tasks, task_results):
+            if isinstance(result, Exception):
+                print(f"[LessonPlan] ❌ Task '{task_name}' failed: {result}")
+                results[task_name] = [] if task_name == "websearch" else []
+            else:
+                results[task_name] = result
+    kb_contexts = results.get("rag", [])
+    multimedia_links = results.get("websearch", [])
+    
+    if not kb_contexts:
+        warning_msg = (
+            f"⚠️ No knowledge base context found for collection '{collection_name}'. "
+            "Ensure the correct grade/subject/language book has been embedded."
+        )
+        print(f"[LessonPlan] {warning_msg}")
+        return warning_msg
+    
+    formatted_context = "\n\n".join(kb_contexts[:5])
+    print(f"[LessonPlan] RAG context status: found ({len(kb_contexts)} chunk(s))")
+    if multimedia_suggestion:
+        print(f"[LessonPlan] Websearch status: found {len(multimedia_links)} multimedia link(s)")
+    
+    context_note = (
+        "Use ONLY the reference material when writing the lesson plan. "
+        "If the requested content is not covered, explicitly state that the knowledge base does not contain it."
+    )
     if multimedia_suggestion:
         if multimedia_links:
             multimedia_prompt_block = "\n".join(
@@ -49,6 +145,13 @@ async def generate_lesson_plan(
         <role>Expert Teacher and Curriculum Designer</role>
         <task>Create a comprehensive lesson plan</task>
     </context>
+    <knowledge_base>
+        <collection>{collection_name}</collection>
+        <reference_text>
+{formatted_context}
+        </reference_text>
+        <guidance>{context_note}</guidance>
+    </knowledge_base>
     <parameters>
         <grade>{grade}</grade>
         <subject>{subject}</subject>
@@ -88,6 +191,8 @@ async def generate_lesson_plan(
         9. "## References" bullet list for any cited frameworks/resources (may repeat standards if no other references).
         
         Additional constraints:
+        - You MUST use only the content provided inside <reference_text>. Do not add outside facts.
+        - If information is missing from <reference_text>, state explicitly: "The knowledge base does not cover ___." Do not invent details.
         - Use only the sections above; do not prepend or append explanations.
         - Keep tone professional and classroom-ready.
         - Integrate provided context (big ideas, SEL, cultural notes) inside the relevant sections instead of creating new headings.

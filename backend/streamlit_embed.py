@@ -5,37 +5,40 @@ import asyncio
 from typing import List, Dict, Any, Tuple
 import os
 
-# Add backend to path
-backend_path = Path(__file__).resolve().parent
-if str(backend_path) not in sys.path:
-    sys.path.append(str(backend_path))
+# Add parent directory to path for imports
+parent_path = Path(__file__).resolve().parent.parent
+if str(parent_path) not in sys.path:
+    sys.path.append(str(parent_path))
 
 from backend.doument_processor import process_knowledge_base_files
 from backend.embedding import embed_chunks_parallel
 from backend.models import DocumentInfo
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from qdrant_client import QdrantClient, models
+from qdrant_client import models
 import uuid
+from dotenv import load_dotenv
+load_dotenv()
+from backend.qdrant_service import (
+    get_qdrant_client,
+    get_qdrant_status,
+    is_qdrant_in_memory,
+    VECTOR_SIZE,
+    QDRANT_UPSERT_BATCH_SIZE,
+)
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 
-# Qdrant configuration
-QDRANT_URL = os.getenv("QDRANT_URL", ":memory:")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-QDRANT_TIMEOUT = float(os.getenv("QDRANT_TIMEOUT", "60"))
-VECTOR_SIZE = 1536
-QDRANT_UPSERT_BATCH_SIZE = int(os.getenv("QDRANT_UPSERT_BATCH_SIZE", "64"))
+# OpenAI API Key check
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    st.warning("⚠️ OPENAI_API_KEY not found in environment variables. Please set it to generate embeddings.")
 
-# Initialize Qdrant client
-try:
-    if QDRANT_URL == ":memory:":
-        QDRANT_CLIENT = QdrantClient(":memory:", timeout=QDRANT_TIMEOUT)
-    else:
-        QDRANT_CLIENT = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=QDRANT_TIMEOUT)
-        QDRANT_CLIENT.get_collections()
-        st.success(f"✅ Connected to Qdrant at {QDRANT_URL}")
-except Exception as e:
-    st.error(f"❌ Failed to connect to Qdrant: {e}")
-    QDRANT_CLIENT = QdrantClient(":memory:")
-    st.warning("Using in-memory Qdrant (data will be lost on restart)")
+# Initialize shared Qdrant client
+QDRANT_CLIENT = get_qdrant_client()
+status_message = get_qdrant_status()
+if is_qdrant_in_memory():
+    st.warning(status_message)
+else:
+    st.success(status_message)
 
 # Set page configuration
 st.set_page_config(
@@ -47,6 +50,18 @@ st.set_page_config(
 st.title("📚 Knowledge Base Embedding Tool")
 st.markdown("Upload educational books and store them in Qdrant vector database with embeddings.")
 
+# Check for required environment variables
+if not OPENAI_API_KEY:
+    st.error("❌ **OPENAI_API_KEY is not set!**")
+    st.info("""
+    **To fix this:**
+    1. Create a `.env` file in the project root (if it doesn't exist)
+    2. Add: `OPENAI_API_KEY=your-api-key-here`
+    3. Or set it as an environment variable: `export OPENAI_API_KEY=your-api-key-here`
+    4. Restart the Streamlit app
+    """)
+    st.stop()
+
 # Subject options
 SUBJECTS = {
     "Mathematics": "mathematics",
@@ -56,11 +71,10 @@ SUBJECTS = {
     "Science": "science",
     "Biology": "biology",
     "Physics": "physics",
-    "Chemistry": "chemistry",
-    "Language": "language"
+    "Chemistry": "chemistry"
 }
 
-# Language options (for Language subject)
+# Language options
 LANGUAGES = {
     "English": "en",
     "Hindi": "hi"
@@ -85,7 +99,7 @@ async def ensure_collection(collection_name: str) -> Tuple[bool, str]:
         
         if collection_name not in collections:
             await asyncio.to_thread(
-                QDRANT_CLIENT.recreate_collection,
+                QDRANT_CLIENT.create_collection,
                 collection_name=collection_name,
                 vectors_config=models.VectorParams(size=VECTOR_SIZE, distance=models.Distance.COSINE),
             )
@@ -162,17 +176,46 @@ async def store_documents_in_collection(
         
         st.info(f"📄 Split {len(documents)} documents into {len(all_chunks)} chunks")
         
+        # Check for OpenAI API key before generating embeddings
+        if not OPENAI_API_KEY:
+            return False, "❌ OPENAI_API_KEY is not set. Please set the OPENAI_API_KEY environment variable to generate embeddings."
+        
         # Generate embeddings
-        with st.spinner(f"🔄 Generating embeddings for {len(all_chunks)} chunks..."):
-            embeddings = await embed_chunks_parallel(all_chunks, batch_size=200)
+        try:
+            embedding_status = st.empty()
+            embedding_status.info(f"🔄 Generating embeddings for {len(all_chunks)} chunks using '{EMBEDDING_MODEL}' (batch size 200)")
+            with st.spinner(f"🔄 Generating embeddings for {len(all_chunks)} chunks..."):
+                embeddings = await embed_chunks_parallel(
+                    all_chunks,
+                    batch_size=200,
+                    model=EMBEDDING_MODEL
+                )
+            embedding_status.success(f"✅ Completed embeddings ({len(embeddings)} vectors)")
+        except Exception as e:
+            if 'embedding_status' in locals():
+                embedding_status.error(f"❌ Embedding failed: {e}")
+            error_msg = str(e)
+            if "api_key" in error_msg.lower() or "OPENAI_API_KEY" in error_msg:
+                return False, f"❌ OpenAI API Key Error: {error_msg}\n\nPlease set the OPENAI_API_KEY environment variable."
+            return False, f"❌ Error generating embeddings: {error_msg}"
+        
+        # Validate embeddings
+        if not embeddings:
+            return False, "❌ No embeddings generated"
+        
+        if len(embeddings) != len(all_chunks):
+            return False, f"❌ Embedding count mismatch: expected {len(all_chunks)}, got {len(embeddings)}"
+        
+        if len(embeddings[0]) != VECTOR_SIZE:
+            return False, f"❌ Embedding dimension mismatch: expected {VECTOR_SIZE}, got {len(embeddings[0])}"
         
         # Create points for Qdrant
         points = []
-        for i, (chunk, embedding, meta) in enumerate(zip(all_chunks, embeddings, all_metadatas)):
+        for chunk, embedding, meta in zip(all_chunks, embeddings, all_metadatas):
+            # Use chunk_index from meta (per-document index), not the global index
             payload = {
                 "text": chunk,
-                "chunk_index": i,
-                **meta
+                **meta  # meta already contains chunk_index from line 158
             }
             points.append(
                 models.PointStruct(
@@ -221,33 +264,46 @@ with col1:
     )
     subject_code = SUBJECTS[subject_display]
     
-    # Language selection (only show if Language subject is selected)
-    language_code = "en"  # Default
-    if subject_display == "Language":
-        language_display = st.selectbox(
-            "Language",
-            options=list(LANGUAGES.keys()),
-            index=0  # Default to English
-        )
-        language_code = LANGUAGES[language_display]
-    else:
-        # For other subjects, determine language from subject
-        if subject_display == "Hindi":
-            language_code = "hi"
-        else:
-            language_code = "en"
+    # Independent language selection
+    language_display = st.selectbox(
+        "Language",
+        options=list(LANGUAGES.keys()),
+        index=0  # Default to English
+    )
+    language_code = LANGUAGES[language_display]
 
 with col2:
     st.subheader("📤 Upload Book")
-    
-    uploaded_file = st.file_uploader(
-        "Choose a book file",
-        type=["pdf", "docx", "txt", "json"],
-        help="Upload PDF, DOCX, TXT, or JSON files"
+    upload_mode = st.radio(
+        "Upload Type",
+        options=["Single Book", "Folder (Multiple Chapters)"],
+        horizontal=True,
+        index=0
     )
-    
-    if uploaded_file:
-        st.info(f"📄 Selected: {uploaded_file.name} ({uploaded_file.size / 1024:.2f} KB)")
+
+    ordered_files: List[Any] = []
+    if upload_mode == "Single Book":
+        single_file = st.file_uploader(
+            "Choose a book file",
+            type=["pdf", "docx", "txt", "json"],
+            help="Upload one PDF, DOCX, TXT, or JSON file.",
+            accept_multiple_files=False,
+            key="single_book_uploader"
+        )
+        if single_file:
+            ordered_files = [single_file]
+            st.info(f"📄 Selected: {single_file.name} ({single_file.size / 1024:.2f} KB)")
+    else:
+        multi_files = st.file_uploader(
+            "Choose chapter files",
+            type=["pdf", "docx", "txt", "json"],
+            help="Use Shift/Ctrl in the picker to select multiple chapter files at once.",
+            accept_multiple_files=True,
+            key="folder_chapter_uploader"
+        )
+        if multi_files:
+            ordered_files = sorted(multi_files, key=lambda f: f.name)
+            st.info(f"📚 Selected {len(ordered_files)} file(s). Processed in filename order to preserve chapter sequencing.")
 
 # Display collection name preview
 if grade and subject_code:
@@ -269,7 +325,7 @@ if grade and subject_code:
         st.warning(f"Could not check existing collections: {e}")
 
 # Process button
-if uploaded_file and grade and subject_code:
+if ordered_files and grade and subject_code:
     st.markdown("---")
     
     if st.button("🚀 Process and Store Book", type="primary", use_container_width=True):
@@ -284,13 +340,13 @@ if uploaded_file and grade and subject_code:
                 async def read(self):
                     return self._content
             
-            # Create wrapper
-            file_obj = StreamlitUploadFile(uploaded_file)
-            
+            # Create wrappers (preserve order for consistent chunk sequencing)
+            file_objs = [StreamlitUploadFile(file) for file in ordered_files]
+
             # Process the file (async)
             async def process_and_store():
-                # Process the file
-                processed_docs = await process_knowledge_base_files([file_obj])
+                # Process the files
+                processed_docs = await process_knowledge_base_files(file_objs)
                 
                 if not processed_docs:
                     return False, "Failed to extract text from the file. Please check the file format.", 0

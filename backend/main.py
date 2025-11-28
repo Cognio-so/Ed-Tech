@@ -38,7 +38,7 @@ from teacher.Assessment.assessment import generate_assessment
 from teacher.Ai_Tutor.graph import create_ai_tutor_graph
 from teacher.Ai_Tutor.graph_type import GraphState
 from langchain_core.messages import HumanMessage, AIMessage
-from doument_processor import extract_text_from_pdf, extract_text_from_docx, extract_text_from_txt, extract_text_from_json
+from backend.doument_processor import extract_text_from_pdf, extract_text_from_docx, extract_text_from_txt, extract_text_from_json
 from teacher.Ai_Tutor.qdrant_utils import store_documents
 import httpx
 from teacher.voice_agent.voice_agent_webrtc import VoiceAgentBridge

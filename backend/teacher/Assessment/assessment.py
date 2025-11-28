@@ -5,10 +5,64 @@ backend_path = Path(__file__).resolve().parents[3]
 if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 
-from typing import Any, Awaitable, Callable, Dict, Optional
+import asyncio
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from backend.embedding import embed_query
 from backend.llm import get_llm, stream_with_token_tracking
+from backend.qdrant_service import get_qdrant_client
 from langchain_core.messages import HumanMessage, SystemMessage
+
+LANGUAGES = {
+    "English": "en",
+    "Hindi": "hi",
+}
+
+QDRANT_CLIENT = get_qdrant_client()
+
+
+async def retrieve_kb_context(
+    collection_name: str, query_text: str, top_k: int = 5
+) -> List[str]:
+    """
+    Fetch relevant knowledge base chunks using Qdrant's query_points API.
+    """
+    try:
+        print(
+            f"[Assessment RAG] 🔍 Searching collection '{collection_name}' for query: {query_text[:120]}..."
+        )
+
+        collections_response = await asyncio.to_thread(QDRANT_CLIENT.get_collections)
+        existing = [c.name for c in collections_response.collections]
+        if collection_name not in existing:
+            print(f"[Assessment RAG] Collection '{collection_name}' not found")
+            return []
+
+        query_vector = await embed_query(query_text)
+        results_response = await asyncio.to_thread(
+            QDRANT_CLIENT.query_points,
+            collection_name=collection_name,
+            query=query_vector,
+            limit=top_k,
+            with_payload=True,
+        )
+
+        contexts: List[str] = []
+        for res in results_response.points:
+            text = (res.payload or {}).get("text")
+            if text:
+                contexts.append(text.strip())
+
+        print(
+            f"[Assessment RAG] ✅ Retrieved {len(contexts)} context chunk(s) (limit {top_k})"
+        )
+        return contexts
+    except Exception as exc:
+        print(f"[Assessment RAG] Retrieval failed: {exc}")
+        import traceback
+
+        traceback.print_exc()
+        return []
 
 
 async def generate_assessment(
@@ -29,6 +83,36 @@ async def generate_assessment(
     duration = data.get("duration", "45 minutes")
     confidence_level = data.get("confidence_level", 3)
     custom_instruction = data.get("custom_instruction", "")
+
+    subject_normalized = subject.lower().replace(" ", "_")
+    lang_code = LANGUAGES.get(language, language).lower()
+    collection_name = f"kb_grad_{grade}_sub_{subject_normalized}_lang_{lang_code}"
+    print(f"[Assessment] Target KB collection: {collection_name}")
+
+    rag_query_parts = [topic]
+    if learning_objective:
+        rag_query_parts.append(learning_objective)
+    rag_query = " ".join(
+        part for part in rag_query_parts if part and part.lower() not in {"general topic"}
+    )
+
+    kb_contexts: List[str] = []
+    if rag_query.strip():
+        kb_contexts = await retrieve_kb_context(collection_name, rag_query.strip())
+
+    if not kb_contexts:
+        warning_msg = (
+            f"⚠️ No knowledge base context found for collection '{collection_name}'. "
+            "Ensure the correct grade/subject/language materials are embedded."
+        )
+        print(f"[Assessment] {warning_msg}")
+        return warning_msg
+
+    formatted_context = "\n\n".join(kb_contexts[:5])
+    context_note = (
+        "Use ONLY the reference material when drafting questions. If the needed information "
+        "is missing, explicitly say 'The knowledge base does not cover ___.'"
+    )
 
     question_blueprints = []
     if data.get("mcq_enabled"):
@@ -78,6 +162,13 @@ async def generate_assessment(
         <role>Expert Assessment Designer</role>
         <mission>Create a classroom-ready assessment packet.</mission>
     </context>
+    <knowledge_base>
+        <collection>{collection_name}</collection>
+        <reference_text>
+{formatted_context}
+        </reference_text>
+        <guidance>{context_note}</guidance>
+    </knowledge_base>
     <parameters>
         <subject>{subject}</subject>
         <grade>{grade}</grade>
@@ -93,6 +184,7 @@ async def generate_assessment(
         <custom_instruction>{custom_instruction}</custom_instruction>
     </parameters>
     <instructions>
+        Ground every question and explanation strictly in the supplied <reference_text>; do not invent facts outside it. If needed details are absent, clearly state what the knowledge base does not cover before moving on.
         Produce the final assessment in valid Markdown using this structure:
         1. "# Assessment Overview" summarizing subject, grade, topic, duration, and difficulty.
         2. "## Learning Objectives" with bullet points directly tied to the provided learning objective.
