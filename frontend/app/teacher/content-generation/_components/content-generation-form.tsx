@@ -311,12 +311,6 @@ export function ContentGenerationForm() {
       {/* Content Creation Form */}
       <Card>
         <CardContent className="p-6">
-          <div className="mb-6">
-            <h2 className="text-2xl font-semibold mb-2">Content Creation Form</h2>
-            <p className="text-muted-foreground">
-              Fill in the details to generate educational content
-            </p>
-          </div>
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(generateContent)} className="space-y-8">
