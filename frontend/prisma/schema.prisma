@@ -1,0 +1,161 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  role          String    @default("student")
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  gradeId       String?
+  grade         Grade?    @relation(fields: [gradeId], references: [id], onDelete: SetNull)
+  userSubjects  UserSubject[]
+  contents      Content[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Grade {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+
+  @@map("grade")
+}
+
+model Subject {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  userSubjects UserSubject[]
+
+  @@map("subject")
+}
+
+model UserSubject {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, subjectId])
+  @@map("user_subject")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String
+  name      String
+  role      String
+  message   String?
+  token     String   @unique
+  status    String   @default("pending") // pending, accepted, rejected
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([token])
+  @@index([email])
+  @@map("invitation")
+}
+
+model Content {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentType           String   // lesson_plan, presentation, quiz, worksheet
+  title                 String
+  content               String   @db.Text
+  grade                 String?
+  subject               String?
+  topic                 String?
+  language              String?
+  learningObjective     String?  @map("learning_objective")
+  emotionalConsideration Int?    @map("emotional_consideration")
+  adaptiveLearning      Boolean  @default(false) @map("adaptive_learning")
+  includeAssessment     Boolean  @default(false) @map("include_assessment")
+  multimediaSuggestion  Boolean  @default(false) @map("multimedia_suggestion")
+  instructionDepth      String?  @map("instruction_depth")
+  numberOfSessions      String?  @map("number_of_sessions")
+  durationOfSession     String?  @map("duration_of_session")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([userId])
+  @@index([contentType])
+  @@map("content")
+}
