@@ -3,6 +3,8 @@ import { LoginForm } from "./_components/login-form";
 import Link from "next/link";
 import { getUserSession } from "@/data/get-user-session";
 
+export const dynamic = 'force-dynamic';
+
 export default async function LoginPage() {
   const session = await getUserSession();
 
