@@ -28,6 +28,11 @@ model User {
   grade         Grade?    @relation(fields: [gradeId], references: [id], onDelete: SetNull)
   userSubjects  UserSubject[]
   contents      Content[]
+  slides        Slide[]
+  images        Image[]
+  webSearches   WebSearch[]
+  comics        Comic[]
+  videos        Video[]
 
   @@unique([email])
   @@map("user")
@@ -152,10 +157,81 @@ model Content {
   instructionDepth      String?  @map("instruction_depth")
   numberOfSessions      String?  @map("number_of_sessions")
   durationOfSession     String?  @map("duration_of_session")
+  metadata              String?  @db.Text
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   @@index([userId])
   @@index([contentType])
   @@map("content")
+}
+
+model Slide {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  content     String   @db.Text
+  metadata    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("slide")
+}
+
+model Image {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  content     String   @db.Text
+  metadata    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("image")
+}
+
+model WebSearch {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  content     String   @db.Text
+  metadata    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("web_search")
+}
+
+model Comic {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  content     String   @db.Text
+  metadata    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("comic")
+}
+
+model Video {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  content     String   @db.Text
+  metadata    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("video")
 }

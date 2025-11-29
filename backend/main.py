@@ -1035,7 +1035,7 @@ async def image_generation_endpoint(
     Generates an image using a schema, ideal for creating educational visuals like
     diagrams, charts, or illustrations with specific labels and styles.
     """
-    await SessionManager.get_session(session_id)
+    await SessionManager.create_session(teacher_id, session_id)
     
     try:
         generator = ImageGenerator()
