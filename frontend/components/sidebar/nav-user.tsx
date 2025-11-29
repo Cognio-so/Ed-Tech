@@ -33,8 +33,25 @@ import { ThemeToggle } from "../ui/theme-toggle";
 export function NavUser() {
   const { data: session, isPending } = authClient.useSession();
   const { isMobile } = useSidebar();
+  const [userRole, setUserRole] = React.useState<string | null>(null);
 
   const handleSignout = useSignOut();
+
+  // Fetch user role from database
+  React.useEffect(() => {
+    if (session?.user?.id) {
+      fetch(`/api/user/${session.user.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.role) {
+            setUserRole(data.role);
+          }
+        })
+        .catch(() => {
+          // Silently fail if role can't be fetched
+        });
+    }
+  }, [session?.user?.id]);
 
   if (isPending) {
     return null;
@@ -109,7 +126,7 @@ export function NavUser() {
                   HomePage
                 </Link>
               </DropdownMenuItem>
-              {session?.user.role === "admin" && (
+              {userRole === "admin" && (
                 <>
                   <DropdownMenuItem asChild>
                     <Link href={"/admin"}>
