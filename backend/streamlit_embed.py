@@ -71,7 +71,15 @@ SUBJECTS = {
     "Science": "science",
     "Biology": "biology",
     "Physics": "physics",
-    "Chemistry": "chemistry"
+    "Chemistry": "chemistry",
+    "Computer Science": "computer_science",
+    "History": "history",
+    "Geography": "geography",
+    "Sanskrit": "sanskrit",
+    "Physical Education": "physical_education",
+    "Art": "art",
+    "The world around us": "the_world_around_us",
+    "Urdu": "urdu",
 }
 
 # Language options
@@ -132,8 +140,8 @@ async def ensure_collection(collection_name: str) -> Tuple[bool, str]:
 async def store_documents_in_collection(
     collection_name: str,
     documents: List[DocumentInfo],
-    chunk_size: int = 1000,
-    chunk_overlap: int = 120
+    chunk_size: int = 1300,
+    chunk_overlap: int = 200
 ) -> Tuple[bool, str]:
     """
     Store documents in Qdrant with embeddings.
@@ -183,12 +191,14 @@ async def store_documents_in_collection(
         # Generate embeddings
         try:
             embedding_status = st.empty()
-            embedding_status.info(f"🔄 Generating embeddings for {len(all_chunks)} chunks using '{EMBEDDING_MODEL}' (batch size 200)")
+            dim_info = f" (dimensions={VECTOR_SIZE})" if VECTOR_SIZE != 1536 else ""
+            embedding_status.info(f"🔄 Generating embeddings for {len(all_chunks)} chunks using '{EMBEDDING_MODEL}'{dim_info} (batch size 200)")
             with st.spinner(f"🔄 Generating embeddings for {len(all_chunks)} chunks..."):
                 embeddings = await embed_chunks_parallel(
                     all_chunks,
                     batch_size=200,
-                    model=EMBEDDING_MODEL
+                    model=EMBEDDING_MODEL,
+                    dimensions=VECTOR_SIZE  # Pass VECTOR_SIZE to match Qdrant collection dimension
                 )
             embedding_status.success(f"✅ Completed embeddings ({len(embeddings)} vectors)")
         except Exception as e:
