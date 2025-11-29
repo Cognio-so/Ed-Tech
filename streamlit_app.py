@@ -609,8 +609,8 @@ elif tool_selection == "AI Tutor":
             payload["teacher_data"] = {}
             
             # Build URL
-            base_url = f"{api_base_url}/api/session/teacher/{tutor_teacher_id}/stream-chat"
-            url = f"{base_url}?session_id={session_id}&stream={str(tutor_stream).lower()}"
+            base_url = f"{api_base_url}/api/teacher/{tutor_teacher_id}/session/{session_id}/stream-chat"
+            url = f"{base_url}?stream={str(tutor_stream).lower()}"
             
             st.info(f"📡 Sending request to: `{url}`")
             
@@ -850,8 +850,8 @@ elif tool_selection == "Student AI Tutor":
                         payload["achievements"] = achievements
                 
                 # Build URL
-                base_url = f"{api_base_url}/api/session/student/{student_id}/stream-chat"
-                url = f"{base_url}?session_id={student_session_id}&stream={str(student_stream).lower()}"
+                base_url = f"{api_base_url}/api/student/{student_id}/session/{student_session_id}/stream-chat"
+                url = f"{base_url}?stream={str(student_stream).lower()}"
                 
                 st.info(f"📡 Sending request to: `{url}`")
                 
@@ -1273,9 +1273,9 @@ elif tool_selection == "Student Voice Agent":
     st.session_state.student_session_id = student_session_id
 
     # Build URLs using student_session_id
-    # Endpoint: /api/session/student/{student_id}/voice_agent/connect
-    connect_url = f"{api_base_url}/api/session/student/{sv_student_id}/voice_agent/connect?session_id={student_session_id}"
-    disconnect_url = f"{api_base_url}/api/session/student/{sv_student_id}/voice_agent/disconnect?session_id={student_session_id}"
+    # Endpoint: /api/student/{student_id}/session/{session_id}/voice_agent/connect
+    connect_url = f"{api_base_url}/api/student/{sv_student_id}/session/{student_session_id}/voice_agent/connect"
+    disconnect_url = f"{api_base_url}/api/student/{sv_student_id}/session/{student_session_id}/voice_agent/disconnect"
     
     # Prepare Context Data matching StudentVoiceSchema
     context_data = {
