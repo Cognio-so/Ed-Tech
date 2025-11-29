@@ -626,7 +626,7 @@ async def disconnect_voice_agent(
     
     return {"status": "not_found", "message": "No active voice session found."}
 
-@app.post("/api/session/student/{student_id}/voice_agent/connect")
+@app.post("/api/student/{student_id}/session/{session_id}/voice_agent/connect")
 async def connect_student_voice_agent(
     student_id: str,
     session_id: str,
@@ -696,7 +696,7 @@ async def connect_student_voice_agent(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/session/student/{student_id}/voice_agent/disconnect")
+@app.post("/api/student/{student_id}/session/{session_id}/voice_agent/disconnect")
 async def disconnect_student_voice_agent(
     student_id: str,
     session_id: str
@@ -1332,11 +1332,11 @@ class AddDocumentsRequest(BaseModel):
     documents: List[Dict[str, Any]] = Field(..., description="List of documents with file_url, filename, file_type, id, size")
 
 
-@app.post("/api/session/teacher/{teacher_id}/add-documents")
+@app.post("/api/teacher/{teacher_id}/session/{session_id}/add-documents")
 async def add_documents_by_url(
     teacher_id: str,
+    session_id: str,
     payload: AddDocumentsRequest,
-    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Add documents by URL for AI Tutor.
@@ -1465,14 +1465,13 @@ async def add_documents_by_url(
     }
 
 
-@app.get("/api/session/teacher/{teacher_id}/documents")
+@app.get("/api/teacher/{teacher_id}/session/{session_id}/documents")
 async def get_documents(
     teacher_id: str,
-    session_id: Optional[str] = None,
+    session_id: str,
 ) -> Dict[str, Any]:
     """Get all documents for a session"""
-    current_session_id = await SessionManager.create_session(teacher_id, session_id)
-    session = await SessionManager.get_session(current_session_id)
+    session = await SessionManager.get_session(session_id)
     
     return {
         "uploaded_docs": session.get("uploaded_docs", []),
@@ -1498,12 +1497,12 @@ async def process_document_from_url(url: str, teacher_id: str) -> Dict[str, Any]
 
 
 @app.post(
-    "/api/session/teacher/{teacher_id}/stream-chat"
+    "/api/teacher/{teacher_id}/session/{session_id}/stream-chat"
 )
 async def ai_tutor_stream_chat(
     teacher_id: str,
+    session_id: str,
     payload: AITutorRequest,
-    session_id: Optional[str] = None,
     stream: bool = True,
 ) -> StreamingResponse:
     """
@@ -1792,11 +1791,11 @@ async def ai_tutor_stream_chat(
     )
 
 
-@app.post("/api/session/student/{student_id}/stream-chat")
+@app.post("/api/student/{student_id}/session/{session_id}/stream-chat")
 async def student_ai_tutor_stream_chat(
     student_id: str,
+    session_id: str,
     payload: StudentAITutorRequest,
-    session_id: Optional[str] = None,
     stream: bool = True,
 ) -> StreamingResponse:
     """

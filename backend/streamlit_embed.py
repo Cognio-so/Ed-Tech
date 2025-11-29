@@ -133,7 +133,7 @@ async def store_documents_in_collection(
     collection_name: str,
     documents: List[DocumentInfo],
     chunk_size: int = 1000,
-    chunk_overlap: int = 200
+    chunk_overlap: int = 120
 ) -> Tuple[bool, str]:
     """
     Store documents in Qdrant with embeddings.
