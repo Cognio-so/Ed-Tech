@@ -932,7 +932,7 @@ async def create_assessment(
     Supports optional streaming using Server-Sent Events.
     """
 
-    await SessionManager.get_session(session_id)
+    current_session_id = await SessionManager.create_session(teacher_id, session_id)
     request_payload = payload.model_dump(mode="json")
 
     async def invoke_generator(
@@ -965,7 +965,7 @@ async def create_assessment(
             try:
                 raw_output = await invoke_generator(chunk_callback=chunk_callback)
                 metadata = {
-                    "session_id": session_id,
+                    "session_id": current_session_id,
                     "teacher_id": teacher_id,
                     "type": "assessment",
                     "content": raw_output,
@@ -1001,7 +1001,7 @@ async def create_assessment(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-            "X-Session-Id": session_id,
+            "X-Session-Id": current_session_id,
             "X-Teacher-Id": teacher_id,
             "X-Content-Type": "assessment",
         }
@@ -1020,7 +1020,7 @@ async def create_assessment(
         ) from exc
 
     return {
-        "session_id": session_id,
+        "session_id": current_session_id,
         "teacher_id": teacher_id,
         "type": "assessment",
         "content": raw_output,
