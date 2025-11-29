@@ -52,7 +52,7 @@ export default function InviteMember({ onInviteSent }: InviteMemberProps) {
     defaultValues: {
       name: "",
       email: "",
-      role: "user",
+      role: "student",
       message: "",
     },
   });
@@ -133,7 +133,7 @@ export default function InviteMember({ onInviteSent }: InviteMemberProps) {
               <Select
                 value={watch("role")}
                 onValueChange={(value) =>
-                  setValue("role", value as "admin" | "user")
+                  setValue("role", value as "admin" | "teacher" | "student")
                 }
               >
                 <SelectTrigger
@@ -143,7 +143,8 @@ export default function InviteMember({ onInviteSent }: InviteMemberProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="teacher">Teacher</SelectItem>
+                  <SelectItem value="student">Student</SelectItem>
                 </SelectContent>
               </Select>
               {errors.role && (
