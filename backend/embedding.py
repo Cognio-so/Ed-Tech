@@ -17,7 +17,7 @@ _persistent_http_client = httpx.Client(
 _cached_embedding_models: Dict[str, OpenAIEmbeddings] = {}
 
 
-def get_embedding_model(model: str = "text-embedding-3-small") -> OpenAIEmbeddings:
+def get_embedding_model(model: str = "text-embedding-3-small", dimensions: int = None) -> OpenAIEmbeddings:
     """
     Get or create cached OpenAIEmbeddings instance with shared HTTP client.
     
@@ -26,30 +26,43 @@ def get_embedding_model(model: str = "text-embedding-3-small") -> OpenAIEmbeddin
     - Persistent HTTP/2 keep-alive connection pool
     - Reduced TLS handshake latency
     - Shared across all sessions for maximum efficiency
+    - Supports dimension reduction for text-embedding-3 models
     
     Args:
         model: Embedding model name (default: "text-embedding-3-small")
+        dimensions: Optional dimension size (e.g., 1024). If None, uses model default.
+                   Supported for text-embedding-3-small and text-embedding-3-large.
     
     Returns:
         Cached OpenAIEmbeddings instance
     """
     global _cached_embedding_models
     
-    if model not in _cached_embedding_models:
-        _cached_embedding_models[model] = OpenAIEmbeddings(
-            model=model,
-            http_client=_persistent_http_client,
-            show_progress_bar=False
-        )
-        print(f"[Embeddings] ✅ Initialized cached embedding model: {model}")
+    # Create cache key that includes dimensions to avoid conflicts
+    cache_key = f"{model}_{dimensions}" if dimensions else model
     
-    return _cached_embedding_models[model]
+    if cache_key not in _cached_embedding_models:
+        embedding_kwargs = {
+            "model": model,
+            "http_client": _persistent_http_client,
+            "show_progress_bar": False
+        }
+        # Add dimensions parameter if specified (for text-embedding-3 models)
+        if dimensions:
+            embedding_kwargs["dimensions"] = dimensions
+        
+        _cached_embedding_models[cache_key] = OpenAIEmbeddings(**embedding_kwargs)
+        dim_str = f" (dimensions={dimensions})" if dimensions else " (default dimensions)"
+        print(f"[Embeddings] ✅ Initialized cached embedding model: {model}{dim_str}")
+    
+    return _cached_embedding_models[cache_key]
 
 
 async def embed_chunks_parallel(
     texts: List[str], 
     batch_size: int = 200,
-    model: str = "text-embedding-3-small"
+    model: str = "text-embedding-3-small",
+    dimensions: int = None
 ) -> List[List[float]]:
     """
     Process embeddings in parallel batches for maximum efficiency.
@@ -60,25 +73,30 @@ async def embed_chunks_parallel(
     - No blocking between different sessions
     - Optimal batch sizes for API efficiency
     - Preserved order of results
+    - Support for custom dimensions (e.g., 1024 for text-embedding-3 models)
     
     Args:
         texts: List of text strings to embed
         batch_size: Number of texts per batch (default: 200, optimal for OpenAI API)
         model: Embedding model name
+        dimensions: Optional dimension size (e.g., 1024). If None, uses model default.
     
     Returns:
         List of embedding vectors in the same order as input texts
     
     Example:
         >>> texts = ["text1", "text2", ..., "text1000"]
-        >>> embeddings = await embed_chunks_parallel(texts, batch_size=200)
-        >>> # Will create 5 batches of 200, process them in parallel
+        >>> embeddings = await embed_chunks_parallel(texts, batch_size=200, dimensions=1024)
+        >>> # Will create 5 batches of 200, process them in parallel with 1024 dimensions
     """
     if not texts:
         return []
 
-    embedding_model = get_embedding_model(model)
+    embedding_model = get_embedding_model(model, dimensions=dimensions)
     batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
+    
+    # Determine fallback dimension for error cases
+    fallback_dim = dimensions if dimensions else 1536  # Default for text-embedding-3-small
     
     if len(batches) == 1:
         print(f"[Embeddings] Processing single batch of {len(texts)} texts")
@@ -93,7 +111,7 @@ async def embed_chunks_parallel(
             return result
         except Exception as e:
             print(f"[Embeddings] ❌ Batch {batch_idx + 1}/{len(batches)} failed: {e}")
-            return [[0.0] * 1536] * len(batch)  
+            return [[0.0] * fallback_dim] * len(batch)  
         
     batch_results = await asyncio.gather(
         *[embed_batch(batch, idx) for idx, batch in enumerate(batches)],
@@ -113,7 +131,8 @@ async def embed_chunks_parallel(
 
 async def embed_query(
     query: str,
-    model: str = "text-embedding-3-small"
+    model: str = "text-embedding-3-small",
+    dimensions: int = None
 ) -> List[float]:
     """
     Embed a single query string (optimized wrapper).
@@ -121,9 +140,10 @@ async def embed_query(
     Args:
         query: Query text to embed
         model: Embedding model name
+        dimensions: Optional dimension size (e.g., 1024). If None, uses model default.
     
     Returns:
         Embedding vector as list of floats
     """
-    embedding_model = get_embedding_model(model)
+    embedding_model = get_embedding_model(model, dimensions=dimensions)
     return await embedding_model.aembed_query(query)
