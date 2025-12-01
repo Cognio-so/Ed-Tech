@@ -10,8 +10,10 @@ export type UserWithDetails = {
   createdAt: Date;
   updatedAt: Date;
   grade?: string | null;
+  grades?: string | null;
   subjects?: string | null;
   gradeId?: string | null;
+  gradeIds?: string[];
   subjectIds?: string[];
 };
 
@@ -71,18 +73,29 @@ export async function getAllUsers(
             },
           },
         },
+        userGrades: {
+          select: {
+            grade: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
       orderBy: {
         createdAt: "desc",
       },
     });
 
-    // Map users with grade and subjects
     return users.map((user) => ({
       ...user,
       grade: user.grade?.name || null,
+      grades: (user as any).userGrades.map((ug: any) => ug.grade.name).join(", ") || null,
       subjects: user.userSubjects.map((us) => us.subject.name).join(", ") || null,
       gradeId: user.gradeId,
+      gradeIds: (user as any).userGrades.map((ug: any) => ug.grade.id),
       subjectIds: user.userSubjects.map((us) => us.subject.id),
     }));
   } catch (error) {

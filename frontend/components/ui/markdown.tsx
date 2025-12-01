@@ -259,7 +259,7 @@ const Markdown: React.FC<MarkdownProps> = ({ content, className, sources = [] })
           h3({ children, ...props }) {
             return (
               <h3
-                className="scroll-m-20 text-2xl font-semibold tracking-tight mt-6 mb-3 first:mt-0 last:mb-4"
+                className="scroll-m-20 text-xl font-semibold tracking-tight mt-5 mb-2 first:mt-0 last:mb-3 text-primary"
                 {...props}
               >
                 {children}

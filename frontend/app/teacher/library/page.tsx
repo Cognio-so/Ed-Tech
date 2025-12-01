@@ -28,7 +28,7 @@ async function LibraryContent() {
     <div className="container mx-auto py-2 px-4 space-y-6">
       {/* Header */}
       <div className="space-y-2">
-        <h1 className="text-4xl font-bold">My Library</h1>
+        <h1 className="text-4xl font-bold text-primary">My Library</h1>
         <p className="text-muted-foreground">
           Manage and organize all your created content in one place
         </p>

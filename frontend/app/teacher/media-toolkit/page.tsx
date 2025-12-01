@@ -11,6 +11,11 @@ async function getTeacherGradesAndSubjects(userId: string) {
       where: { id: userId },
       include: {
         grade: true,
+        userGrades: {
+          include: {
+            grade: true,
+          },
+        },
         userSubjects: {
           include: {
             subject: true,
@@ -19,7 +24,14 @@ async function getTeacherGradesAndSubjects(userId: string) {
       },
     })
 
-    const grades = user?.grade ? [{ id: user.grade.id, name: user.grade.name }] : []
+    const grades = user?.userGrades
+      ? user.userGrades.map((ug) => ({
+          id: ug.grade.id,
+          name: ug.grade.name,
+        }))
+      : user?.grade
+      ? [{ id: user.grade.id, name: user.grade.name }]
+      : []
     const subjects = user?.userSubjects
       ? user.userSubjects.map((us) => ({
           id: us.subject.id,
@@ -46,7 +58,7 @@ export default async function MediaToolkitPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Media Toolkit</h1>
+        <h1 className="text-3xl font-bold text-primary">Media Toolkit</h1>
         <p className="text-muted-foreground mt-1">
           Create slides, images, web content, comics, and videos for your educational materials
         </p>
