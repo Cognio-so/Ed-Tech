@@ -35,7 +35,7 @@ export function ImagePreview({ imageUrl, topic, onSave, onClose }: ImagePreviewP
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>Image Preview</span>
-            <div className="flex gap-2">
+            <div className="flex gap-2 mr-8">
               <Button
                 variant="outline"
                 size="sm"

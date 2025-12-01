@@ -41,7 +41,7 @@ export function SlidePreview({ content, onSave, onClose }: SlidePreviewProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>Slide Presentation Preview</span>
-            <div className="flex gap-2">
+            <div className="flex gap-2 mr-8">
               {content.presentation_url && (
                 <>
                   <Button

@@ -73,7 +73,7 @@ export function WebSearchPreview({
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>Web Search Results Preview</span>
-            <div className="flex gap-2">
+            <div className="flex gap-2 mr-8">
               <Button
                 variant="outline"
                 size="sm"
