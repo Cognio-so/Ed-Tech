@@ -38,26 +38,42 @@ export interface ChatInputProps {
   hasMessages?: boolean;
 }
 
-const MODELS = [
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-lite" },
-  { value: "gpt-5", label: "GPT 5" },
-  { value: "gpt-5-mini", label: "GPT 5 mini" },
-  { value: "gpt-40", label: "GPT-40" },
-  { value: "claude-opus-4.1", label: "Claude Opus 4.1" },
-  { value: "grok-4-fast", label: "Grok 4 Fast" },
-  { value: "meta-llama-3.3-70b", label: "meta/llama 3.3 70b" },
-  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { value: "gpt-4.1", label: "GPT 4.1" },
-  { value: "gpt-5-thinking-high", label: "GPT 5 Thinking High" },
-  { value: "gpt-5-nano", label: "GPT 5 nano" },
-  { value: "claude-sonnet-4.5", label: "Claude Sonnet 4.5" },
-  { value: "claude-haiku-3.5", label: "Claude Haiku 3.5" },
-  { value: "deepseek-v3.1", label: "DeepSeek V3.1" },
-  { value: "kimi-k2-0905", label: "Kimi K2 0905" },
-  { value: "Gemini 3 pro", label: "Gemini 3 pro" },
-  { value: "x-ai/grok-4.1-fast", label: "Grok 4.1 Fast" },
+interface ModelInfo {
+  frontendValue: string;
+  displayName: string;
+  backendName: string;
+}
+
+export const MODEL_MAPPING: ModelInfo[] = [
+  { frontendValue: "gemini_2_5_flash", displayName: "Gemini 2.5 Flash", backendName: "google/gemini-2.5-flash" },
+  { frontendValue: "gemini_2_5_pro", displayName: "Gemini 2.5 Pro", backendName: "google/gemini-2.5-pro" },
+  { frontendValue: "gemini_2_5_flash_lite", displayName: "Gemini 2.5 Flash-lite", backendName: "google/gemini-2.5-flash-lite" },
+  { frontendValue: "gpt_4_1", displayName: "GPT 4.1", backendName: "openai/gpt-4.1" },
+  { frontendValue: "gpt_5", displayName: "GPT 5", backendName: "openai/gpt-5" },
+  { frontendValue: "gpt_5_thinking_high", displayName: "GPT 5 Thinking High", backendName: "openai/gpt-5-thinking-high" },
+  { frontendValue: "gpt_5_mini", displayName: "GPT 5 mini", backendName: "openai/gpt-5-mini" },
+  { frontendValue: "gpt_5_nano", displayName: "GPT 5 nano", backendName: "openai/gpt-5-nano" },
+  { frontendValue: "gpt_4o", displayName: "GPT-4o", backendName: "openai/gpt-4o" },
+  { frontendValue: "claude_sonnet_4_5", displayName: "Claude Sonnet 4.5", backendName: "anthropic/claude-4.5-sonnet" },
+  { frontendValue: "claude_opus_4_1", displayName: "Claude Opus 4.1", backendName: "anthropic/claude-4.1-opus" },
+  { frontendValue: "claude_haiku_3_5", displayName: "Claude Haiku 3.5", backendName: "anthropic/claude-3.5-haiku" },
+  { frontendValue: "grok_4_fast", displayName: "Grok 4 Fast", backendName: "x-ai/grok-4-fast" },
+  { frontendValue: "deepseek_v3_1", displayName: "DeepSeek V3.1", backendName: "deepseek/deepseek-chat-v3.1" },
+  { frontendValue: "meta_llama_3_3_70b", displayName: "meta/llama 3.3 70b", backendName: "meta-llama/llama-3.3-70b-instruct:free" },
+  { frontendValue: "kimi_k2_0905", displayName: "Kimi K2 0905", backendName: "moonshotai/kimi-k2-0905" },
 ];
+
+// Helper function to get backend name from frontend value
+const getBackendName = (frontendValue: string): string | undefined => {
+  const model = MODEL_MAPPING.find((m) => m.frontendValue === frontendValue);
+  return model?.backendName;
+};
+
+// Helper function to get display name from frontend value
+const getDisplayName = (frontendValue: string): string => {
+  const model = MODEL_MAPPING.find((m) => m.frontendValue === frontendValue);
+  return model?.displayName || frontendValue;
+};
 
 interface UploadedDoc {
   url: string;
@@ -73,7 +89,7 @@ export function ChatInput({
   hasMessages = false,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
-  const [selectedModel, setSelectedModel] = useState("gemini-2.5-flash");
+  const [selectedModel, setSelectedModel] = useState("gemini_2_5_flash");
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDoc[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [webSearch, setWebSearch] = useState(false);
@@ -92,10 +108,11 @@ export function ChatInput({
 
   const handleSend = useCallback(() => {
     if ((message.trim() || uploadedDocs.length > 0) && !isLoading && !isUploading) {
+      const backendModelName = getBackendName(selectedModel);
       onSend(message.trim() || "Files attached", {
         docUrl: uploadedDocs.length > 0 ? uploadedDocs[0].url : undefined,
         uploadedDocs: uploadedDocs.length > 0 ? uploadedDocs : undefined,
-        model: selectedModel,
+        model: backendModelName,
       });
 
       setMessage("");
@@ -286,9 +303,9 @@ export function ChatInput({
                 </SelectTrigger>
                 <SelectContent className="max-h-[300px] sm:max-h-[400px] overflow-y-auto">
                   <div className="grid grid-cols-1 gap-1 p-2">
-                    {MODELS.map((model) => (
-                      <SelectItem key={model.value} value={model.value} className="text-xs sm:text-sm">
-                        {model.label}
+                    {MODEL_MAPPING.map((model) => (
+                      <SelectItem key={model.frontendValue} value={model.frontendValue} className="text-xs sm:text-sm">
+                        {model.displayName}
                       </SelectItem>
                     ))}
                   </div>
@@ -321,9 +338,9 @@ export function ChatInput({
                 </SelectTrigger>
                 <SelectContent className="max-h-[400px] overflow-y-auto">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-1 p-2">
-                    {MODELS.map((model) => (
-                      <SelectItem key={model.value} value={model.value} className="text-sm">
-                        {model.label}
+                    {MODEL_MAPPING.map((model) => (
+                      <SelectItem key={model.frontendValue} value={model.frontendValue} className="text-sm">
+                        {model.displayName}
                       </SelectItem>
                     ))}
                   </div>

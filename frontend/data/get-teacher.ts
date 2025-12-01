@@ -31,6 +31,7 @@ export interface TeacherData {
   id: string;
   name: string;
   email: string;
+  image: string | null;
   grade: { id: string; name: string } | null;
   grades: Array<{ id: string; name: string }>;
   subjects: Array<{ id: string; name: string }>;
@@ -85,6 +86,7 @@ export async function getTeacherData(): Promise<TeacherData | null> {
       id: user.id,
       name: user.name,
       email: user.email,
+      image: user.image,
       grade: user.grade ? { id: user.grade.id, name: user.grade.name } : null,
       grades,
       subjects,
