@@ -179,11 +179,11 @@ function convertMarkdownToHtml(content: string): string {
   // Convert unordered lists
   html = html.replace(/^\* (.*$)/gim, "<li>$1</li>");
   html = html.replace(/^- (.*$)/gim, "<li>$1</li>");
-  html = html.replace(/(<li>.*<\/li>)/s, "<ul>$1</ul>");
+  html = html.replace(/(<li>[\s\S]*?<\/li>(?:\s*<li>[\s\S]*?<\/li>)*)/g, "<ul>$1</ul>");
 
   // Convert ordered lists
   html = html.replace(/^\d+\. (.*$)/gim, "<li>$1</li>");
-  html = html.replace(/(<li>.*<\/li>)/s, "<ol>$1</ol>");
+  html = html.replace(/(<li>[\s\S]*?<\/li>(?:\s*<li>[\s\S]*?<\/li>)*)/g, "<ol>$1</ol>");
 
   // Convert line breaks to paragraphs
   html = html.split("\n\n").map((para) => {
