@@ -11,6 +11,11 @@ async function getTeacherGradesAndSubjects(userId: string) {
       where: { id: userId },
       include: {
         grade: true,
+        userGrades: {
+          include: {
+            grade: true,
+          },
+        },
         userSubjects: {
           include: {
             subject: true,
@@ -19,7 +24,14 @@ async function getTeacherGradesAndSubjects(userId: string) {
       },
     })
 
-    const grades = user?.grade ? [{ id: user.grade.id, name: user.grade.name }] : []
+    const grades = user?.userGrades
+      ? user.userGrades.map((ug) => ({
+          id: ug.grade.id,
+          name: ug.grade.name,
+        }))
+      : user?.grade
+      ? [{ id: user.grade.id, name: user.grade.name }]
+      : []
     const subjects = user?.userSubjects
       ? user.userSubjects.map((us) => ({
           id: us.subject.id,
@@ -46,7 +58,7 @@ export default async function AssessmentGenerationPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Assessment Generation</h1>
+        <h1 className="text-3xl font-bold text-primary">Assessment Generation</h1>
         <p className="text-muted-foreground mt-1">
           Create comprehensive assessments with multiple question types for your students
         </p>

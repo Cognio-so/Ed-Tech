@@ -31,6 +31,7 @@ interface EditUserDialogProps {
   grades: { id: string; name: string }[];
   subjects: { id: string; name: string }[];
   userSubjects: string[];
+  userGrades?: string[];
 }
 
 export function EditUserDialog({
@@ -41,12 +42,13 @@ export function EditUserDialog({
   grades,
   subjects,
   userSubjects: initialUserSubjects,
+  userGrades: initialUserGrades = [],
 }: EditUserDialogProps) {
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [role, setRole] = React.useState("");
-  const [gradeId, setGradeId] = React.useState<string>("");
   const [selectedSubjects, setSelectedSubjects] = React.useState<string[]>([]);
+  const [selectedGrades, setSelectedGrades] = React.useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   React.useEffect(() => {
@@ -54,10 +56,10 @@ export function EditUserDialog({
       setName(user.name);
       setEmail(user.email);
       setRole(user.role);
-      setGradeId((user as any).gradeId || "");
       setSelectedSubjects(initialUserSubjects || []);
+      setSelectedGrades(initialUserGrades || (user as any).gradeIds || []);
     }
-  }, [user, initialUserSubjects]);
+  }, [user, initialUserSubjects, initialUserGrades]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +71,7 @@ export function EditUserDialog({
       formData.append("name", name);
       formData.append("email", email);
       formData.append("role", role);
-      if (gradeId) formData.append("gradeId", gradeId);
+      formData.append("gradeIds", JSON.stringify(selectedGrades));
       formData.append("subjectIds", JSON.stringify(selectedSubjects));
 
       const response = await fetch(`/api/user/${user.id}`, {
@@ -97,6 +99,14 @@ export function EditUserDialog({
       prev.includes(subjectId)
         ? prev.filter((id) => id !== subjectId)
         : [...prev, subjectId]
+    );
+  };
+
+  const toggleGrade = (gradeId: string) => {
+    setSelectedGrades((prev) =>
+      prev.includes(gradeId)
+        ? prev.filter((id) => id !== gradeId)
+        : [...prev, gradeId]
     );
   };
 
@@ -144,20 +154,23 @@ export function EditUserDialog({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="grade">Grade</Label>
-              <Select value={gradeId || undefined} onValueChange={(value) => setGradeId(value === "none" ? "" : value)}>
-                <SelectTrigger id="grade">
-                  <SelectValue placeholder="Select grade" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
+              <Label>Grades</Label>
+              <div className="border rounded-md p-4 max-h-48 overflow-y-auto">
+                <div className="grid grid-cols-3 gap-3">
                   {grades.map((grade) => (
-                    <SelectItem key={grade.id} value={grade.id}>
-                      {grade.name}
-                    </SelectItem>
+                    <label
+                      key={grade.id}
+                      className="flex items-center space-x-2 cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={selectedGrades.includes(grade.id)}
+                        onCheckedChange={() => toggleGrade(grade.id)}
+                      />
+                      <span className="text-sm">{grade.name}</span>
+                    </label>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Subjects</Label>

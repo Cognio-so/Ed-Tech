@@ -46,7 +46,7 @@ export function UserTable({
             <TableHead>Name</TableHead>
             <TableHead>Email</TableHead>
             <TableHead>Role</TableHead>
-            <TableHead>Grade</TableHead>
+            <TableHead>Grades</TableHead>
             <TableHead>Subjects</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -69,7 +69,7 @@ export function UserTable({
                   {user.role}
                 </span>
               </TableCell>
-              <TableCell>{user.grade || "—"}</TableCell>
+              <TableCell>{user.grades || user.grade || "—"}</TableCell>
               <TableCell>{user.subjects || "—"}</TableCell>
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-2">

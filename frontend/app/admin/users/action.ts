@@ -9,6 +9,9 @@ export async function createUser(formData: FormData) {
     const email = formData.get("email") as string;
     const role = formData.get("role") as string;
     const gradeId = formData.get("gradeId") as string | null;
+    const gradeIds = JSON.parse(
+      (formData.get("gradeIds") as string) || "[]"
+    ) as string[];
     const subjectIds = JSON.parse(
       (formData.get("subjectIds") as string) || "[]"
     ) as string[];
@@ -24,6 +27,12 @@ export async function createUser(formData: FormData) {
           create: subjectIds.map((subjectId) => ({
             id: crypto.randomUUID(),
             subjectId,
+          })),
+        },
+        userGrades: {
+          create: gradeIds.map((gradeId) => ({
+            id: crypto.randomUUID(),
+            gradeId,
           })),
         },
       },
@@ -56,13 +65,21 @@ export async function updateUser(userId: string, formData: FormData) {
     const email = formData.get("email") as string;
     const role = formData.get("role") as string;
     const gradeId = formData.get("gradeId") as string | null;
+    const gradeIds = JSON.parse(
+      (formData.get("gradeIds") as string) || "[]"
+    ) as string[];
     const subjectIds = JSON.parse(
       (formData.get("subjectIds") as string) || "[]"
     ) as string[];
 
-    await prisma.userSubject.deleteMany({
-      where: { userId },
-    });
+    await Promise.all([
+      prisma.userSubject.deleteMany({
+        where: { userId },
+      }),
+      prisma.userGrade.deleteMany({
+        where: { userId },
+      }),
+    ]);
 
     const user = await prisma.user.update({
       where: { id: userId },
@@ -70,11 +87,17 @@ export async function updateUser(userId: string, formData: FormData) {
         name,
         email,
         role,
-        gradeId: gradeId || null,
+        gradeId: gradeId || (gradeIds.length > 0 ? gradeIds[0] : null),
         userSubjects: {
           create: subjectIds.map((subjectId) => ({
             id: crypto.randomUUID(),
             subjectId,
+          })),
+        },
+        userGrades: {
+          create: gradeIds.map((gradeId) => ({
+            id: crypto.randomUUID(),
+            gradeId,
           })),
         },
       },

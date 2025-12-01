@@ -25,14 +25,16 @@ model User {
   sessions      Session[]
   accounts      Account[]
   gradeId       String?
-  grade         Grade?    @relation(fields: [gradeId], references: [id], onDelete: SetNull)
+  grade         Grade?    @relation("UserPrimaryGrade", fields: [gradeId], references: [id], onDelete: SetNull)
   userSubjects  UserSubject[]
+  userGrades    UserGrade[]
   contents      Content[]
   slides        Slide[]
   images        Image[]
   webSearches   WebSearch[]
   comics        Comic[]
   videos        Video[]
+  conversations TeacherConversation[]
 
   @@unique([email])
   @@map("user")
@@ -44,7 +46,8 @@ model Grade {
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  users       User[]
+  users       User[]   @relation("UserPrimaryGrade")
+  userGrades  UserGrade[]
 
   @@map("grade")
 }
@@ -70,6 +73,18 @@ model UserSubject {
 
   @@unique([userId, subjectId])
   @@map("user_subject")
+}
+
+model UserGrade {
+  id        String   @id @default(cuid())
+  userId    String
+  gradeId   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grade     Grade    @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, gradeId])
+  @@map("user_grade")
 }
 
 model Session {
@@ -234,4 +249,19 @@ model Video {
 
   @@index([userId])
   @@map("video")
+}
+
+model TeacherConversation {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  messages    String   @db.Text
+  metadata    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("teacher_conversation")
 }

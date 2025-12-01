@@ -173,9 +173,15 @@ export function UsersPageClient({
               </div>
               <div>
                 <label className="text-sm font-medium text-muted-foreground">
-                  Grade
+                  Primary Grade
                 </label>
                 <p className="text-sm">{previewUser.grade || "Not assigned"}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">
+                  Grades
+                </label>
+                <p className="text-sm">{previewUser.grades || "Not assigned"}</p>
               </div>
               <div>
                 <label className="text-sm font-medium text-muted-foreground">
@@ -204,6 +210,7 @@ export function UsersPageClient({
         grades={grades}
         subjects={subjects}
         userSubjects={editUser?.subjectIds || []}
+        userGrades={editUser?.gradeIds || []}
       />
     </>
   );

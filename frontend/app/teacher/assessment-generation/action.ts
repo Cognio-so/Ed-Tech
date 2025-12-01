@@ -18,6 +18,9 @@ export async function saveAssessment(formData: FormData) {
     const title = formData.get("title") as string
     const content = formData.get("content") as string
     const grade = formData.get("grade") as string
+    const gradeIds = JSON.parse(
+      (formData.get("gradeIds") as string) || "[]"
+    ) as string[]
     const subject = formData.get("subject") as string
     const topic = formData.get("topic") as string
     const language = formData.get("language") as string
@@ -41,7 +44,7 @@ export async function saveAssessment(formData: FormData) {
         contentType: "assessment",
         title,
         content,
-        grade,
+        grade: gradeIds.length > 0 ? gradeIds.join(", ") : grade,
         subject,
         topic,
         language,
@@ -134,6 +137,9 @@ export async function updateAssessment(assessmentId: string, formData: FormData)
     const title = formData.get("title") as string
     const content = formData.get("content") as string
     const grade = formData.get("grade") as string
+    const gradeIds = JSON.parse(
+      (formData.get("gradeIds") as string) || "[]"
+    ) as string[]
     const subject = formData.get("subject") as string
     const topic = formData.get("topic") as string
     const language = formData.get("language") as string
@@ -156,7 +162,7 @@ export async function updateAssessment(assessmentId: string, formData: FormData)
       data: {
         title,
         content,
-        grade,
+        grade: gradeIds.length > 0 ? gradeIds.join(", ") : grade,
         subject,
         topic,
         language,
