@@ -1,6 +1,46 @@
 import { ContentTabs } from "./_components/content-tabs";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import prisma from "@/lib/prisma";
 
-export default function ContentGenerationPage() {
+async function getTeacherGradesAndSubjects(userId: string) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        grade: true,
+        userSubjects: {
+          include: {
+            subject: true,
+          },
+        },
+      },
+    });
+
+    const grades = user?.grade ? [{ id: user.grade.id, name: user.grade.name }] : [];
+    const subjects = user?.userSubjects
+      ? user.userSubjects.map((us) => ({
+          id: us.subject.id,
+          name: us.subject.name,
+        }))
+      : [];
+
+    return { grades, subjects };
+  } catch (error) {
+    console.error("Error fetching teacher grades and subjects:", error);
+    return { grades: [], subjects: [] };
+  }
+}
+
+export default async function ContentGenerationPage() {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  const { grades, subjects } = session?.user?.id
+    ? await getTeacherGradesAndSubjects(session.user.id)
+    : { grades: [], subjects: [] };
+
   return (
     <div className="space-y-6">
       <div>
@@ -9,7 +49,7 @@ export default function ContentGenerationPage() {
           Create and manage educational content for your students
         </p>
       </div>
-      <ContentTabs />
+      <ContentTabs initialGrades={grades} initialSubjects={subjects} />
     </div>
   );
 }

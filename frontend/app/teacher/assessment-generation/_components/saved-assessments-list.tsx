@@ -2,10 +2,12 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { Response } from "@/components/ui/response"
-import { Edit, Trash2, Copy, Download } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Edit, Trash2, Copy, Download, Eye } from "lucide-react"
 import { toast } from "sonner"
 import { deleteAssessment } from "../action"
+import { DownloadDialog } from "@/components/ui/download-dialog"
+import { AssessmentPreview } from "./assessment-preview"
 
 interface Assessment {
   id: string
@@ -22,6 +24,13 @@ interface Assessment {
 export function SavedAssessmentsList() {
   const [savedAssessments, setSavedAssessments] = React.useState<Assessment[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [showDownloadDialog, setShowDownloadDialog] = React.useState(false)
+  const [downloadContent, setDownloadContent] = React.useState<{
+    content: string
+    title: string
+  } | null>(null)
+  const [previewContent, setPreviewContent] = React.useState<Assessment | null>(null)
+  const [showPreview, setShowPreview] = React.useState(false)
 
   React.useEffect(() => {
     fetchSavedAssessments()
@@ -76,45 +85,8 @@ export function SavedAssessmentsList() {
   }
 
   const handleDownload = (content: string, title: string) => {
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>${title}</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              max-width: 800px;
-              margin: 0 auto;
-              padding: 20px;
-              line-height: 1.6;
-            }
-            h1, h2, h3 {
-              color: #333;
-            }
-            pre {
-              white-space: pre-wrap;
-              word-wrap: break-word;
-            }
-          </style>
-        </head>
-        <body>
-          <pre>${content.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
-        </body>
-      </html>
-    `
-
-    const blob = new Blob([htmlContent], { type: "text/html" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${title || "assessment"}.html`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    toast.success("Assessment downloaded")
+    setDownloadContent({ content, title })
+    setShowDownloadDialog(true)
   }
 
   const handleEdit = (assessment: Assessment) => {
@@ -122,10 +94,66 @@ export function SavedAssessmentsList() {
     window.dispatchEvent(new CustomEvent("switchToAssessmentFormTab"))
   }
 
+  const handlePreview = (assessment: Assessment) => {
+    setPreviewContent(assessment)
+    setShowPreview(true)
+  }
+
+  const handlePreviewClose = () => {
+    setShowPreview(false)
+    setPreviewContent(null)
+  }
+
+  const handlePreviewSave = async () => {
+    handlePreviewClose()
+  }
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <p className="text-muted-foreground">Loading saved assessments...</p>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-4 w-24" />
+        </div>
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="border rounded-lg p-6 space-y-4"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1 space-y-3">
+                  <Skeleton className="h-6 w-3/4" />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                </div>
+                <div className="flex gap-2 ml-4">
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                </div>
+              </div>
+              <div className="border rounded-lg p-4 bg-muted/50 space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-4/6" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -143,18 +171,6 @@ export function SavedAssessmentsList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Saved Assessments</h2>
-          <p className="text-muted-foreground mt-1">
-            Manage your saved assessments
-          </p>
-        </div>
-        <div className="text-sm text-muted-foreground">
-          {savedAssessments.length} {savedAssessments.length === 1 ? "assessment" : "assessments"}
-        </div>
-      </div>
-
       <div className="space-y-4">
         {savedAssessments.map((assessment) => (
           <div
@@ -190,6 +206,14 @@ export function SavedAssessmentsList() {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => handlePreview(assessment)}
+                  title="Preview assessment"
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => handleEdit(assessment)}
                   title="Edit assessment"
                 >
@@ -221,12 +245,29 @@ export function SavedAssessmentsList() {
                 </Button>
               </div>
             </div>
-            <div className="border rounded-lg p-4 bg-muted/50 max-h-[500px] overflow-y-auto">
-              <Response content={assessment.content} />
-            </div>
           </div>
         ))}
       </div>
+
+      {/* Preview Dialog */}
+      {showPreview && previewContent && (
+        <AssessmentPreview
+          content={previewContent.content}
+          topic={previewContent.topic || previewContent.title}
+          onSave={handlePreviewSave}
+          onClose={handlePreviewClose}
+        />
+      )}
+
+      {/* Download Dialog */}
+      {downloadContent && (
+        <DownloadDialog
+          open={showDownloadDialog}
+          onOpenChange={setShowDownloadDialog}
+          content={downloadContent.content}
+          title={downloadContent.title}
+        />
+      )}
     </div>
   )
 }

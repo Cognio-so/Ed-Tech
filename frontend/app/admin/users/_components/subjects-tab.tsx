@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2 } from "lucide-react";
 import { createSubject, deleteSubject } from "../action";
+import { toast } from "sonner";
 
 interface Subject {
   id: string;
@@ -53,7 +54,7 @@ export function SubjectsTab({ initialSubjects }: SubjectsTabProps) {
           setIsDialogOpen(false);
         }
       } catch (error) {
-        alert("Failed to create subject");
+        toast.error("Failed to create subject");
         console.error(error);
       }
     });
@@ -67,7 +68,7 @@ export function SubjectsTab({ initialSubjects }: SubjectsTabProps) {
         await deleteSubject(id);
         setSubjects(subjects.filter((s) => s.id !== id));
       } catch (error) {
-        alert("Failed to delete subject");
+        toast.error("Failed to delete subject");
         console.error(error);
       }
     });

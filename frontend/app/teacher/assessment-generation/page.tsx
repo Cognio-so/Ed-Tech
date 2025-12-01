@@ -2,35 +2,46 @@ import { Suspense } from "react"
 import { AssessmentTabs } from "./_components/assessment-tabs"
 import prisma from "@/lib/prisma"
 
-async function getGrades() {
-  try {
-    const grades = await prisma.grade.findMany({
-      orderBy: { name: "asc" },
-    })
-    return grades.map((grade) => ({ id: grade.id, name: grade.name }))
-  } catch (error) {
-    console.error("Error fetching grades:", error)
-    return []
-  }
-}
+import { auth } from "@/lib/auth"
+import { headers } from "next/headers"
 
-async function getSubjects() {
+async function getTeacherGradesAndSubjects(userId: string) {
   try {
-    const subjects = await prisma.subject.findMany({
-      orderBy: { name: "asc" },
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        grade: true,
+        userSubjects: {
+          include: {
+            subject: true,
+          },
+        },
+      },
     })
-    return subjects.map((subject) => ({ id: subject.id, name: subject.name }))
+
+    const grades = user?.grade ? [{ id: user.grade.id, name: user.grade.name }] : []
+    const subjects = user?.userSubjects
+      ? user.userSubjects.map((us) => ({
+          id: us.subject.id,
+          name: us.subject.name,
+        }))
+      : []
+
+    return { grades, subjects }
   } catch (error) {
-    console.error("Error fetching subjects:", error)
-    return []
+    console.error("Error fetching teacher grades and subjects:", error)
+    return { grades: [], subjects: [] }
   }
 }
 
 export default async function AssessmentGenerationPage() {
-  const [grades, subjects] = await Promise.all([
-    getGrades(),
-    getSubjects(),
-  ])
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  })
+
+  const { grades, subjects } = session?.user?.id
+    ? await getTeacherGradesAndSubjects(session.user.id)
+    : { grades: [], subjects: [] }
 
   return (
     <div className="space-y-6">

@@ -5,7 +5,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ContentGenerationForm } from "./content-generation-form"
 import { SavedContentList } from "./saved-content-list"
 
-export function ContentTabs() {
+interface ContentTabsProps {
+  initialGrades: { id: string; name: string }[]
+  initialSubjects: { id: string; name: string }[]
+}
+
+export function ContentTabs({ initialGrades, initialSubjects }: ContentTabsProps) {
   const [activeTab, setActiveTab] = React.useState("form")
 
   // Listen for tab switch events from saved content list
@@ -28,7 +33,7 @@ export function ContentTabs() {
       </TabsList>
       
       <TabsContent value="form" className="mt-6">
-        <ContentGenerationForm />
+        <ContentGenerationForm initialGrades={initialGrades} initialSubjects={initialSubjects} />
       </TabsContent>
       
       <TabsContent value="saved" className="mt-6">

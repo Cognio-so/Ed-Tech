@@ -1,166 +1,149 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ContentCard } from "@/components/ui/content-card"
-import { LibraryContent } from "@/data/get-library-content"
-import { AssessmentPreview } from "@/app/teacher/assessment-generation/_components/assessment-preview"
-import { SlidePreview } from "@/components/ui/slide-preview"
-import { ImagePreview } from "@/components/ui/image-preview"
-import { VideoPreview } from "@/components/ui/video-preview"
-import { ComicPreview } from "@/components/ui/comic-preview"
-import { WebSearchPreview } from "@/components/ui/web-search-preview"
-import { Response } from "@/components/ui/response"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Copy, Download } from "lucide-react"
-import { toast } from "sonner"
-import { deleteMediaContent } from "@/app/teacher/media-toolkit/action"
-import { deleteAssessment } from "@/app/teacher/assessment-generation/action"
-import { deleteContent } from "@/app/teacher/content-generation/action"
-import { useRouter } from "next/navigation"
+import * as React from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ContentCard } from "@/components/ui/content-card";
+import { LibraryContent } from "@/data/get-library-content";
+import { AssessmentPreview } from "@/app/teacher/assessment-generation/_components/assessment-preview";
+import { SlidePreview } from "@/components/ui/slide-preview";
+import { ImagePreview } from "@/components/ui/image-preview";
+import { VideoPreview } from "@/components/ui/video-preview";
+import { ComicPreview } from "@/components/ui/comic-preview";
+import { WebSearchPreview } from "@/components/ui/web-search-preview";
+import { ContentPreview } from "@/app/teacher/media-toolkit/_components/content-preview";
+import { DownloadDialog } from "@/components/ui/download-dialog";
+import { toast } from "sonner";
+import { deleteMediaContent } from "@/app/teacher/media-toolkit/action";
+import { deleteAssessment } from "@/app/teacher/assessment-generation/action";
+import { deleteContent } from "@/app/teacher/content-generation/action";
+import { useRouter } from "next/navigation";
 
 interface AllTabsProps {
-  content: LibraryContent[]
+  content: LibraryContent[];
 }
 
 export function AllTabs({ content }: AllTabsProps) {
-  const router = useRouter()
-  const [previewItem, setPreviewItem] = React.useState<LibraryContent | null>(null)
-  const [localContent, setLocalContent] = React.useState(content)
+  const router = useRouter();
+  const [previewItem, setPreviewItem] = React.useState<LibraryContent | null>(
+    null
+  );
+  const [localContent, setLocalContent] = React.useState(content);
+  const [showDownloadDialog, setShowDownloadDialog] = React.useState(false);
+  const [downloadContent, setDownloadContent] = React.useState<{
+    content: string;
+    title: string;
+  } | null>(null);
 
   // Filter content by type
-  const mediaToolkitContent = localContent.filter((item) => item.type === "media-toolkit")
-  const contentGenerationContent = localContent.filter((item) => item.type === "content-generation")
-  const assessmentContent = localContent.filter((item) => item.type === "assessment")
+  const mediaToolkitContent = localContent.filter(
+    (item) => item.type === "media-toolkit"
+  );
+  const contentGenerationContent = localContent.filter(
+    (item) => item.type === "content-generation"
+  );
+  const assessmentContent = localContent.filter(
+    (item) => item.type === "assessment"
+  );
 
   // Count by content type
   const counts = {
     all: localContent.length,
     content: contentGenerationContent.length,
-    slides: mediaToolkitContent.filter((item) => item.contentType === "slide").length,
-    comics: mediaToolkitContent.filter((item) => item.contentType === "comic").length,
-    images: mediaToolkitContent.filter((item) => item.contentType === "image").length,
-    videos: mediaToolkitContent.filter((item) => item.contentType === "video").length,
+    slides: mediaToolkitContent.filter((item) => item.contentType === "slide")
+      .length,
+    comics: mediaToolkitContent.filter((item) => item.contentType === "comic")
+      .length,
+    images: mediaToolkitContent.filter((item) => item.contentType === "image")
+      .length,
+    videos: mediaToolkitContent.filter((item) => item.contentType === "video")
+      .length,
     assessments: assessmentContent.length,
-    webSearch: mediaToolkitContent.filter((item) => item.contentType === "web").length,
-  }
+    webSearch: mediaToolkitContent.filter((item) => item.contentType === "web")
+      .length,
+  };
 
   const handlePreview = (item: LibraryContent) => {
-    setPreviewItem(item)
-  }
+    setPreviewItem(item);
+  };
 
   const handleClosePreview = () => {
-    setPreviewItem(null)
-  }
+    setPreviewItem(null);
+  };
 
   const handleDownload = async (item: LibraryContent) => {
     try {
       if (!item.content) {
-        toast.error("No content to download")
-        return
+        toast.error("No content to download");
+        return;
       }
 
-      let contentToDownload = item.content
-      let filename = item.title
+      let contentToDownload = item.content;
 
       // For JSON content, try to parse and format
       try {
-        const parsed = JSON.parse(item.content)
+        const parsed = JSON.parse(item.content);
         if (parsed.presentation_url) {
-          window.open(parsed.presentation_url, "_blank")
-          toast.success("Opening presentation link")
-          return
+          window.open(parsed.presentation_url, "_blank");
+          toast.success("Opening presentation link");
+          return;
         }
         if (parsed.video_url) {
-          window.open(parsed.video_url, "_blank")
-          toast.success("Opening video link")
-          return
+          window.open(parsed.video_url, "_blank");
+          toast.success("Opening video link");
+          return;
         }
-        contentToDownload = JSON.stringify(parsed, null, 2)
+        contentToDownload = JSON.stringify(parsed, null, 2);
       } catch {
         // Not JSON, use as is
       }
 
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <title>${item.title}</title>
-            <style>
-              body {
-                font-family: Arial, sans-serif;
-                max-width: 800px;
-                margin: 0 auto;
-                padding: 20px;
-                line-height: 1.6;
-              }
-              pre {
-                white-space: pre-wrap;
-                word-wrap: break-word;
-              }
-            </style>
-          </head>
-          <body>
-            <h1>${item.title}</h1>
-            <pre>${contentToDownload.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
-          </body>
-        </html>
-      `
-
-      const blob = new Blob([htmlContent], { type: "text/html" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `${filename}.html`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-      toast.success("Content downloaded")
+      setDownloadContent({
+        content: contentToDownload,
+        title: item.title,
+      });
+      setShowDownloadDialog(true);
     } catch (error) {
-      console.error("Error downloading content:", error)
-      toast.error("Failed to download content")
+      console.error("Error downloading content:", error);
+      toast.error("Failed to download content");
     }
-  }
+  };
 
   const handleDelete = async (item: LibraryContent) => {
     if (!confirm(`Are you sure you want to delete "${item.title}"?`)) {
-      return
+      return;
     }
 
     try {
       if (item.type === "media-toolkit") {
-        await deleteMediaContent(item.id, item.contentType)
+        await deleteMediaContent(item.id, item.contentType);
       } else if (item.type === "assessment") {
-        await deleteAssessment(item.id)
+        await deleteAssessment(item.id);
       } else if (item.type === "content-generation") {
-        await deleteContent(item.id)
+        await deleteContent(item.id);
       } else {
-        toast.error("Delete functionality not available for this content type")
-        return
+        toast.error("Delete functionality not available for this content type");
+        return;
       }
 
-      setLocalContent(localContent.filter((c) => c.id !== item.id))
-      toast.success("Content deleted successfully")
-      router.refresh()
+      setLocalContent(localContent.filter((c) => c.id !== item.id));
+      toast.success("Content deleted successfully");
+      router.refresh();
     } catch (error) {
-      console.error("Error deleting content:", error)
-      toast.error("Failed to delete content")
+      console.error("Error deleting content:", error);
+      toast.error("Failed to delete content");
     }
-  }
+  };
 
   const renderPreview = () => {
-    if (!previewItem) return null
+    if (!previewItem) return null;
 
-    const contentType = previewItem.contentType
-    const content = previewItem.content
+    const contentType = previewItem.contentType;
+    const content = previewItem.content;
 
     // Try to parse JSON content
-    let parsedContent: any = null
+    let parsedContent: any = null;
     try {
-      parsedContent = JSON.parse(content)
+      parsedContent = JSON.parse(content);
     } catch {
       // Not JSON, use as string
     }
@@ -173,7 +156,7 @@ export function AllTabs({ content }: AllTabsProps) {
           onSave={handleClosePreview}
           onClose={handleClosePreview}
         />
-      )
+      );
     }
 
     if (contentType === "slide") {
@@ -183,11 +166,12 @@ export function AllTabs({ content }: AllTabsProps) {
           onSave={handleClosePreview}
           onClose={handleClosePreview}
         />
-      )
+      );
     }
 
     if (contentType === "image") {
-      const imageUrl = parsedContent?.image_url || parsedContent?.url || content
+      const imageUrl =
+        parsedContent?.image_url || parsedContent?.url || content;
       return (
         <ImagePreview
           imageUrl={imageUrl}
@@ -195,7 +179,7 @@ export function AllTabs({ content }: AllTabsProps) {
           onSave={handleClosePreview}
           onClose={handleClosePreview}
         />
-      )
+      );
     }
 
     if (contentType === "video") {
@@ -206,7 +190,7 @@ export function AllTabs({ content }: AllTabsProps) {
           onSave={handleClosePreview}
           onClose={handleClosePreview}
         />
-      )
+      );
     }
 
     if (contentType === "comic") {
@@ -217,7 +201,7 @@ export function AllTabs({ content }: AllTabsProps) {
           onSave={handleClosePreview}
           onClose={handleClosePreview}
         />
-      )
+      );
     }
 
     if (contentType === "web") {
@@ -228,46 +212,23 @@ export function AllTabs({ content }: AllTabsProps) {
           onSave={handleClosePreview}
           onClose={handleClosePreview}
         />
-      )
+      );
     }
 
     // Default preview for content generation items
     return (
-      <Dialog open={true} onOpenChange={handleClosePreview}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>{previewItem.title}</span>
-              <div className="flex gap-2 mr-8">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    navigator.clipboard.writeText(content)
-                    toast.success("Content copied to clipboard")
-                  }}
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDownload(previewItem)}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Download
-                </Button>
-              </div>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mt-4 border rounded-lg p-6 bg-muted/50 max-h-[70vh] overflow-y-auto">
-            <Response content={content} />
-          </div>
-        </DialogContent>
-      </Dialog>
-    )
-  }
+      <ContentPreview
+        content={content}
+        title={previewItem.title}
+        onCopy={() => {
+          navigator.clipboard.writeText(content);
+          toast.success("Content copied to clipboard");
+        }}
+        onDownload={() => handleDownload(previewItem)}
+        onClose={handleClosePreview}
+      />
+    );
+  };
 
   const renderContentGrid = (items: LibraryContent[]) => {
     if (items.length === 0) {
@@ -275,25 +236,29 @@ export function AllTabs({ content }: AllTabsProps) {
         <div className="text-center py-12 text-muted-foreground">
           <p>No content found in this category.</p>
         </div>
-      )
+      );
     }
 
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {items.map((item) => {
           // Extract image URL from content based on content type
-          let imageUrl: string | undefined
-          
+          let imageUrl: string | undefined;
+
           if (item.contentType === "image") {
             // For images, content IS the image URL (string, not JSON)
-            imageUrl = item.content
+            imageUrl = item.content;
           } else if (item.contentType === "comic") {
             // For comics, content is JSON with panels array
             try {
-              const parsed = JSON.parse(item.content)
+              const parsed = JSON.parse(item.content);
               // Get the first panel's URL if available
-              if (parsed.panels && Array.isArray(parsed.panels) && parsed.panels.length > 0) {
-                imageUrl = parsed.panels[0].url
+              if (
+                parsed.panels &&
+                Array.isArray(parsed.panels) &&
+                parsed.panels.length > 0
+              ) {
+                imageUrl = parsed.panels[0].url;
               }
             } catch {
               // Not valid JSON
@@ -301,8 +266,9 @@ export function AllTabs({ content }: AllTabsProps) {
           } else {
             // For other types, try to parse as JSON
             try {
-              const parsed = JSON.parse(item.content)
-              imageUrl = parsed.image_url || parsed.url || parsed.presentation_url
+              const parsed = JSON.parse(item.content);
+              imageUrl =
+                parsed.image_url || parsed.url || parsed.presentation_url;
             } catch {
               // Not JSON or no image URL
             }
@@ -325,41 +291,31 @@ export function AllTabs({ content }: AllTabsProps) {
               onDownload={() => handleDownload(item)}
               onDelete={() => handleDelete(item)}
             />
-          )
+          );
         })}
       </div>
-    )
-  }
+    );
+  };
 
   return (
     <>
       <Tabs defaultValue="all" className="w-full">
         <div className="overflow-x-auto mb-6">
           <TabsList className="inline-flex w-full min-w-max gap-2">
-          <TabsTrigger value="all">
-            All ({counts.all})
-          </TabsTrigger>
-          <TabsTrigger value="content">
-            Content ({counts.content})
-          </TabsTrigger>
-          <TabsTrigger value="slides">
-            Slides ({counts.slides})
-          </TabsTrigger>
-          <TabsTrigger value="comics">
-            Comics ({counts.comics})
-          </TabsTrigger>
-          <TabsTrigger value="images">
-            Images ({counts.images})
-          </TabsTrigger>
-          <TabsTrigger value="videos">
-            Videos ({counts.videos})
-          </TabsTrigger>
-          <TabsTrigger value="assessments">
-            Assessments ({counts.assessments})
-          </TabsTrigger>
-          <TabsTrigger value="webSearch">
-            Web Search ({counts.webSearch})
-          </TabsTrigger>
+            <TabsTrigger value="all">All ({counts.all})</TabsTrigger>
+            <TabsTrigger value="content">
+              Content ({counts.content})
+            </TabsTrigger>
+            <TabsTrigger value="slides">Slides ({counts.slides})</TabsTrigger>
+            <TabsTrigger value="comics">Comics ({counts.comics})</TabsTrigger>
+            <TabsTrigger value="images">Images ({counts.images})</TabsTrigger>
+            <TabsTrigger value="videos">Videos ({counts.videos})</TabsTrigger>
+            <TabsTrigger value="assessments">
+              Assessments ({counts.assessments})
+            </TabsTrigger>
+            <TabsTrigger value="webSearch">
+              Web Search ({counts.webSearch})
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -372,19 +328,27 @@ export function AllTabs({ content }: AllTabsProps) {
         </TabsContent>
 
         <TabsContent value="slides" className="mt-6">
-          {renderContentGrid(mediaToolkitContent.filter((item) => item.contentType === "slide"))}
+          {renderContentGrid(
+            mediaToolkitContent.filter((item) => item.contentType === "slide")
+          )}
         </TabsContent>
 
         <TabsContent value="comics" className="mt-6">
-          {renderContentGrid(mediaToolkitContent.filter((item) => item.contentType === "comic"))}
+          {renderContentGrid(
+            mediaToolkitContent.filter((item) => item.contentType === "comic")
+          )}
         </TabsContent>
 
         <TabsContent value="images" className="mt-6">
-          {renderContentGrid(mediaToolkitContent.filter((item) => item.contentType === "image"))}
+          {renderContentGrid(
+            mediaToolkitContent.filter((item) => item.contentType === "image")
+          )}
         </TabsContent>
 
         <TabsContent value="videos" className="mt-6">
-          {renderContentGrid(mediaToolkitContent.filter((item) => item.contentType === "video"))}
+          {renderContentGrid(
+            mediaToolkitContent.filter((item) => item.contentType === "video")
+          )}
         </TabsContent>
 
         <TabsContent value="assessments" className="mt-6">
@@ -392,11 +356,23 @@ export function AllTabs({ content }: AllTabsProps) {
         </TabsContent>
 
         <TabsContent value="webSearch" className="mt-6">
-          {renderContentGrid(mediaToolkitContent.filter((item) => item.contentType === "web"))}
+          {renderContentGrid(
+            mediaToolkitContent.filter((item) => item.contentType === "web")
+          )}
         </TabsContent>
       </Tabs>
 
       {renderPreview()}
+
+      {/* Download Dialog */}
+      {downloadContent && (
+        <DownloadDialog
+          open={showDownloadDialog}
+          onOpenChange={setShowDownloadDialog}
+          content={downloadContent.content}
+          title={downloadContent.title}
+        />
+      )}
     </>
-  )
+  );
 }

@@ -4,15 +4,9 @@ import * as React from "react"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Eye, Download, Trash2, ChevronDown } from "lucide-react"
+import { Eye, Download, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Image from "next/image"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 
 export interface ContentCardProps {
   id: string
@@ -103,7 +97,7 @@ export function ContentCard({
       {/* Content section */}
       <CardHeader className="flex-1 px-6 pt-6">
         <h3 className="font-semibold text-lg leading-tight line-clamp-2">{title}</h3>
-        <div className="space-y-1 text-sm text-muted-foreground mt-2">
+        <div className="space-y-2 text-sm text-muted-foreground mt-2">
           {topic && (
             <div>
               <span className="font-medium">Topic:</span> {topic}
@@ -138,25 +132,20 @@ export function ContentCard({
           <Eye className="h-4 w-4 mr-2" />
           Preview
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onDownload}
+          title="Download"
+        >
               <Download className="h-4 w-4" />
-              <ChevronDown className="h-4 w-4 ml-1" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onDownload}>
-              <Download className="h-4 w-4 mr-2" />
-              Download
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
         <Button
           variant="ghost"
           size="sm"
           onClick={onDelete}
           className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          title="Delete"
         >
           <Trash2 className="h-4 w-4" />
         </Button>

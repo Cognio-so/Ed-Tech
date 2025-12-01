@@ -1,109 +1,157 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Button } from "@/components/ui/button"
-import { Response } from "@/components/ui/response"
-import { Edit, Trash2, Copy, Download } from "lucide-react"
-import { toast } from "sonner"
-import { deleteContent } from "../action"
+import * as React from "react";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Edit, Trash2, Copy, Download, Eye } from "lucide-react";
+import { toast } from "sonner";
+import { deleteContent } from "../action";
+import { ContentPreview } from "../../media-toolkit/_components/content-preview";
+import { DownloadDialog } from "@/components/ui/download-dialog";
 
 interface Content {
-  id: string
-  contentType: string
-  title: string
-  content: string
-  grade?: string | null
-  subject?: string | null
-  topic?: string | null
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  contentType: string;
+  title: string;
+  content: string;
+  grade?: string | null;
+  subject?: string | null;
+  topic?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export function SavedContentList() {
-  const [savedContents, setSavedContents] = React.useState<Content[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const [savedContents, setSavedContents] = React.useState<Content[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [previewContent, setPreviewContent] = React.useState<Content | null>(
+    null
+  );
+  const [showPreview, setShowPreview] = React.useState(false);
+  const [showDownloadDialog, setShowDownloadDialog] = React.useState(false);
+  const [downloadContent, setDownloadContent] = React.useState<{
+    content: string;
+    title: string;
+  } | null>(null);
 
   React.useEffect(() => {
-    fetchSavedContents()
-  }, [])
+    fetchSavedContents();
+  }, []);
 
   const fetchSavedContents = async () => {
     try {
-      const response = await fetch("/api/content")
+      const response = await fetch("/api/content");
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json();
         if (Array.isArray(data)) {
-          setSavedContents(data)
+          setSavedContents(data);
         } else {
-          setSavedContents([])
+          setSavedContents([]);
         }
       } else {
-        setSavedContents([])
+        setSavedContents([]);
       }
     } catch (error) {
-      console.error("Error fetching contents:", error)
-      setSavedContents([])
+      console.error("Error fetching contents:", error);
+      setSavedContents([]);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this content?")) return
+    if (!confirm("Are you sure you want to delete this content?")) return;
 
     try {
-      await deleteContent(id)
-      toast.success("Content deleted successfully")
-      setSavedContents(savedContents.filter((c) => c.id !== id))
+      await deleteContent(id);
+      toast.success("Content deleted successfully");
+      setSavedContents(savedContents.filter((c) => c.id !== id));
     } catch (error) {
-      toast.error("Failed to delete content")
+      toast.error("Failed to delete content");
     }
-  }
+  };
 
   const handleCopy = (content: string) => {
-    navigator.clipboard.writeText(content)
-    toast.success("Content copied to clipboard")
-  }
+    navigator.clipboard.writeText(content);
+    toast.success("Content copied to clipboard");
+  };
 
   const handleDownload = (content: string, title: string) => {
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>${title}</title>
-        </head>
-        <body>
-          <pre style="white-space: pre-wrap; font-family: Arial, sans-serif;">${content}</pre>
-        </body>
-      </html>
-    `
-
-    const blob = new Blob([htmlContent], { type: "application/msword" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${title || "content"}.doc`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    toast.success("Content downloaded")
-  }
+    setDownloadContent({ content, title });
+    setShowDownloadDialog(true);
+  };
 
   const handleEdit = (content: Content) => {
     // Store content in sessionStorage and switch to form tab
-    sessionStorage.setItem("editContent", JSON.stringify(content))
+    sessionStorage.setItem("editContent", JSON.stringify(content));
     // Dispatch event to switch tabs
-    window.dispatchEvent(new CustomEvent("switchToFormTab"))
-  }
+    window.dispatchEvent(new CustomEvent("switchToFormTab"));
+  };
+
+  const handlePreview = (content: Content) => {
+    setPreviewContent(content);
+    setShowPreview(true);
+  };
+
+  const handlePreviewCopy = () => {
+    if (previewContent) {
+      navigator.clipboard.writeText(previewContent.content);
+      toast.success("Content copied to clipboard");
+    }
+  };
+
+  const handlePreviewDownload = () => {
+    if (previewContent) {
+      setDownloadContent({
+        content: previewContent.content,
+        title: previewContent.title,
+      });
+      setShowDownloadDialog(true);
+    }
+  };
+
+  const handlePreviewClose = () => {
+    setShowPreview(false);
+    setPreviewContent(null);
+  };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <p className="text-muted-foreground">Loading saved content...</p>
+      <div className="space-y-6">
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="border rounded-lg p-6 space-y-4"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1 space-y-3">
+                  <Skeleton className="h-6 w-3/4" />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                </div>
+                <div className="flex gap-2 ml-4">
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                  <Skeleton className="h-9 w-9 rounded-md" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-    )
+    );
   }
 
   if (!Array.isArray(savedContents) || savedContents.length === 0) {
@@ -114,23 +162,11 @@ export function SavedContentList() {
           Generate and save content to see it here
         </p>
       </div>
-    )
+    );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Saved Content</h2>
-          <p className="text-muted-foreground mt-1">
-            Manage your saved educational content
-          </p>
-        </div>
-        <div className="text-sm text-muted-foreground">
-          {savedContents.length} {savedContents.length === 1 ? "item" : "items"}
-        </div>
-      </div>
-
       <div className="space-y-4">
         {savedContents.map((content) => (
           <div
@@ -141,7 +177,9 @@ export function SavedContentList() {
               <div className="flex-1">
                 <h3 className="font-semibold text-lg mb-1">{content.title}</h3>
                 <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                  <span className="capitalize">{content.contentType.replace("_", " ")}</span>
+                  <span className="capitalize">
+                    {content.contentType.replace("_", " ")}
+                  </span>
                   {content.topic && (
                     <>
                       <span>•</span>
@@ -161,10 +199,20 @@ export function SavedContentList() {
                     </>
                   )}
                   <span>•</span>
-                  <span>{new Date(content.createdAt).toLocaleDateString()}</span>
+                  <span>
+                    {new Date(content.createdAt).toLocaleDateString()}
+                  </span>
                 </div>
               </div>
               <div className="flex gap-2 ml-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePreview(content)}
+                  title="Preview content"
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -199,13 +247,30 @@ export function SavedContentList() {
                 </Button>
               </div>
             </div>
-            <div className="border rounded-lg p-4 bg-muted/50 max-h-[500px] overflow-y-auto">
-              <Response content={content.content} />
-            </div>
           </div>
         ))}
       </div>
-    </div>
-  )
-}
 
+      {/* Preview Dialog */}
+      {showPreview && previewContent && (
+        <ContentPreview
+          content={previewContent.content}
+          title={previewContent.title}
+          onCopy={handlePreviewCopy}
+          onDownload={handlePreviewDownload}
+          onClose={handlePreviewClose}
+        />
+      )}
+
+      {/* Download Dialog */}
+      {downloadContent && (
+        <DownloadDialog
+          open={showDownloadDialog}
+          onOpenChange={setShowDownloadDialog}
+          content={downloadContent.content}
+          title={downloadContent.title}
+        />
+      )}
+    </div>
+  );
+}

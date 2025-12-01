@@ -61,6 +61,59 @@ const getImageSourceType = (url: string): string => {
   return 'External';
 };
 
+// Utility function to detect video URLs
+const isVideoUrl = (url: string): boolean => {
+  const videoHosts = [
+    'youtube.com',
+    'youtu.be',
+    'vimeo.com',
+    'dailymotion.com',
+    'dai.ly',
+    'twitch.tv',
+    'vimeo.com'
+  ];
+  
+  return videoHosts.some(host => url.includes(host));
+};
+
+// Utility function to extract YouTube video ID and convert to embed URL
+const getYouTubeEmbedUrl = (url: string): string | null => {
+  // Handle various YouTube URL formats
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+    /youtube\.com\/watch\?.*v=([^&\n?#]+)/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return `https://www.youtube.com/embed/${match[1]}`;
+    }
+  }
+  
+  return null;
+};
+
+// Utility function to get Vimeo video ID and convert to embed URL
+const getVimeoEmbedUrl = (url: string): string | null => {
+  const match = url.match(/(?:vimeo\.com\/)(\d+)/);
+  if (match && match[1]) {
+    return `https://player.vimeo.com/video/${match[1]}`;
+  }
+  return null;
+};
+
+// Utility function to get video embed URL
+const getVideoEmbedUrl = (url: string): string | null => {
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    return getYouTubeEmbedUrl(url);
+  }
+  if (url.includes('vimeo.com')) {
+    return getVimeoEmbedUrl(url);
+  }
+  return null;
+};
+
 const Markdown: React.FC<MarkdownProps> = ({ content, className, sources = [] }) => {
   // Debug logging to see what content we're receiving
   console.log('Markdown component received content:', content);
@@ -70,21 +123,52 @@ const Markdown: React.FC<MarkdownProps> = ({ content, className, sources = [] })
   // Process content to convert URL: lines to proper markdown links
   cleanContent = cleanContent.replace(/\* URL: (https?:\/\/[^\s]+)/g, '* [$1]($1)');
 
-  // Process image URLs - detect and convert to markdown images
+  // Process standalone URLs (not already in markdown format) - detect and convert to markdown images or links
   // This will automatically detect and convert various image URLs to markdown images
-  cleanContent = cleanContent.replace(
-    /(https?:\/\/[^\s]+)/g,
-    (match) => {
-      console.log('Checking URL for image:', match);
-      if (isImageUrl(match)) {
-        const sourceType = getImageSourceType(match);
-        const altText = sourceType === 'Replicate' ? 'Generated Image' : 'Image';
-        console.log('Converting to image markdown:', `![${altText}](${match})`);
-        return `![${altText}](${match})`;
-      }
-      return match;
+  // Video URLs will be converted to markdown links and handled by the link component
+  const urlRegex = /(https?:\/\/[^\s\)]+)/g;
+  let lastIndex = 0;
+  const processedParts: string[] = [];
+  
+  let match;
+  while ((match = urlRegex.exec(cleanContent)) !== null) {
+    const url = match[0];
+    const matchIndex = match.index;
+    
+    // Add text before the URL
+    if (matchIndex > lastIndex) {
+      processedParts.push(cleanContent.substring(lastIndex, matchIndex));
     }
-  );
+    
+    // Check if URL is already part of a markdown link or image
+    const beforeUrl = cleanContent.substring(Math.max(0, matchIndex - 50), matchIndex);
+    const isInMarkdown = beforeUrl.includes('](') || beforeUrl.includes('![');
+    
+    if (!isInMarkdown) {
+      if (isImageUrl(url)) {
+        const sourceType = getImageSourceType(url);
+        const altText = sourceType === 'Replicate' ? 'Generated Image' : 'Image';
+        console.log('Converting to image markdown:', `![${altText}](${url})`);
+        processedParts.push(`![${altText}](${url})`);
+      } else if (isVideoUrl(url)) {
+        console.log('Detected video URL:', url);
+        processedParts.push(`[${url}](${url})`);
+      } else {
+        processedParts.push(url);
+      }
+    } else {
+      processedParts.push(url);
+    }
+    
+    lastIndex = matchIndex + url.length;
+  }
+  
+  // Add remaining text
+  if (lastIndex < cleanContent.length) {
+    processedParts.push(cleanContent.substring(lastIndex));
+  }
+  
+  cleanContent = processedParts.join('');
 
   // Remove standalone double asterisks
   cleanContent = cleanContent.replace(/^\*\*$/gm, '');
@@ -102,7 +186,43 @@ const Markdown: React.FC<MarkdownProps> = ({ content, className, sources = [] })
         rehypePlugins={[rehypeKatex]}
         components={{
           // Custom link component with Shadcn typography and text-primary styling
+          // Also handles video URLs by converting them to embeds
           a({ href, children, ...props }) {
+            // Check if this is a video URL
+            if (href && isVideoUrl(href)) {
+              const embedUrl = getVideoEmbedUrl(href);
+              if (embedUrl) {
+                return (
+                  <div className="my-6">
+                    <div className="relative w-full aspect-video rounded-lg border overflow-hidden bg-muted/50">
+                      <iframe
+                        src={embedUrl}
+                        title={typeof children === 'string' ? children : 'Video'}
+                        className="absolute inset-0 w-full h-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        loading="lazy"
+                      />
+                    </div>
+                    {typeof children === 'string' && children !== href && (
+                      <p className="text-sm text-muted-foreground mt-2 text-center">
+                        {children}
+                      </p>
+                    )}
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors mt-1 inline-block text-center w-full block"
+                    >
+                      Open in new tab
+                    </a>
+                  </div>
+                );
+              }
+            }
+            
+            // Regular link
             return (
               <a
                 href={href}

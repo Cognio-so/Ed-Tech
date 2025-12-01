@@ -38,7 +38,12 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>
 
-export function WebSearchForm() {
+interface WebSearchFormProps {
+  initialGrades: { id: string; name: string }[]
+  initialSubjects: { id: string; name: string }[]
+}
+
+export function WebSearchForm({ initialGrades, initialSubjects }: WebSearchFormProps) {
   const [generatedContent, setGeneratedContent] = React.useState("")
   const [isGenerating, setIsGenerating] = React.useState(false)
   const [showPreview, setShowPreview] = React.useState(false)
@@ -150,9 +155,23 @@ export function WebSearchForm() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Grade Level *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Grade 5" {...field} />
-                      </FormControl>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select grade" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {initialGrades.map((grade) => (
+                            <SelectItem key={grade.id} value={grade.name}>
+                              {grade.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -164,9 +183,23 @@ export function WebSearchForm() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Subject *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter subject" {...field} />
-                      </FormControl>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select subject" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {initialSubjects.map((subject) => (
+                            <SelectItem key={subject.id} value={subject.name}>
+                              {subject.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
