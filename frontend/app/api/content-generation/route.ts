@@ -36,28 +36,66 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Transform form data to match backend ContentGenerationRequest schema (snake_case)
-    const backendPayload = {
-      grade: formData.grade,
-      subject: formData.subject,
-      language: formData.language,
-      topic: formData.topic,
-      learning_objective: formData.learningObjective || "",
-      emotional_consideration: formData.emotionalConsideration || 3,
-      adaptive_learning: formData.adaptiveLearning || false,
-      include_assessment: formData.includeAssessment || false,
-      multimedia_suggestion: formData.multimediaSuggestion || false,
-      instruction_depth: formData.instructionDepth || "Standard",
-      number_of_sessions: formData.numberOfSessions || null,
-      duration_of_session: formData.durationOfSession || null,
+    // Validate required fields
+    if (!formData.grade || !formData.subject || !formData.language || !formData.topic || !formData.learningObjective) {
+      console.error("Missing required fields:", {
+        grade: !!formData.grade,
+        subject: !!formData.subject,
+        language: !!formData.language,
+        topic: !!formData.topic,
+        learningObjective: !!formData.learningObjective,
+      })
+      return NextResponse.json(
+        { error: "Missing required fields: grade, subject, language, topic, and learningObjective are required" },
+        { status: 400 }
+      )
+    }
+
+    // Map instruction depth from frontend values to backend enum values
+    // Frontend: "Basic", "Standard", "Advanced"
+    // Backend: "Simple", "Standard", "Enriched"
+    const instructionDepthMap: Record<string, string> = {
+      Basic: "Simple",
+      Standard: "Standard",
+      Advanced: "Enriched",
+    }
+
+    // Convert number_of_sessions from string to integer if provided
+    let numberOfSessions: number | null = null
+    if (formData.numberOfSessions && formData.numberOfSessions.trim() !== "") {
+      const parsed = parseInt(formData.numberOfSessions, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        numberOfSessions = parsed
+      }
     }
 
     // Generate a session ID (or use existing if available)
     const sessionId = `session_${session.user.id}_${Date.now()}`
     const teacherId = session.user.id
 
+    // Transform form data to match backend ContentGenerationRequest schema (snake_case)
+    const backendPayload = {
+      grade: formData.grade,
+      subject: formData.subject,
+      language: formData.language,
+      topic: formData.topic,
+      learning_objective: formData.learningObjective, // Required field - must not be empty
+      emotional_consideration: formData.emotionalConsideration || 3,
+      adaptive_learning: formData.adaptiveLearning || false,
+      include_assessment: formData.includeAssessment || false,
+      multimedia_suggestion: formData.multimediaSuggestion || false,
+      instruction_depth: instructionDepthMap[formData.instructionDepth] || "Standard",
+      number_of_sessions: numberOfSessions,
+      duration_of_session: formData.durationOfSession || null,
+    }
+
     // Build the backend endpoint URL
     const endpoint = `${BACKEND_URL}/api/teacher/${teacherId}/session/${sessionId}/content_generator/${backendType}?stream=true`
+
+    console.log("📤 Sending payload to backend:", {
+      endpoint: endpoint,
+      payload: backendPayload,
+    })
 
     // Call backend API with streaming
     const response = await fetch(endpoint, {
@@ -70,10 +108,16 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text()
+      console.error("❌ Backend error response:", {
+        status: response.status,
+        statusText: response.statusText,
+        errorText: errorText,
+      })
       let errorMessage = "Failed to generate content"
       try {
         const errorJson = JSON.parse(errorText)
         errorMessage = errorJson.detail || errorJson.error || errorMessage
+        console.error("❌ Parsed error:", errorJson)
       } catch {
         errorMessage = errorText || errorMessage
       }

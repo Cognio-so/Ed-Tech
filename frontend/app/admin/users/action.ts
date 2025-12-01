@@ -60,12 +60,10 @@ export async function updateUser(userId: string, formData: FormData) {
       (formData.get("subjectIds") as string) || "[]"
     ) as string[];
 
-    // Delete existing user subjects
     await prisma.userSubject.deleteMany({
       where: { userId },
     });
 
-    // Update user
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
@@ -148,3 +146,72 @@ export async function deleteSubject(subjectId: string) {
   }
 }
 
+const SUBJECTS = [
+  "mathematics",
+  "english",
+  "hindi",
+  "social_science",
+  "science",
+  "biology",
+  "physics",
+  "chemistry",
+  "computer_science",
+  "history",
+  "geography",
+  "sanskrit",
+  "physical_education",
+  "art",
+  "the_world_around_us",
+  "urdu",
+];
+
+const GRADES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+
+export async function initializeSubjectsAndGrades() {
+  try {
+    const [existingSubjectsCount, existingGradesCount] = await Promise.all([
+      prisma.subject.count(),
+      prisma.grade.count(),
+    ]);
+
+    const needsSubjectsInit = existingSubjectsCount < SUBJECTS.length;
+    const needsGradesInit = existingGradesCount < GRADES.length;
+
+    if (!needsSubjectsInit && !needsGradesInit) {
+      return { success: true, initialized: false };
+    }
+
+    const subjectPromises = needsSubjectsInit
+      ? SUBJECTS.map((subjectName) =>
+          prisma.subject.upsert({
+            where: { name: subjectName },
+            update: {},
+            create: {
+              id: crypto.randomUUID(),
+              name: subjectName,
+            },
+          })
+        )
+      : [];
+
+    const gradePromises = needsGradesInit
+      ? GRADES.map((gradeName) =>
+          prisma.grade.upsert({
+            where: { name: gradeName },
+            update: {},
+            create: {
+              id: crypto.randomUUID(),
+              name: gradeName,
+            },
+          })
+        )
+      : [];
+
+    await Promise.all([...subjectPromises, ...gradePromises]);
+
+    return { success: true, initialized: true };
+  } catch (error) {
+    console.error("Error initializing subjects and grades:", error);
+    return { success: false, initialized: false };
+  }
+}

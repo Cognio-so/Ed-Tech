@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { UserWithDetails } from "@/data/get-all-users";
+import { toast } from "sonner";
 
 interface EditUserDialogProps {
   user: UserWithDetails | null;
@@ -80,11 +81,11 @@ export function EditUserDialog({
         throw new Error("Failed to update user");
       }
 
-      alert("User updated successfully");
+      toast.success("User updated successfully");
       onSuccess();
       onOpenChange(false);
     } catch (error) {
-      alert("Failed to update user");
+      toast.error("Failed to update user");
       console.error("Error updating user:", error);
     } finally {
       setIsSubmitting(false);

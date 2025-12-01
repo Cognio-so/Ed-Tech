@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2 } from "lucide-react";
 import { createGrade, deleteGrade } from "../action";
+import { toast } from "sonner";
 
 interface Grade {
   id: string;
@@ -53,7 +54,7 @@ export function GradesTab({ initialGrades }: GradesTabProps) {
           setIsDialogOpen(false);
         }
       } catch (error) {
-        alert("Failed to create grade");
+        toast.error("Failed to create grade");
         console.error(error);
       }
     });
@@ -67,7 +68,7 @@ export function GradesTab({ initialGrades }: GradesTabProps) {
         await deleteGrade(id);
         setGrades(grades.filter((g) => g.id !== id));
       } catch (error) {
-        alert("Failed to delete grade");
+        toast.error("Failed to delete grade");
         console.error(error);
       }
     });

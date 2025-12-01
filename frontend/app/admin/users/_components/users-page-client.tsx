@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { DataTableSkeleton } from "@/app/admin/_components/loading-skeletons";
 import { EditUserDialog } from "./edit-user-dialog";
+import { toast } from "sonner";
 
 interface UsersPageClientProps {
   initialUsers: UserWithDetails[];
@@ -109,7 +110,7 @@ export function UsersPageClient({
         throw new Error("Failed to delete user");
       }
 
-      alert("User deleted successfully");
+      toast.success("User deleted successfully");
       setAllUsers(allUsers.filter((u) => u.id !== user.id));
       // Refetch to ensure consistency
       const deleteResponse = await fetch("/api/user");
@@ -118,7 +119,7 @@ export function UsersPageClient({
         setAllUsers(data);
       }
     } catch (error) {
-      alert("Failed to delete user");
+      toast.error("Failed to delete user");
       console.error("Error deleting user:", error);
     } finally {
       setIsDeleting(false);

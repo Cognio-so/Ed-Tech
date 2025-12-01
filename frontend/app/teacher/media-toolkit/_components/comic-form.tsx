@@ -15,6 +15,13 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Card, CardContent } from "@/components/ui/card"
 import { Loader2, BookOpen } from "lucide-react"
 import { toast } from "sonner"
@@ -37,7 +44,12 @@ interface ComicPanel {
   prompt: string
 }
 
-export function ComicForm() {
+interface ComicFormProps {
+  initialGrades: { id: string; name: string }[]
+  initialSubjects: { id: string; name: string }[]
+}
+
+export function ComicForm({ initialGrades, initialSubjects }: ComicFormProps) {
   const [generatedContent, setGeneratedContent] = React.useState<{
     story?: string
     panels?: ComicPanel[]
@@ -235,9 +247,23 @@ export function ComicForm() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Grade Level *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Grade 5 or 5" {...field} />
-                      </FormControl>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select grade" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {initialGrades.map((grade) => (
+                            <SelectItem key={grade.id} value={grade.name}>
+                              {grade.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}

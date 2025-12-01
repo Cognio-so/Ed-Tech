@@ -8,7 +8,12 @@ import { WebSearchForm } from "./web-search-form"
 import { ComicForm } from "./comic-form"
 import { VideoForm } from "./video-form"
 
-export function ContentTabs() {
+interface ContentTabsProps {
+  initialGrades: { id: string; name: string }[]
+  initialSubjects: { id: string; name: string }[]
+}
+
+export function ContentTabs({ initialGrades, initialSubjects }: ContentTabsProps) {
   const [activeTab, setActiveTab] = React.useState("slide")
 
   return (
@@ -26,15 +31,15 @@ export function ContentTabs() {
       </TabsContent>
       
       <TabsContent value="image" className="mt-6">
-        <ImageForm />
+        <ImageForm initialGrades={initialGrades} initialSubjects={initialSubjects} />
       </TabsContent>
       
       <TabsContent value="web" className="mt-6">
-        <WebSearchForm />
+        <WebSearchForm initialGrades={initialGrades} initialSubjects={initialSubjects} />
       </TabsContent>
       
       <TabsContent value="comic" className="mt-6">
-        <ComicForm />
+        <ComicForm initialGrades={initialGrades} initialSubjects={initialSubjects} />
       </TabsContent>
       
       <TabsContent value="video" className="mt-6">

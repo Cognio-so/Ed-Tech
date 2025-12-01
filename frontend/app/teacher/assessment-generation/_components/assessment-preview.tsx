@@ -3,14 +3,15 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Response } from "@/components/ui/response"
-import { Save, Copy, Download } from "lucide-react"
+import Markdown from "@/components/ui/markdown"
+import { Save, Copy, Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { DownloadDialog } from "@/components/ui/download-dialog"
 
 interface AssessmentPreviewProps {
   content: string
   topic: string
-  onSave: () => void
+  onSave: () => void | Promise<void>
   onClose: () => void
 }
 
@@ -20,6 +21,20 @@ export function AssessmentPreview({
   onSave,
   onClose,
 }: AssessmentPreviewProps) {
+  const [showDownloadDialog, setShowDownloadDialog] = React.useState(false)
+  const [isSaving, setIsSaving] = React.useState(false)
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      await onSave()
+    } catch (error) {
+      console.error("Error saving:", error)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const handleCopy = () => {
     navigator.clipboard.writeText(content)
     toast.success("Assessment copied to clipboard")
@@ -30,51 +45,12 @@ export function AssessmentPreview({
       toast.error("No content to download")
       return
     }
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>${topic || "Assessment"}</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              max-width: 800px;
-              margin: 0 auto;
-              padding: 20px;
-              line-height: 1.6;
-            }
-            h1, h2, h3 {
-              color: #333;
-            }
-            pre {
-              white-space: pre-wrap;
-              word-wrap: break-word;
-            }
-          </style>
-        </head>
-        <body>
-          <pre>${content.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
-        </body>
-      </html>
-    `
-
-    const blob = new Blob([htmlContent], { type: "text/html" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${topic || "assessment"}.html`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    toast.success("Assessment downloaded")
+    setShowDownloadDialog(true)
   }
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="!w-[1200px] !max-w-[1200px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>Assessment Preview</span>
@@ -98,18 +74,36 @@ export function AssessmentPreview({
               <Button
                 variant="default"
                 size="sm"
-                onClick={onSave}
+                onClick={handleSave}
+                disabled={isSaving}
               >
-                <Save className="mr-2 h-4 w-4" />
-                Save
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Save
+                  </>
+                )}
               </Button>
             </div>
           </DialogTitle>
         </DialogHeader>
         <div className="mt-4 border rounded-lg p-6 bg-muted/50 max-h-[70vh] overflow-y-auto">
-          <Response content={content} />
+          <Markdown content={content} />
         </div>
       </DialogContent>
+
+      {/* Download Dialog */}
+      <DownloadDialog
+        open={showDownloadDialog}
+        onOpenChange={setShowDownloadDialog}
+        content={content}
+        title={topic || "Assessment"}
+      />
     </Dialog>
   )
 }
