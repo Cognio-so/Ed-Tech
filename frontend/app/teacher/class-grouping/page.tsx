@@ -9,7 +9,9 @@ export default async function ClassGroupingPage() {
   return (
     <div className="container mx-auto py-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-primary">Class Grouping</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-primary">
+          Class Grouping
+        </h1>
         <p className="text-muted-foreground mt-2">
           Manage and view your students, their performance, and feedback
         </p>

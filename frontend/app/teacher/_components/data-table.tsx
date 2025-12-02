@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
   closestCenter,
   DndContext,
@@ -11,15 +11,15 @@ import {
   useSensors,
   type DragEndEvent,
   type UniqueIdentifier,
-} from "@dnd-kit/core"
-import { restrictToVerticalAxis } from "@dnd-kit/modifiers"
+} from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   arrayMove,
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   IconChevronDown,
   IconChevronLeft,
@@ -30,9 +30,8 @@ import {
   IconDotsVertical,
   IconGripVertical,
   IconLayoutColumns,
-  IconLoader,
   IconPlus,
-} from "@tabler/icons-react"
+} from "@tabler/icons-react";
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -47,13 +46,12 @@ import {
   SortingState,
   useReactTable,
   VisibilityState,
-} from "@tanstack/react-table"
-import { toast } from "sonner"
-import { z } from "zod"
+} from "@tanstack/react-table";
+import { z } from "zod";
 
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -61,16 +59,16 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -78,14 +76,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs"
-import type { LibraryContent } from "@/data/get-library-content"
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { LibraryContent } from "@/data/get-library-content";
 
 const schema = z.object({
   id: z.string(),
@@ -96,13 +89,12 @@ const schema = z.object({
   subject: z.string().nullable().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
-})
+});
 
-// Create a separate component for the drag handle
 function DragHandle({ id }: { id: string }) {
   const { attributes, listeners } = useSortable({
     id,
-  })
+  });
 
   return (
     <Button
@@ -115,20 +107,20 @@ function DragHandle({ id }: { id: string }) {
       <IconGripVertical className="text-muted-foreground size-3" />
       <span className="sr-only">Drag to reorder</span>
     </Button>
-  )
+  );
 }
 
 function getTypeLabel(type: string, contentType: string): string {
-  if (type === 'content-generation') {
-    return contentType.charAt(0).toUpperCase() + contentType.slice(1)
+  if (type === "content-generation") {
+    return contentType.charAt(0).toUpperCase() + contentType.slice(1);
   }
-  if (type === 'assessment') {
-    return 'Assessment'
+  if (type === "assessment") {
+    return "Assessment";
   }
-  if (type === 'media-toolkit') {
-    return contentType.charAt(0).toUpperCase() + contentType.slice(1)
+  if (type === "media-toolkit") {
+    return contentType.charAt(0).toUpperCase() + contentType.slice(1);
   }
-  return type
+  return type;
 }
 
 function getStatusBadge(type: string) {
@@ -137,7 +129,7 @@ function getStatusBadge(type: string) {
       <IconCircleCheckFilled className="fill-green-500 dark:fill-green-400" />
       Active
     </Badge>
-  )
+  );
 }
 
 const columns: ColumnDef<z.infer<typeof schema>>[] = [
@@ -182,10 +174,10 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
           <div className="text-sm text-muted-foreground truncate">
             {row.original.grade && row.original.subject
               ? `${row.original.grade} • ${row.original.subject}`
-              : row.original.grade || row.original.subject || 'General'}
+              : row.original.grade || row.original.subject || "General"}
           </div>
         </div>
-      )
+      );
     },
     enableHiding: false,
   },
@@ -209,7 +201,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     accessorKey: "createdAt",
     header: "Created",
     cell: ({ row }) => {
-      const date = new Date(row.original.createdAt)
+      const date = new Date(row.original.createdAt);
       return (
         <div className="text-sm text-muted-foreground">
           {date.toLocaleDateString("en-US", {
@@ -218,14 +210,14 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
             year: "numeric",
           })}
         </div>
-      )
+      );
     },
   },
   {
     accessorKey: "updatedAt",
     header: "Last Updated",
     cell: ({ row }) => {
-      const date = new Date(row.original.updatedAt)
+      const date = new Date(row.original.updatedAt);
       return (
         <div className="text-sm text-muted-foreground">
           {date.toLocaleDateString("en-US", {
@@ -234,7 +226,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
             year: "numeric",
           })}
         </div>
-      )
+      );
     },
   },
   {
@@ -258,12 +250,12 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
       </DropdownMenu>
     ),
   },
-]
+];
 
 function DraggableRow({ row }: { row: Row<z.infer<typeof schema>> }) {
   const { transform, transition, setNodeRef, isDragging } = useSortable({
     id: row.original.id,
-  })
+  });
 
   return (
     <TableRow
@@ -282,7 +274,7 @@ function DraggableRow({ row }: { row: Row<z.infer<typeof schema>> }) {
         </TableCell>
       ))}
     </TableRow>
-  )
+  );
 }
 
 export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
@@ -297,32 +289,32 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
       subject: item.subject || null,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
-    }))
-  }, [initialData])
+    }));
+  }, [initialData]);
 
-  const [data, setData] = React.useState(() => transformedData)
-  const [rowSelection, setRowSelection] = React.useState({})
+  const [data, setData] = React.useState(() => transformedData);
+  const [rowSelection, setRowSelection] = React.useState({});
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({})
+    React.useState<VisibilityState>({});
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
-  )
-  const [sorting, setSorting] = React.useState<SortingState>([])
+  );
+  const [sorting, setSorting] = React.useState<SortingState>([]);
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
     pageSize: 10,
-  })
-  const sortableId = React.useId()
+  });
+  const sortableId = React.useId();
   const sensors = useSensors(
     useSensor(MouseSensor, {}),
     useSensor(TouchSensor, {}),
     useSensor(KeyboardSensor, {})
-  )
+  );
 
   const dataIds = React.useMemo<UniqueIdentifier[]>(
     () => data?.map(({ id }) => id) || [],
     [data]
-  )
+  );
 
   const table = useReactTable({
     data,
@@ -347,24 +339,21 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
     getSortedRowModel: getSortedRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
-  })
+  });
 
   function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
+    const { active, over } = event;
     if (active && over && active.id !== over.id) {
       setData((data) => {
-        const oldIndex = dataIds.indexOf(active.id)
-        const newIndex = dataIds.indexOf(over.id)
-        return arrayMove(data, oldIndex, newIndex)
-      })
+        const oldIndex = dataIds.indexOf(active.id);
+        const newIndex = dataIds.indexOf(over.id);
+        return arrayMove(data, oldIndex, newIndex);
+      });
     }
   }
 
   return (
-    <Tabs
-      defaultValue="all"
-      className="w-full flex-col justify-start gap-6"
-    >
+    <Tabs defaultValue="all" className="w-full flex-col justify-start gap-6">
       <div className="flex items-center justify-between px-4 lg:px-6">
         <Label htmlFor="view-selector" className="sr-only">
           View
@@ -387,13 +376,25 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
         <TabsList className="**:data-[slot=badge]:bg-muted-foreground/30 hidden **:data-[slot=badge]:size-5 **:data-[slot=badge]:rounded-full **:data-[slot=badge]:px-1 @4xl/main:flex">
           <TabsTrigger value="all">All Content</TabsTrigger>
           <TabsTrigger value="content">
-            Content Generation <Badge variant="secondary">{transformedData.filter(d => d.type === 'content-generation').length}</Badge>
+            Content Generation{" "}
+            <Badge variant="secondary">
+              {
+                transformedData.filter((d) => d.type === "content-generation")
+                  .length
+              }
+            </Badge>
           </TabsTrigger>
           <TabsTrigger value="assessment">
-            Assessments <Badge variant="secondary">{transformedData.filter(d => d.type === 'assessment').length}</Badge>
+            Assessments{" "}
+            <Badge variant="secondary">
+              {transformedData.filter((d) => d.type === "assessment").length}
+            </Badge>
           </TabsTrigger>
           <TabsTrigger value="media">
-            Media Toolkit <Badge variant="secondary">{transformedData.filter(d => d.type === 'media-toolkit').length}</Badge>
+            Media Toolkit{" "}
+            <Badge variant="secondary">
+              {transformedData.filter((d) => d.type === "media-toolkit").length}
+            </Badge>
           </TabsTrigger>
         </TabsList>
         <div className="flex items-center gap-2">
@@ -422,7 +423,7 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
                     >
                       {column.id}
                     </DropdownMenuCheckboxItem>
-                  )
+                  );
                 })}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -455,7 +456,7 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
                                 header.getContext()
                               )}
                         </TableHead>
-                      )
+                      );
                     })}
                   </TableRow>
                 ))}
@@ -494,7 +495,7 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
                 <Select
                   value={`${table.getState().pagination.pageSize}`}
                   onValueChange={(value) => {
-                    table.setPageSize(Number(value))
+                    table.setPageSize(Number(value));
                   }}
                 >
                   <SelectTrigger className="h-8 w-[70px]">
@@ -573,7 +574,7 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
                               header.getContext()
                             )}
                       </TableHead>
-                    )
+                    );
                   })}
                 </TableRow>
               ))}
@@ -581,11 +582,14 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
             <TableBody>
               {table
                 .getRowModel()
-                .rows.filter((row) => row.original.type === 'content-generation')
-                ?.length ? (
+                .rows.filter(
+                  (row) => row.original.type === "content-generation"
+                )?.length ? (
                 table
                   .getRowModel()
-                  .rows.filter((row) => row.original.type === 'content-generation')
+                  .rows.filter(
+                    (row) => row.original.type === "content-generation"
+                  )
                   .map((row) => (
                     <TableRow
                       key={row.id}
@@ -631,7 +635,7 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
                               header.getContext()
                             )}
                       </TableHead>
-                    )
+                    );
                   })}
                 </TableRow>
               ))}
@@ -639,11 +643,11 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
             <TableBody>
               {table
                 .getRowModel()
-                .rows.filter((row) => row.original.type === 'assessment')
+                .rows.filter((row) => row.original.type === "assessment")
                 ?.length ? (
                 table
                   .getRowModel()
-                  .rows.filter((row) => row.original.type === 'assessment')
+                  .rows.filter((row) => row.original.type === "assessment")
                   .map((row) => (
                     <TableRow
                       key={row.id}
@@ -689,7 +693,7 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
                               header.getContext()
                             )}
                       </TableHead>
-                    )
+                    );
                   })}
                 </TableRow>
               ))}
@@ -697,11 +701,11 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
             <TableBody>
               {table
                 .getRowModel()
-                .rows.filter((row) => row.original.type === 'media-toolkit')
+                .rows.filter((row) => row.original.type === "media-toolkit")
                 ?.length ? (
                 table
                   .getRowModel()
-                  .rows.filter((row) => row.original.type === 'media-toolkit')
+                  .rows.filter((row) => row.original.type === "media-toolkit")
                   .map((row) => (
                     <TableRow
                       key={row.id}
@@ -732,6 +736,5 @@ export function DataTable({ data: initialData }: { data: LibraryContent[] }) {
         </div>
       </TabsContent>
     </Tabs>
-  )
+  );
 }
-

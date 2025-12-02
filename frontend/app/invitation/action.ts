@@ -57,13 +57,11 @@ export async function acceptInvitation(token: string) {
       };
     }
 
-    // Check if user already exists
     const existingUser = await prisma.user.findUnique({
       where: { email: invitation.email },
     });
 
     if (existingUser) {
-      // Update invitation status even if user exists
       await prisma.invitation.update({
         where: { id: invitation.id },
         data: { status: "accepted" },
@@ -75,7 +73,6 @@ export async function acceptInvitation(token: string) {
       };
     }
 
-    // Create the user account
     const userId = randomUUID();
     await prisma.user.create({
       data: {
@@ -87,7 +84,6 @@ export async function acceptInvitation(token: string) {
       },
     });
 
-    // Update invitation status
     await prisma.invitation.update({
       where: { id: invitation.id },
       data: { status: "accepted" },
@@ -133,7 +129,6 @@ export async function rejectInvitation(token: string) {
       };
     }
 
-    // Update invitation status
     await prisma.invitation.update({
       where: { id: invitation.id },
       data: { status: "rejected" },
@@ -151,4 +146,3 @@ export async function rejectInvitation(token: string) {
     };
   }
 }
-

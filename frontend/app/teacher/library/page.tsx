@@ -12,7 +12,6 @@ export const metadata = {
 async function LibraryContent() {
   const content = await getLibraryContent();
 
-  // Calculate summary stats
   const totalItems = content.length;
   const lastUpdated = content.length > 0 ? content[0].updatedAt : new Date();
 

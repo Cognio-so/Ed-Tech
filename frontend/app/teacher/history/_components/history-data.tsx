@@ -1,9 +1,9 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useCallback } from "react"
-import { Search } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { HistoryTable } from "./history-table"
+import { useState, useEffect, useCallback } from "react";
+import { Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { HistoryTable } from "./history-table";
 import {
   Pagination,
   PaginationContent,
@@ -12,23 +12,23 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "@/components/ui/pagination"
-import { useRouter, useSearchParams } from "next/navigation"
+} from "@/components/ui/pagination";
+import { useRouter, useSearchParams } from "next/navigation";
 
 interface Conversation {
-  id: string
-  title: string
-  messages: string
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  title: string;
+  messages: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface HistoryDataProps {
-  conversations: Conversation[]
-  total: number
-  totalPages: number
-  currentPage: number
-  searchQuery?: string
+  conversations: Conversation[];
+  total: number;
+  totalPages: number;
+  currentPage: number;
+  searchQuery?: string;
 }
 
 export function HistoryData({
@@ -38,60 +38,60 @@ export function HistoryData({
   currentPage,
   searchQuery: initialSearchQuery,
 }: HistoryDataProps) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const [searchQuery, setSearchQuery] = useState(initialSearchQuery || "")
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery || "");
 
   useEffect(() => {
-    setSearchQuery(initialSearchQuery || "")
-  }, [initialSearchQuery])
+    setSearchQuery(initialSearchQuery || "");
+  }, [initialSearchQuery]);
 
   const handleSearch = useCallback(
     (value: string) => {
-      setSearchQuery(value)
-      const params = new URLSearchParams(searchParams.toString())
+      setSearchQuery(value);
+      const params = new URLSearchParams(searchParams.toString());
       if (value.trim()) {
-        params.set("search", value.trim())
+        params.set("search", value.trim());
       } else {
-        params.delete("search")
+        params.delete("search");
       }
-      params.set("page", "1")
-      router.push(`?${params.toString()}`)
+      params.set("page", "1");
+      router.push(`?${params.toString()}`);
     },
     [router, searchParams]
-  )
+  );
 
   const debouncedSearch = useCallback(
     (() => {
-      let timeoutId: NodeJS.Timeout
+      let timeoutId: NodeJS.Timeout;
       return (value: string) => {
-        clearTimeout(timeoutId)
+        clearTimeout(timeoutId);
         timeoutId = setTimeout(() => {
-          handleSearch(value)
-        }, 300)
-      }
+          handleSearch(value);
+        }, 300);
+      };
     })(),
     [handleSearch]
-  )
+  );
 
   const handlePageChange = (page: number) => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set("page", page.toString())
-    router.push(`?${params.toString()}`)
-  }
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", page.toString());
+    router.push(`?${params.toString()}`);
+  };
 
   const handleDelete = () => {
-    router.refresh()
-  }
+    router.refresh();
+  };
 
   const renderPaginationItems = () => {
-    const items = []
-    const maxVisible = 5
-    let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2))
-    let endPage = Math.min(totalPages, startPage + maxVisible - 1)
+    const items = [];
+    const maxVisible = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
 
     if (endPage - startPage < maxVisible - 1) {
-      startPage = Math.max(1, endPage - maxVisible + 1)
+      startPage = Math.max(1, endPage - maxVisible + 1);
     }
 
     if (startPage > 1) {
@@ -99,13 +99,13 @@ export function HistoryData({
         <PaginationItem key={1}>
           <PaginationLink onClick={() => handlePageChange(1)}>1</PaginationLink>
         </PaginationItem>
-      )
+      );
       if (startPage > 2) {
         items.push(
           <PaginationItem key="ellipsis-start">
             <PaginationEllipsis />
           </PaginationItem>
-        )
+        );
       }
     }
 
@@ -119,7 +119,7 @@ export function HistoryData({
             {i}
           </PaginationLink>
         </PaginationItem>
-      )
+      );
     }
 
     if (endPage < totalPages) {
@@ -128,7 +128,7 @@ export function HistoryData({
           <PaginationItem key="ellipsis-end">
             <PaginationEllipsis />
           </PaginationItem>
-        )
+        );
       }
       items.push(
         <PaginationItem key={totalPages}>
@@ -136,11 +136,11 @@ export function HistoryData({
             {totalPages}
           </PaginationLink>
         </PaginationItem>
-      )
+      );
     }
 
-    return items
-  }
+    return items;
+  };
 
   return (
     <div className="space-y-4">
@@ -151,8 +151,8 @@ export function HistoryData({
           placeholder="Search conversations, messages, or keywords..."
           value={searchQuery}
           onChange={(e) => {
-            setSearchQuery(e.target.value)
-            debouncedSearch(e.target.value)
+            setSearchQuery(e.target.value);
+            debouncedSearch(e.target.value);
           }}
           className="pl-10 w-full"
         />
@@ -167,7 +167,9 @@ export function HistoryData({
               <PaginationPrevious
                 onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
                 className={
-                  currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"
+                  currentPage === 1
+                    ? "pointer-events-none opacity-50"
+                    : "cursor-pointer"
                 }
               />
             </PaginationItem>
@@ -188,5 +190,5 @@ export function HistoryData({
         </Pagination>
       )}
     </div>
-  )
+  );
 }

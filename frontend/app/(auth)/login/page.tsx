@@ -12,9 +12,11 @@ export default async function LoginPage() {
     const userRole = session.user.role;
 
     if (userRole === "admin") {
-      redirect("/admin/dashboard");
+      redirect("/admin");
+    } else if (userRole === "teacher") {
+      redirect("/teacher");
     } else if (userRole === "student") {
-      redirect("/dashboard");
+      redirect("/student");
     }
   }
 

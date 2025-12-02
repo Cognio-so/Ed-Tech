@@ -1,11 +1,12 @@
 import { TeacherSidebar } from "@/components/sidebar/teacher-sidebar";
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { requireTeacher } from "@/data/get-teacher";
 
-export default async function TeacherLayout({ children }: { children: React.ReactNode }) {
+export default async function TeacherLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   await requireTeacher();
 
   return (

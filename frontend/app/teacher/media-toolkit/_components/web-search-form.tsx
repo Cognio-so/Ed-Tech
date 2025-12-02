@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import * as React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Form,
   FormControl,
@@ -13,19 +13,19 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form"
+} from "@/components/ui/form";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Card, CardContent } from "@/components/ui/card"
-import { Loader2, Search } from "lucide-react"
-import { toast } from "sonner"
-import { saveMediaContent } from "../action"
-import { WebSearchPreview } from "@/components/ui/web-search-preview"
+} from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import { Loader2, Search } from "lucide-react";
+import { toast } from "sonner";
+import { saveMediaContent } from "../action";
+import { WebSearchPreview } from "@/components/ui/web-search-preview";
 
 const formSchema = z.object({
   topic: z.string().min(1, "Topic is required"),
@@ -34,19 +34,22 @@ const formSchema = z.object({
   contentType: z.string().min(1, "Content type is required"),
   language: z.string().min(1, "Language is required"),
   comprehension: z.string().min(1, "Comprehension level is required"),
-})
+});
 
-type FormValues = z.infer<typeof formSchema>
+type FormValues = z.infer<typeof formSchema>;
 
 interface WebSearchFormProps {
-  initialGrades: { id: string; name: string }[]
-  initialSubjects: { id: string; name: string }[]
+  initialGrades: { id: string; name: string }[];
+  initialSubjects: { id: string; name: string }[];
 }
 
-export function WebSearchForm({ initialGrades, initialSubjects }: WebSearchFormProps) {
-  const [generatedContent, setGeneratedContent] = React.useState("")
-  const [isGenerating, setIsGenerating] = React.useState(false)
-  const [showPreview, setShowPreview] = React.useState(false)
+export function WebSearchForm({
+  initialGrades,
+  initialSubjects,
+}: WebSearchFormProps) {
+  const [generatedContent, setGeneratedContent] = React.useState("");
+  const [isGenerating, setIsGenerating] = React.useState(false);
+  const [showPreview, setShowPreview] = React.useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -58,11 +61,11 @@ export function WebSearchForm({ initialGrades, initialSubjects }: WebSearchFormP
       language: "English",
       comprehension: "intermediate",
     },
-  })
+  });
 
   const generateWebSearch = async (values: FormValues) => {
-    setIsGenerating(true)
-    setGeneratedContent("")
+    setIsGenerating(true);
+    setGeneratedContent("");
 
     try {
       const response = await fetch("/api/media-toolkit/web", {
@@ -71,69 +74,76 @@ export function WebSearchForm({ initialGrades, initialSubjects }: WebSearchFormP
           "Content-Type": "application/json",
         },
         body: JSON.stringify(values),
-      })
+      });
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to generate web search content")
+        const error = await response.json();
+        throw new Error(error.error || "Failed to generate web search content");
       }
 
-      const reader = response.body?.getReader()
+      const reader = response.body?.getReader();
       if (!reader) {
-        throw new Error("No response body")
+        throw new Error("No response body");
       }
 
-      const decoder = new TextDecoder()
-      let accumulatedContent = ""
+      const decoder = new TextDecoder();
+      let accumulatedContent = "";
 
       while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+        const { done, value } = await reader.read();
+        if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true })
-        accumulatedContent += chunk
-        setGeneratedContent(accumulatedContent)
+        const chunk = decoder.decode(value, { stream: true });
+        accumulatedContent += chunk;
+        setGeneratedContent(accumulatedContent);
       }
-      
-      setShowPreview(true)
+
+      setShowPreview(true);
     } catch (error) {
-      console.error("Error generating web search:", error)
-      toast.error(error instanceof Error ? error.message : "Failed to generate web search content")
+      console.error("Error generating web search:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to generate web search content"
+      );
     } finally {
-      setIsGenerating(false)
+      setIsGenerating(false);
     }
-  }
+  };
 
   const handleSave = async () => {
     if (!generatedContent) {
-      toast.error("No content to save")
-      return
+      toast.error("No content to save");
+      return;
     }
 
-    const values = form.getValues()
-    const formData = new FormData()
-    formData.append("contentType", "web")
-    formData.append("title", `Web Search - ${values.topic}`)
-    formData.append("content", generatedContent)
-    formData.append("metadata", JSON.stringify(values))
+    const values = form.getValues();
+    const formData = new FormData();
+    formData.append("contentType", "web");
+    formData.append("title", `Web Search - ${values.topic}`);
+    formData.append("content", generatedContent);
+    formData.append("metadata", JSON.stringify(values));
 
     try {
-      await saveMediaContent(formData)
-      toast.success("Web search content saved successfully")
-      setShowPreview(false)
-      setGeneratedContent("")
-      form.reset()
+      await saveMediaContent(formData);
+      toast.success("Web search content saved successfully");
+      setShowPreview(false);
+      setGeneratedContent("");
+      form.reset();
     } catch (error) {
-      toast.error("Failed to save web search content")
+      toast.error("Failed to save web search content");
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
       <Card>
         <CardContent className="p-6">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(generateWebSearch)} className="space-y-6">
+            <form
+              onSubmit={form.handleSubmit(generateWebSearch)}
+              className="space-y-6"
+            >
               <FormField
                 control={form.control}
                 name="topic"
@@ -212,7 +222,10 @@ export function WebSearchForm({ initialGrades, initialSubjects }: WebSearchFormP
                     <FormItem>
                       <FormLabel>Content Type *</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., articles, videos" {...field} />
+                        <Input
+                          placeholder="e.g., articles, videos"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -250,7 +263,9 @@ export function WebSearchForm({ initialGrades, initialSubjects }: WebSearchFormP
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="beginner">Beginner</SelectItem>
-                          <SelectItem value="intermediate">Intermediate</SelectItem>
+                          <SelectItem value="intermediate">
+                            Intermediate
+                          </SelectItem>
                           <SelectItem value="advanced">Advanced</SelectItem>
                         </SelectContent>
                       </Select>
@@ -265,17 +280,14 @@ export function WebSearchForm({ initialGrades, initialSubjects }: WebSearchFormP
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    form.reset()
-                    setGeneratedContent("")
-                    setShowPreview(false)
+                    form.reset();
+                    setGeneratedContent("");
+                    setShowPreview(false);
                   }}
                 >
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={isGenerating}
-                >
+                <Button type="submit" disabled={isGenerating}>
                   {isGenerating ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -303,6 +315,5 @@ export function WebSearchForm({ initialGrades, initialSubjects }: WebSearchFormP
         />
       )}
     </div>
-  )
+  );
 }
-

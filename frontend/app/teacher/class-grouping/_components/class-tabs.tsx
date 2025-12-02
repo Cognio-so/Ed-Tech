@@ -36,4 +36,3 @@ export function ClassTabs({ students }: ClassTabsProps) {
     </Tabs>
   );
 }
-

@@ -1,10 +1,23 @@
 "use client";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { StudentData } from "@/data/get-student-data";
-import { User, Mail, GraduationCap, Trophy, AlertCircle, MessageSquare } from "lucide-react";
+import {
+  User,
+  Mail,
+  GraduationCap,
+  Trophy,
+  AlertCircle,
+  MessageSquare,
+} from "lucide-react";
 
 interface StudentListProps {
   students: StudentData[];
@@ -30,7 +43,8 @@ export function StudentList({ students }: StudentListProps) {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Students</h2>
           <p className="text-muted-foreground">
-            {students.length} {students.length === 1 ? "student" : "students"} in your class
+            {students.length} {students.length === 1 ? "student" : "students"}{" "}
+            in your class
           </p>
         </div>
       </div>
@@ -41,7 +55,10 @@ export function StudentList({ students }: StudentListProps) {
             <CardHeader>
               <div className="flex items-center gap-4">
                 <Avatar className="h-12 w-12">
-                  <AvatarImage src={student.image || undefined} alt={student.name} />
+                  <AvatarImage
+                    src={student.image || undefined}
+                    alt={student.name}
+                  />
                   <AvatarFallback>
                     {student.name
                       .split(" ")
@@ -52,7 +69,9 @@ export function StudentList({ students }: StudentListProps) {
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <CardTitle className="text-lg truncate">{student.name}</CardTitle>
+                  <CardTitle className="text-lg truncate">
+                    {student.name}
+                  </CardTitle>
                   <CardDescription className="flex items-center gap-1 mt-1">
                     <Mail className="h-3 w-3" />
                     <span className="truncate">{student.email}</span>
@@ -73,8 +92,12 @@ export function StudentList({ students }: StudentListProps) {
                 <div className="flex items-start gap-2 text-sm">
                   <Trophy className="h-4 w-4 text-yellow-500 mt-0.5" />
                   <div className="flex-1">
-                    <span className="text-muted-foreground">Achievements: </span>
-                    <span className="text-foreground">{student.achievements}</span>
+                    <span className="text-muted-foreground">
+                      Achievements:{" "}
+                    </span>
+                    <span className="text-foreground">
+                      {student.achievements}
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -116,4 +139,3 @@ export function StudentList({ students }: StudentListProps) {
     </div>
   );
 }
-

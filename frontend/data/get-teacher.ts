@@ -92,7 +92,6 @@ export async function getTeacherData(): Promise<TeacherData | null> {
       subjects,
     };
   } catch (error) {
-    console.error("Error fetching teacher data:", error);
     return null;
   }
 }

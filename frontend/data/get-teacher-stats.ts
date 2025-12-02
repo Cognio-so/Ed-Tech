@@ -78,7 +78,8 @@ export async function getTeacherStats(): Promise<TeacherStats | null> {
     return {
       name: teacher.name,
       grade: teacher.grade?.name || null,
-      grades: grades.length > 0 ? grades : teacher.grade ? [teacher.grade.name] : [],
+      grades:
+        grades.length > 0 ? grades : teacher.grade ? [teacher.grade.name] : [],
       subjects,
       totalContent,
       totalAssessments: assessments.length,
@@ -94,7 +95,6 @@ export async function getTeacherStats(): Promise<TeacherStats | null> {
       })),
     };
   } catch (error) {
-    console.error("Error fetching teacher stats:", error);
     return null;
   }
 }

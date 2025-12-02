@@ -1,28 +1,28 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { MessageSquarePlus } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import * as React from "react";
+import { MessageSquarePlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { ThemeToggle } from "@/components/ui/theme-toggle"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { authClient } from "@/lib/auth-client"
-import { toast } from "sonner"
+} from "@/components/ui/select";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { authClient } from "@/lib/auth-client";
+import { toast } from "sonner";
 
 interface ChatHeaderProps {
-  onNewChat: () => void
-  grades: Array<{ id: string; name: string }>
-  subjects: Array<{ id: string; name: string }>
-  selectedGrades?: string[]
-  selectedSubject?: string
-  onGradeChange?: (grades: string[]) => void
-  onSubjectChange?: (subject: string) => void
+  onNewChat: () => void;
+  grades: Array<{ id: string; name: string }>;
+  subjects: Array<{ id: string; name: string }>;
+  selectedGrades?: string[];
+  selectedSubject?: string;
+  onGradeChange?: (grades: string[]) => void;
+  onSubjectChange?: (subject: string) => void;
 }
 
 export function ChatHeader({
@@ -34,37 +34,39 @@ export function ChatHeader({
   onGradeChange,
   onSubjectChange,
 }: ChatHeaderProps) {
-  const { data: session } = authClient.useSession()
+  const { data: session } = authClient.useSession();
 
   const handleNewChat = () => {
-    onNewChat()
-    toast.success("New chat started")
-  }
+    onNewChat();
+    toast.success("New chat started");
+  };
 
-  const handleGradeSelect = React.useCallback((gradeName: string) => {
-    if (gradeName === "all") {
-      onGradeChange?.([])
-      return
-    }
-    
-    const newGrades = selectedGrades.includes(gradeName)
-      ? selectedGrades.filter((g) => g !== gradeName)
-      : [...selectedGrades, gradeName]
-    onGradeChange?.(newGrades)
-  }, [selectedGrades, onGradeChange])
-  
+  const handleGradeSelect = React.useCallback(
+    (gradeName: string) => {
+      if (gradeName === "all") {
+        onGradeChange?.([]);
+        return;
+      }
+
+      const newGrades = selectedGrades.includes(gradeName)
+        ? selectedGrades.filter((g) => g !== gradeName)
+        : [...selectedGrades, gradeName];
+      onGradeChange?.(newGrades);
+    },
+    [selectedGrades, onGradeChange]
+  );
+
   const selectValue = React.useMemo(() => {
-    return selectedGrades.length > 0 ? selectedGrades[0] : "all"
-  }, [selectedGrades])
+    return selectedGrades.length > 0 ? selectedGrades[0] : "all";
+  }, [selectedGrades]);
 
-  const userName = session?.user?.name || "User"
-  const userEmail = session?.user?.email || ""
+  const userName = session?.user?.name || "User";
   const userInitials = userName
     .split(" ")
     .map((n) => n[0])
     .join("")
     .toUpperCase()
-    .slice(0, 2)
+    .slice(0, 2);
 
   return (
     <div className="flex-shrink-0 border-b bg-background">
@@ -80,12 +82,15 @@ export function ChatHeader({
 
           <div className="hidden sm:flex items-center gap-2 shrink-0">
             <div className="relative">
-              <Select
-                value={selectValue}
-                onValueChange={handleGradeSelect}
-              >
+              <Select value={selectValue} onValueChange={handleGradeSelect}>
                 <SelectTrigger className="w-[140px] rounded-full">
-                  <SelectValue placeholder={selectedGrades.length > 0 ? `${selectedGrades.length} selected` : "Grades"} />
+                  <SelectValue
+                    placeholder={
+                      selectedGrades.length > 0
+                        ? `${selectedGrades.length} selected`
+                        : "Grades"
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Grades</SelectItem>
@@ -104,8 +109,14 @@ export function ChatHeader({
             </div>
 
             <Select
-              value={selectedSubject && selectedSubject !== "all" ? selectedSubject : "all"}
-              onValueChange={(value) => onSubjectChange?.(value === "all" ? "" : value)}
+              value={
+                selectedSubject && selectedSubject !== "all"
+                  ? selectedSubject
+                  : "all"
+              }
+              onValueChange={(value) =>
+                onSubjectChange?.(value === "all" ? "" : value)
+              }
             >
               <SelectTrigger className="w-[140px] rounded-full">
                 <SelectValue placeholder="Subject" />
@@ -133,7 +144,6 @@ export function ChatHeader({
             <span>New Chat</span>
           </Button>
 
-
           <ThemeToggle />
 
           <Avatar className="h-8 w-8 sm:h-9 sm:w-9 shrink-0">
@@ -148,5 +158,5 @@ export function ChatHeader({
         </div>
       </div>
     </div>
-  )
+  );
 }

@@ -1,14 +1,14 @@
-"use client"
+"use client";
 
-import { HistoryData } from "./history-data"
-import type { TeacherConversation } from "@/data/get-teacher-history"
+import { HistoryData } from "./history-data";
+import type { TeacherConversation } from "@/data/get-teacher-history";
 
 interface HistoryListProps {
-  conversations: TeacherConversation[]
-  total: number
-  totalPages: number
-  currentPage: number
-  searchQuery?: string
+  conversations: TeacherConversation[];
+  total: number;
+  totalPages: number;
+  currentPage: number;
+  searchQuery?: string;
 }
 
 export function HistoryList({
@@ -26,5 +26,5 @@ export function HistoryList({
       currentPage={currentPage}
       searchQuery={searchQuery}
     />
-  )
+  );
 }

@@ -1,7 +1,14 @@
 "use client";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User, ExternalLink, Download, Copy, Check, Sparkles } from "lucide-react";
+import {
+  User,
+  ExternalLink,
+  Download,
+  Copy,
+  Check,
+  Sparkles,
+} from "lucide-react";
 import { Message, MessageContent } from "@/components/ai-elements/message";
 import { Response } from "@/components/ai-elements/response";
 import { Button } from "@/components/ui/button";
@@ -54,9 +61,9 @@ export function ChatMessageComponent({
   const [copied, setCopied] = useState(false);
 
   const isUser = message.role === "user";
-  const displayContent = isStreaming && streamingContent ? streamingContent : message.content;
+  const displayContent =
+    isStreaming && streamingContent ? streamingContent : message.content;
 
-  // Handle download for images and videos
   const handleDownload = async (url: string, filename?: string) => {
     try {
       const response = await fetch(url);
@@ -75,8 +82,10 @@ export function ChatMessageComponent({
     }
   };
 
-  // Handle external link
-  const handleExternalLink = (e: React.MouseEvent<HTMLElement>, url: string) => {
+  const handleExternalLink = (
+    e: React.MouseEvent<HTMLElement>,
+    url: string
+  ) => {
     e.preventDefault();
     e.stopPropagation();
     window.open(url, "_blank", "noopener,noreferrer");
@@ -188,7 +197,9 @@ export function ChatMessageComponent({
                               e.stopPropagation();
                               handleDownload(
                                 url,
-                                `image-${idx + 1}.${url.split(".").pop()?.split("?")[0] || "png"}`
+                                `image-${idx + 1}.${
+                                  url.split(".").pop()?.split("?")[0] || "png"
+                                }`
                               );
                             }}
                             className="p-1.5 sm:p-2 bg-background/80 rounded-md hover:bg-background/90 transition-colors cursor-pointer"
@@ -228,7 +239,9 @@ export function ChatMessageComponent({
                               e.stopPropagation();
                               handleDownload(
                                 url,
-                                `video-${idx + 1}.${url.split(".").pop()?.split("?")[0] || "mp4"}`
+                                `video-${idx + 1}.${
+                                  url.split(".").pop()?.split("?")[0] || "mp4"
+                                }`
                               );
                             }}
                             className="p-1.5 sm:p-2 bg-background/80 rounded-md backdrop-blur-sm hover:bg-background/90 transition-colors cursor-pointer"
@@ -251,7 +264,9 @@ export function ChatMessageComponent({
 
                 {displayContent ? (
                   <div className="bg-muted/60 border border-border rounded-lg p-2 sm:p-3 md:p-4 break-words">
-                    <Response sources={message.sources}>{displayContent}</Response>
+                    <Response sources={message.sources}>
+                      {displayContent}
+                    </Response>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-2 mt-1.5 sm:mt-2">
                       <div className="text-[10px] sm:text-xs opacity-70 text-muted-foreground">
                         {message.timestamp.toLocaleTimeString([], {
@@ -301,7 +316,10 @@ export function ChatMessageComponent({
                   </div>
                 ) : isStreaming ? (
                   <div className="bg-muted/60 border border-border rounded-lg p-2 sm:p-3 md:p-4">
-                    <Shimmer duration={2} className="text-xs sm:text-sm md:text-[15px] text-muted-foreground">
+                    <Shimmer
+                      duration={2}
+                      className="text-xs sm:text-sm md:text-[15px] text-muted-foreground"
+                    >
                       Thinking...
                     </Shimmer>
                   </div>
@@ -349,7 +367,8 @@ export function ChatMessages({
     <div className={cn("space-y-0", className)}>
       {messages.map((message, index) => {
         const isLastMessage = index === messages.length - 1;
-        const isStreaming = isLoading && isLastMessage && message.role === "assistant";
+        const isStreaming =
+          isLoading && isLastMessage && message.role === "assistant";
 
         return (
           <ChatMessageComponent

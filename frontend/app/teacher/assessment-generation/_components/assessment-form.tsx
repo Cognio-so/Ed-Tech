@@ -1,12 +1,12 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import * as React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Form,
   FormControl,
@@ -15,83 +15,94 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form"
+} from "@/components/ui/form";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
-import { Slider } from "@/components/ui/slider"
-import { Card, CardContent } from "@/components/ui/card"
-import { Loader2, FileText } from "lucide-react"
-import { toast } from "sonner"
-import { saveAssessment, updateAssessment } from "../action"
-import { AssessmentPreview } from "./assessment-preview"
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Card, CardContent } from "@/components/ui/card";
+import { Loader2, FileText } from "lucide-react";
+import { toast } from "sonner";
+import { saveAssessment, updateAssessment } from "../action";
+import { AssessmentPreview } from "./assessment-preview";
+import { useContentStream } from "@/hooks/use-content-stream";
 
-const formSchema = z.object({
-  subject: z.string().min(1, "Subject is required"),
-  grade: z.string().min(1, "Grade is required"),
-  difficultyLevel: z.string().min(1, "Difficulty level is required"),
-  language: z.enum(["English", "Hindi"]),
-  topic: z.string().min(1, "Topic is required"),
-  learningObjective: z.string().min(1, "Learning objective is required"),
-  duration: z.string().min(1, "Duration is required"),
-  confidenceLevel: z.number().min(1).max(5),
-  customInstruction: z.string().optional(),
-  mcqEnabled: z.boolean(),
-  mcqCount: z.number().min(0),
-  trueFalseEnabled: z.boolean(),
-  trueFalseCount: z.number().min(0),
-  shortAnswerEnabled: z.boolean(),
-  shortAnswerCount: z.number().min(0),
-}).refine(
-  (data) => {
-    if (data.mcqEnabled && data.mcqCount <= 0) return false
-    if (data.trueFalseEnabled && data.trueFalseCount <= 0) return false
-    if (data.shortAnswerEnabled && data.shortAnswerCount <= 0) return false
-    return data.mcqEnabled || data.trueFalseEnabled || data.shortAnswerEnabled
-  },
-  {
-    message: "At least one question type must be enabled with count > 0",
-    path: ["mcqEnabled"],
-  }
-)
+const formSchema = z
+  .object({
+    subject: z.string().min(1, "Subject is required"),
+    grade: z.string().min(1, "Grade is required"),
+    difficultyLevel: z.string().min(1, "Difficulty level is required"),
+    language: z.enum(["English", "Hindi"]),
+    topic: z.string().min(1, "Topic is required"),
+    learningObjective: z.string().min(1, "Learning objective is required"),
+    duration: z.string().min(1, "Duration is required"),
+    confidenceLevel: z.number().min(1).max(5),
+    customInstruction: z.string().optional(),
+    mcqEnabled: z.boolean(),
+    mcqCount: z.number().min(0),
+    trueFalseEnabled: z.boolean(),
+    trueFalseCount: z.number().min(0),
+    shortAnswerEnabled: z.boolean(),
+    shortAnswerCount: z.number().min(0),
+  })
+  .refine(
+    (data) => {
+      if (data.mcqEnabled && data.mcqCount <= 0) return false;
+      if (data.trueFalseEnabled && data.trueFalseCount <= 0) return false;
+      if (data.shortAnswerEnabled && data.shortAnswerCount <= 0) return false;
+      return (
+        data.mcqEnabled || data.trueFalseEnabled || data.shortAnswerEnabled
+      );
+    },
+    {
+      message: "At least one question type must be enabled with count > 0",
+      path: ["mcqEnabled"],
+    }
+  );
 
-type FormValues = z.infer<typeof formSchema>
+type FormValues = z.infer<typeof formSchema>;
 
 interface Assessment {
-  id: string
-  contentType: string
-  title: string
-  content: string
-  grade?: string | null
-  subject?: string | null
-  topic?: string | null
-  language?: string | null
-  learningObjective?: string | null
-  instructionDepth?: string | null
-  durationOfSession?: string | null
-  emotionalConsideration?: number | null
-  numberOfSessions?: string | null
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  contentType: string;
+  title: string;
+  content: string;
+  grade?: string | null;
+  subject?: string | null;
+  topic?: string | null;
+  language?: string | null;
+  learningObjective?: string | null;
+  instructionDepth?: string | null;
+  durationOfSession?: string | null;
+  emotionalConsideration?: number | null;
+  numberOfSessions?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface AssessmentFormProps {
-  initialGrades: { id: string; name: string }[]
-  initialSubjects: { id: string; name: string }[]
+  initialGrades: { id: string; name: string }[];
+  initialSubjects: { id: string; name: string }[];
 }
 
-export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFormProps) {
-  const [generatedContent, setGeneratedContent] = React.useState("")
-  const [isGenerating, setIsGenerating] = React.useState(false)
-  const [editingId, setEditingId] = React.useState<string | null>(null)
-  const [showPreview, setShowPreview] = React.useState(false)
-  const [grades] = React.useState<{ id: string; name: string }[]>(initialGrades)
-  const [subjects] = React.useState<{ id: string; name: string }[]>(initialSubjects)
+export function AssessmentForm({
+  initialGrades,
+  initialSubjects,
+}: AssessmentFormProps) {
+  const [generatedContent, setGeneratedContent] = React.useState("");
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [showPreview, setShowPreview] = React.useState(false);
+  const [grades] =
+    React.useState<{ id: string; name: string }[]>(initialGrades);
+  const [subjects] =
+    React.useState<{ id: string; name: string }[]>(initialSubjects);
+  
+  const { content: streamingContent, isStreaming, streamContent } = useContentStream();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -112,30 +123,34 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
       shortAnswerEnabled: false,
       shortAnswerCount: 0,
     },
-  })
+  });
 
-  const mcqEnabled = form.watch("mcqEnabled")
-  const trueFalseEnabled = form.watch("trueFalseEnabled")
-  const shortAnswerEnabled = form.watch("shortAnswerEnabled")
+  const mcqEnabled = form.watch("mcqEnabled");
+  const trueFalseEnabled = form.watch("trueFalseEnabled");
+  const shortAnswerEnabled = form.watch("shortAnswerEnabled");
 
   React.useEffect(() => {
     if (typeof window !== "undefined") {
-      const editAssessmentStr = sessionStorage.getItem("editAssessment")
+      const editAssessmentStr = sessionStorage.getItem("editAssessment");
       if (editAssessmentStr) {
         try {
-          const editAssessment: Assessment = JSON.parse(editAssessmentStr)
-          setEditingId(editAssessment.id)
-          setGeneratedContent(editAssessment.content)
-          setShowPreview(true)
-          
-          const assessmentData = JSON.parse(editAssessment.numberOfSessions || "{}")
+          const editAssessment: Assessment = JSON.parse(editAssessmentStr);
+          setEditingId(editAssessment.id);
+          setGeneratedContent(editAssessment.content);
+          setShowPreview(true);
+
+          const assessmentData = JSON.parse(
+            editAssessment.numberOfSessions || "{}"
+          );
           form.reset({
             subject: editAssessment.subject || "",
             grade: editAssessment.grade || "",
             difficultyLevel: editAssessment.instructionDepth || "Standard",
-            language: (editAssessment.language === "English" || editAssessment.language === "Hindi") 
-              ? editAssessment.language 
-              : "English",
+            language:
+              editAssessment.language === "English" ||
+              editAssessment.language === "Hindi"
+                ? editAssessment.language
+                : "English",
             topic: editAssessment.topic || "",
             learningObjective: editAssessment.learningObjective || "",
             duration: editAssessment.durationOfSession || "45 minutes",
@@ -147,19 +162,19 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
             trueFalseCount: assessmentData.trueFalseCount || 0,
             shortAnswerEnabled: assessmentData.shortAnswerEnabled || false,
             shortAnswerCount: assessmentData.shortAnswerCount || 0,
-          })
-          
-          sessionStorage.removeItem("editAssessment")
+          });
+
+          sessionStorage.removeItem("editAssessment");
         } catch (error) {
-          console.error("Error parsing edit assessment:", error)
+          console.error("Error parsing edit assessment:", error);
         }
       }
     }
-  }, [form])
+  }, [form]);
 
   const generateAssessment = async (values: FormValues) => {
-    setIsGenerating(true)
-    setGeneratedContent("")
+    setGeneratedContent("");
+    setShowPreview(true); // Show preview immediately to display streaming content
 
     const payload = {
       subject: values.subject,
@@ -177,107 +192,84 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
       trueFalseCount: values.trueFalseEnabled ? values.trueFalseCount : 0,
       shortAnswerEnabled: values.shortAnswerEnabled,
       shortAnswerCount: values.shortAnswerEnabled ? values.shortAnswerCount : 0,
-    }
+    };
 
-    try {
-      const response = await fetch("/api/assessment-generation", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to generate assessment")
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) {
-        throw new Error("No response body")
-      }
-
-      const decoder = new TextDecoder()
-      let accumulatedContent = ""
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value, { stream: true })
-        accumulatedContent += chunk
-        setGeneratedContent(accumulatedContent)
-      }
-      
-      setShowPreview(true)
-    } catch (error) {
-      console.error("Error generating assessment:", error)
-      toast.error("Failed to generate assessment")
-    } finally {
-      setIsGenerating(false)
-    }
-  }
+    await streamContent("/api/assessment-generation", payload, {
+      onComplete: (content) => {
+        setGeneratedContent(content);
+      },
+      onError: (error) => {
+        setShowPreview(false);
+        toast.error(error);
+      },
+    });
+  };
 
   const handleSave = async () => {
     if (!generatedContent) {
-      toast.error("No content to save")
-      return
+      toast.error("No content to save");
+      return;
     }
 
-    const values = form.getValues()
-    const formData = new FormData()
-    formData.append("title", `Assessment - ${values.topic}`)
-    formData.append("content", generatedContent)
-    formData.append("grade", values.grade)
-    formData.append("subject", values.subject)
-    formData.append("topic", values.topic)
-    formData.append("language", values.language)
-    formData.append("learningObjective", values.learningObjective)
-    formData.append("difficultyLevel", values.difficultyLevel)
-    formData.append("duration", values.duration)
-    formData.append("confidenceLevel", values.confidenceLevel.toString())
-    formData.append("customInstruction", values.customInstruction || "")
-    formData.append("mcqEnabled", values.mcqEnabled.toString())
-    formData.append("mcqCount", values.mcqCount.toString())
-    formData.append("trueFalseEnabled", values.trueFalseEnabled.toString())
-    formData.append("trueFalseCount", values.trueFalseCount.toString())
-    formData.append("shortAnswerEnabled", values.shortAnswerEnabled.toString())
-    formData.append("shortAnswerCount", values.shortAnswerCount.toString())
+    const values = form.getValues();
+    const formData = new FormData();
+    formData.append("title", `Assessment - ${values.topic}`);
+    formData.append("content", generatedContent);
+    formData.append("grade", values.grade);
+    formData.append("subject", values.subject);
+    formData.append("topic", values.topic);
+    formData.append("language", values.language);
+    formData.append("learningObjective", values.learningObjective);
+    formData.append("difficultyLevel", values.difficultyLevel);
+    formData.append("duration", values.duration);
+    formData.append("confidenceLevel", values.confidenceLevel.toString());
+    formData.append("customInstruction", values.customInstruction || "");
+    formData.append("mcqEnabled", values.mcqEnabled.toString());
+    formData.append("mcqCount", values.mcqCount.toString());
+    formData.append("trueFalseEnabled", values.trueFalseEnabled.toString());
+    formData.append("trueFalseCount", values.trueFalseCount.toString());
+    formData.append("shortAnswerEnabled", values.shortAnswerEnabled.toString());
+    formData.append("shortAnswerCount", values.shortAnswerCount.toString());
 
     try {
       if (editingId) {
-        await updateAssessment(editingId, formData)
-        toast.success("Assessment updated successfully")
+        await updateAssessment(editingId, formData);
+        toast.success("Assessment updated successfully");
       } else {
-        await saveAssessment(formData)
-        toast.success("Assessment saved successfully")
+        await saveAssessment(formData);
+        toast.success("Assessment saved successfully");
       }
-      setShowPreview(false)
-      setGeneratedContent("")
-      setEditingId(null)
-      form.reset()
-      
+      setShowPreview(false);
+      setGeneratedContent("");
+      setEditingId(null);
+      form.reset();
+
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("refreshAssessments"))
+        window.dispatchEvent(new CustomEvent("refreshAssessments"));
       }
     } catch (error) {
-      toast.error(editingId ? "Failed to update assessment" : "Failed to save assessment")
+      toast.error(
+        editingId ? "Failed to update assessment" : "Failed to save assessment"
+      );
     }
-  }
+  };
 
   const resetForm = () => {
-    form.reset()
-    setGeneratedContent("")
-    setShowPreview(false)
-    setEditingId(null)
-  }
+    form.reset();
+    setGeneratedContent("");
+    setShowPreview(false);
+    setEditingId(null);
+  };
 
   return (
     <div className="space-y-6">
       <Card>
         <CardContent className="p-6">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(generateAssessment)} className="space-y-8">
+            <form
+              onSubmit={form.handleSubmit(generateAssessment)}
+              className="space-y-8"
+            >
               <div className="space-y-6">
                 <h3 className="text-lg font-semibold">Basic Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -395,7 +387,10 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
                       <FormItem>
                         <FormLabel>Topic *</FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter the main topic" {...field} />
+                          <Input
+                            placeholder="Enter the main topic"
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -440,9 +435,7 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
                   name="confidenceLevel"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
-                        Confidence Level: {field.value}
-                      </FormLabel>
+                      <FormLabel>Confidence Level: {field.value}</FormLabel>
                       <FormControl>
                         <div className="space-y-2">
                           <Slider
@@ -489,7 +482,7 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
 
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Question Types</h3>
-                
+
                 <FormField
                   control={form.control}
                   name="mcqEnabled"
@@ -524,7 +517,9 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
                             min={1}
                             max={50}
                             value={field.value || 0}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                            onChange={(e) =>
+                              field.onChange(parseInt(e.target.value) || 0)
+                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -567,7 +562,9 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
                             min={1}
                             max={50}
                             value={field.value || 0}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                            onChange={(e) =>
+                              field.onChange(parseInt(e.target.value) || 0)
+                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -610,7 +607,9 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
                             min={1}
                             max={50}
                             value={field.value || 0}
-                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                            onChange={(e) =>
+                              field.onChange(parseInt(e.target.value) || 0)
+                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -621,18 +620,11 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={resetForm}
-                >
+                <Button type="button" variant="outline" onClick={resetForm}>
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={isGenerating}
-                >
-                  {isGenerating ? (
+                <Button type="submit" disabled={isStreaming}>
+                  {isStreaming ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Generating...
@@ -650,15 +642,19 @@ export function AssessmentForm({ initialGrades, initialSubjects }: AssessmentFor
         </CardContent>
       </Card>
 
-      {showPreview && generatedContent && (
+      {showPreview && (
         <AssessmentPreview
           content={generatedContent}
+          streamingContent={streamingContent}
+          isStreaming={isStreaming}
           topic={form.getValues().topic}
           onSave={handleSave}
-          onClose={() => setShowPreview(false)}
+          onClose={() => {
+            setShowPreview(false);
+            setGeneratedContent("");
+          }}
         />
       )}
     </div>
-  )
+  );
 }
-

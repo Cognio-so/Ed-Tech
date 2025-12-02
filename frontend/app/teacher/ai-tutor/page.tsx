@@ -6,8 +6,6 @@ import { ChatInput } from "./_components/chat-input";
 import { ChatMessages } from "./_components/chat-message";
 import { ChatHeader } from "./_components/chat-header";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface TeacherStats {
@@ -35,7 +33,9 @@ export default function AITutorPage() {
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<string>("");
   const [grades, setGrades] = useState<Array<{ id: string; name: string }>>([]);
-  const [subjects, setSubjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [subjects, setSubjects] = useState<Array<{ id: string; name: string }>>(
+    []
+  );
   const { messages, isLoading, streamingContent, sendMessage, clearMessages } =
     useAITutor();
 
@@ -50,23 +50,27 @@ export default function AITutorPage() {
         if (response.ok) {
           const stats = await response.json();
           setTeacherStats(stats);
-          
+
           if (stats.grades && stats.grades.length > 0) {
-            const gradeList = stats.grades.map((name: string, index: number) => ({
-              id: `grade-${index}`,
-              name,
-            }));
+            const gradeList = stats.grades.map(
+              (name: string, index: number) => ({
+                id: `grade-${index}`,
+                name,
+              })
+            );
             setGrades(gradeList);
             if (gradeList.length > 0) {
               setSelectedGrades([gradeList[0].name]);
             }
           }
-          
+
           if (stats.subjects && stats.subjects.length > 0) {
-            const subjectList = stats.subjects.map((name: string, index: number) => ({
-              id: `subject-${index}`,
-              name,
-            }));
+            const subjectList = stats.subjects.map(
+              (name: string, index: number) => ({
+                id: `subject-${index}`,
+                name,
+              })
+            );
             setSubjects(subjectList);
           }
         }
@@ -77,7 +81,6 @@ export default function AITutorPage() {
     fetchStats();
   }, []);
 
-  // Find and set the ScrollArea viewport element
   useEffect(() => {
     if (scrollAreaRef.current && hasMessages) {
       const viewport = scrollAreaRef.current.querySelector(
@@ -89,14 +92,11 @@ export default function AITutorPage() {
     }
   }, [hasMessages, messages.length]);
 
-  // Auto-scroll when messages update
   useEffect(() => {
     if (hasMessages && scrollContainerRef.current) {
       const isStreaming = isLoading || streamingContent.length > 0;
-      
-      // Scroll when streaming, loading, or when a new message is added
+
       if (isStreaming || isLoading || messages.length > 0) {
-        // Small delay to ensure DOM is updated
         const timeoutId = setTimeout(() => {
           if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollTo({
@@ -126,7 +126,8 @@ export default function AITutorPage() {
       const teacherData = teacherStats
         ? {
             name: teacherStats.name,
-            grades: selectedGrades.length > 0 ? selectedGrades : teacherStats.grades,
+            grades:
+              selectedGrades.length > 0 ? selectedGrades : teacherStats.grades,
             subjects: teacherStats.subjects,
             total_content: teacherStats.totalContent,
             total_assessments: teacherStats.totalAssessments,
@@ -142,11 +143,14 @@ export default function AITutorPage() {
           }
         : undefined;
 
-      const finalSubject = selectedSubject && selectedSubject !== "all" && selectedSubject.trim() !== ""
-        ? selectedSubject
-        : subject && subject !== "all" && subject.trim() !== ""
-        ? subject
-        : undefined;
+      const finalSubject =
+        selectedSubject &&
+        selectedSubject !== "all" &&
+        selectedSubject.trim() !== ""
+          ? selectedSubject
+          : subject && subject !== "all" && subject.trim() !== ""
+          ? subject
+          : undefined;
 
       await sendMessage(message, {
         teacherData,
@@ -190,8 +194,6 @@ export default function AITutorPage() {
   const getSelectedSubjectValue = () => {
     return selectedSubject || "all";
   };
-
-
 
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden">
