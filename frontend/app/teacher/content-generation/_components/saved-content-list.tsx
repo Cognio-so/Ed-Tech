@@ -82,9 +82,7 @@ export function SavedContentList() {
   };
 
   const handleEdit = (content: Content) => {
-    // Store content in sessionStorage and switch to form tab
     sessionStorage.setItem("editContent", JSON.stringify(content));
-    // Dispatch event to switch tabs
     window.dispatchEvent(new CustomEvent("switchToFormTab"));
   };
 
@@ -120,10 +118,7 @@ export function SavedContentList() {
       <div className="space-y-6">
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="border rounded-lg p-6 space-y-4"
-            >
+            <div key={i} className="border rounded-lg p-6 space-y-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1 space-y-3">
                   <Skeleton className="h-6 w-3/4" />

@@ -3,26 +3,26 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import prisma from "@/lib/prisma";
 import { deleteUser, updateUser } from "@/app/admin/users/action";
+import { protectRoute } from "@/lib/arcjet";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const protection = await protectRoute(request);
+  if (protection) return protection;
+
   try {
     const session = await auth.api.getSession({
       headers: await headers(),
     });
 
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
-    
-    // Users can only fetch their own data, or admins can fetch any
+
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -36,23 +36,16 @@ export async function GET(
     });
 
     if (!user) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Check if user is fetching their own data or is admin
     const currentUser = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { role: true },
     });
 
     if (id !== session.user.id && currentUser?.role !== "admin") {
-      return NextResponse.json(
-        { error: "Forbidden" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     return NextResponse.json(user);
@@ -66,9 +59,12 @@ export async function GET(
 }
 
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const protection = await protectRoute(request);
+  if (protection) return protection;
+
   try {
     const { id } = await params;
     await deleteUser(id);
@@ -83,9 +79,12 @@ export async function DELETE(
 }
 
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const protection = await protectRoute(request);
+  if (protection) return protection;
+
   try {
     const { id } = await params;
     const formData = await request.formData();
@@ -99,4 +98,3 @@ export async function PATCH(
     );
   }
 }
-

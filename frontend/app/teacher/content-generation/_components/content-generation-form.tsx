@@ -42,6 +42,7 @@ import {
 import { toast } from "sonner";
 import { saveContent } from "../action";
 import { cn } from "@/lib/utils";
+import { useContentStream } from "@/hooks/use-content-stream";
 
 const formSchema = z.object({
   contentType: z.enum(["lesson_plan", "presentation", "quiz", "worksheet"]),
@@ -123,13 +124,14 @@ export function ContentGenerationForm({
   initialSubjects,
 }: ContentGenerationFormProps) {
   const [generatedContent, setGeneratedContent] = React.useState("");
-  const [isGenerating, setIsGenerating] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [showPreview, setShowPreview] = React.useState(false);
   const [grades] =
     React.useState<{ id: string; name: string }[]>(initialGrades);
   const [subjects] =
     React.useState<{ id: string; name: string }[]>(initialSubjects);
+  
+  const { content: streamingContent, isStreaming, streamContent } = useContentStream();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as any,
@@ -185,10 +187,9 @@ export function ContentGenerationForm({
   }, []);
 
   const generateContent = async (values: FormValues) => {
-    setIsGenerating(true);
     setGeneratedContent("");
+    setShowPreview(true); // Show preview immediately to display streaming content
 
-    // emotionalConsideration is already a number from the form
     const payload = {
       ...values,
     };
@@ -196,49 +197,15 @@ export function ContentGenerationForm({
     console.log("📝 Form values:", values);
     console.log("📦 Payload being sent:", payload);
 
-    try {
-      const response = await fetch("/api/content-generation", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      console.log("📡 Response status:", response.status, response.statusText);
-
-      if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ error: "Unknown error" }));
-        console.error("❌ API Error:", errorData);
-        throw new Error(errorData.error || "Failed to generate content");
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("No response body");
-      }
-
-      const decoder = new TextDecoder();
-      let accumulatedContent = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        accumulatedContent += chunk;
-        setGeneratedContent(accumulatedContent);
-      }
-
-      setShowPreview(true);
-    } catch (error) {
-      console.error("Error generating content:", error);
-      toast.error("Failed to generate content");
-    } finally {
-      setIsGenerating(false);
-    }
+    await streamContent("/api/content-generation", payload, {
+      onComplete: (content) => {
+        setGeneratedContent(content);
+      },
+      onError: (error) => {
+        setShowPreview(false);
+        toast.error(error);
+      },
+    });
   };
 
   const handleSave = async () => {
@@ -660,8 +627,8 @@ export function ContentGenerationForm({
                 <Button type="button" variant="outline" onClick={resetForm}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isGenerating}>
-                  {isGenerating ? (
+                <Button type="submit" disabled={isStreaming}>
+                  {isStreaming ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Generating...
@@ -680,16 +647,21 @@ export function ContentGenerationForm({
       </Card>
 
       {/* Preview Dialog */}
-      {showPreview && generatedContent && (
+      {showPreview && (
         <ContentPreview
           content={generatedContent}
+          streamingContent={streamingContent}
+          isStreaming={isStreaming}
           title={`Generated Content Preview - ${
             form.getValues().topic || "Content"
           }`}
           onCopy={handleCopy}
           onDownload={handleDownload}
           onSave={handleSave}
-          onClose={() => setShowPreview(false)}
+          onClose={() => {
+            setShowPreview(false);
+            setGeneratedContent("");
+          }}
         />
       )}
 

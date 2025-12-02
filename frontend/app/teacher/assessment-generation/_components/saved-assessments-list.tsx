@@ -1,112 +1,118 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Edit, Trash2, Copy, Download, Eye } from "lucide-react"
-import { toast } from "sonner"
-import { deleteAssessment } from "../action"
-import { DownloadDialog } from "@/components/ui/download-dialog"
-import { AssessmentPreview } from "./assessment-preview"
+import * as React from "react";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Edit, Trash2, Copy, Download, Eye } from "lucide-react";
+import { toast } from "sonner";
+import { deleteAssessment } from "../action";
+import { DownloadDialog } from "@/components/ui/download-dialog";
+import { AssessmentPreview } from "./assessment-preview";
 
 interface Assessment {
-  id: string
-  contentType: string
-  title: string
-  content: string
-  grade?: string | null
-  subject?: string | null
-  topic?: string | null
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  contentType: string;
+  title: string;
+  content: string;
+  grade?: string | null;
+  subject?: string | null;
+  topic?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export function SavedAssessmentsList() {
-  const [savedAssessments, setSavedAssessments] = React.useState<Assessment[]>([])
-  const [loading, setLoading] = React.useState(true)
-  const [showDownloadDialog, setShowDownloadDialog] = React.useState(false)
+  const [savedAssessments, setSavedAssessments] = React.useState<Assessment[]>(
+    []
+  );
+  const [loading, setLoading] = React.useState(true);
+  const [showDownloadDialog, setShowDownloadDialog] = React.useState(false);
   const [downloadContent, setDownloadContent] = React.useState<{
-    content: string
-    title: string
-  } | null>(null)
-  const [previewContent, setPreviewContent] = React.useState<Assessment | null>(null)
-  const [showPreview, setShowPreview] = React.useState(false)
+    content: string;
+    title: string;
+  } | null>(null);
+  const [previewContent, setPreviewContent] = React.useState<Assessment | null>(
+    null
+  );
+  const [showPreview, setShowPreview] = React.useState(false);
 
   React.useEffect(() => {
-    fetchSavedAssessments()
-    
+    fetchSavedAssessments();
+
     const handleRefresh = () => {
-      fetchSavedAssessments()
-    }
-    
-    window.addEventListener("refreshAssessments", handleRefresh)
+      fetchSavedAssessments();
+    };
+
+    window.addEventListener("refreshAssessments", handleRefresh);
     return () => {
-      window.removeEventListener("refreshAssessments", handleRefresh)
-    }
-  }, [])
+      window.removeEventListener("refreshAssessments", handleRefresh);
+    };
+  }, []);
 
   const fetchSavedAssessments = async () => {
     try {
-      const response = await fetch("/api/content")
+      const response = await fetch("/api/content");
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json();
         if (Array.isArray(data)) {
-          const assessments = data.filter((item: Assessment) => item.contentType === "assessment")
-          setSavedAssessments(assessments)
+          const assessments = data.filter(
+            (item: Assessment) => item.contentType === "assessment"
+          );
+          setSavedAssessments(assessments);
         } else {
-          setSavedAssessments([])
+          setSavedAssessments([]);
         }
       } else {
-        setSavedAssessments([])
+        setSavedAssessments([]);
       }
     } catch (error) {
-      console.error("Error fetching assessments:", error)
-      setSavedAssessments([])
+      console.error("Error fetching assessments:", error);
+      setSavedAssessments([]);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this assessment?")) return
+    if (!confirm("Are you sure you want to delete this assessment?")) return;
 
     try {
-      await deleteAssessment(id)
-      toast.success("Assessment deleted successfully")
-      setSavedAssessments(savedAssessments.filter((a) => a.id !== id))
+      await deleteAssessment(id);
+      toast.success("Assessment deleted successfully");
+      setSavedAssessments(savedAssessments.filter((a) => a.id !== id));
     } catch (error) {
-      toast.error("Failed to delete assessment")
+      toast.error("Failed to delete assessment");
     }
-  }
+  };
 
   const handleCopy = (content: string) => {
-    navigator.clipboard.writeText(content)
-    toast.success("Assessment copied to clipboard")
-  }
+    navigator.clipboard.writeText(content);
+    toast.success("Assessment copied to clipboard");
+  };
 
   const handleDownload = (content: string, title: string) => {
-    setDownloadContent({ content, title })
-    setShowDownloadDialog(true)
-  }
+    setDownloadContent({ content, title });
+    setShowDownloadDialog(true);
+  };
 
   const handleEdit = (assessment: Assessment) => {
-    sessionStorage.setItem("editAssessment", JSON.stringify(assessment))
-    window.dispatchEvent(new CustomEvent("switchToAssessmentFormTab"))
-  }
+    sessionStorage.setItem("editAssessment", JSON.stringify(assessment));
+    window.dispatchEvent(new CustomEvent("switchToAssessmentFormTab"));
+  };
 
   const handlePreview = (assessment: Assessment) => {
-    setPreviewContent(assessment)
-    setShowPreview(true)
-  }
+    setPreviewContent(assessment);
+    setShowPreview(true);
+  };
 
   const handlePreviewClose = () => {
-    setShowPreview(false)
-    setPreviewContent(null)
-  }
+    setShowPreview(false);
+    setPreviewContent(null);
+  };
 
   const handlePreviewSave = async () => {
-    handlePreviewClose()
-  }
+    handlePreviewClose();
+  };
 
   if (loading) {
     return (
@@ -120,10 +126,7 @@ export function SavedAssessmentsList() {
         </div>
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="border rounded-lg p-6 space-y-4"
-            >
+            <div key={i} className="border rounded-lg p-6 space-y-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1 space-y-3">
                   <Skeleton className="h-6 w-3/4" />
@@ -155,18 +158,20 @@ export function SavedAssessmentsList() {
           ))}
         </div>
       </div>
-    )
+    );
   }
 
   if (!Array.isArray(savedAssessments) || savedAssessments.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-foreground text-lg">No saved assessments yet</p>
+        <p className="text-muted-foreground text-lg">
+          No saved assessments yet
+        </p>
         <p className="text-muted-foreground text-sm mt-2">
           Generate and save assessments to see them here
         </p>
       </div>
-    )
+    );
   }
 
   return (
@@ -179,7 +184,9 @@ export function SavedAssessmentsList() {
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <h3 className="font-semibold text-lg mb-1">{assessment.title}</h3>
+                <h3 className="font-semibold text-lg mb-1">
+                  {assessment.title}
+                </h3>
                 <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                   {assessment.topic && (
                     <>
@@ -199,7 +206,9 @@ export function SavedAssessmentsList() {
                     </>
                   )}
                   <span>•</span>
-                  <span>{new Date(assessment.createdAt).toLocaleDateString()}</span>
+                  <span>
+                    {new Date(assessment.createdAt).toLocaleDateString()}
+                  </span>
                 </div>
               </div>
               <div className="flex gap-2 ml-4">
@@ -230,7 +239,9 @@ export function SavedAssessmentsList() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleDownload(assessment.content, assessment.title)}
+                  onClick={() =>
+                    handleDownload(assessment.content, assessment.title)
+                  }
                   title="Download assessment"
                 >
                   <Download className="h-4 w-4" />
@@ -269,6 +280,5 @@ export function SavedAssessmentsList() {
         />
       )}
     </div>
-  )
+  );
 }
-

@@ -1,23 +1,24 @@
-import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { protectRoute } from "@/lib/arcjet";
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000"
+const BACKEND_URL = process.env.BACKEND_URL;
 
 export async function POST(request: NextRequest) {
+  const protection = await protectRoute(request);
+  if (protection) return protection;
+
   try {
     const session = await auth.api.getSession({
       headers: await headers(),
-    })
+    });
 
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json()
+    const body = await request.json();
     const {
       plainText,
       customUserInstructions,
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       verbosity,
       tone,
       template,
-    } = body
+    } = body;
 
     const backendPayload = {
       plain_text: plainText,
@@ -38,12 +39,12 @@ export async function POST(request: NextRequest) {
       verbosity,
       tone,
       template,
-    }
+    };
 
-    const sessionId = `session_${session.user.id}_${Date.now()}`
-    const teacherId = session.user.id
+    const sessionId = `session_${session.user.id}_${Date.now()}`;
+    const teacherId = session.user.id;
 
-    const endpoint = `${BACKEND_URL}/api/teacher/${teacherId}/session/${sessionId}/presentation_slidespeak`
+    const endpoint = `${BACKEND_URL}/api/teacher/${teacherId}/session/${sessionId}/presentation_slidespeak`;
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -51,31 +52,30 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(backendPayload),
-    })
+    });
 
     if (!response.ok) {
-      const errorText = await response.text()
-      let errorMessage = "Failed to generate slide presentation"
+      const errorText = await response.text();
+      let errorMessage = "Failed to generate slide presentation";
       try {
-        const errorJson = JSON.parse(errorText)
-        errorMessage = errorJson.detail || errorJson.error || errorMessage
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.detail || errorJson.error || errorMessage;
       } catch {
-        errorMessage = errorText || errorMessage
+        errorMessage = errorText || errorMessage;
       }
       return NextResponse.json(
         { error: errorMessage },
         { status: response.status }
-      )
+      );
     }
 
-    const data = await response.json()
-    return NextResponse.json(data)
+    const data = await response.json();
+    return NextResponse.json(data);
   } catch (error) {
-    console.error("Error generating slide:", error)
+    console.error("Error generating slide:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
-    )
+    );
   }
 }
-

@@ -1,6 +1,12 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import type { StudentData } from "@/data/get-student-data";
@@ -11,8 +17,9 @@ interface PerformanceListProps {
 }
 
 export function PerformanceList({ students }: PerformanceListProps) {
-  // Filter students who have performance data
-  const studentsWithPerformance = students.filter((student) => student.performance);
+  const studentsWithPerformance = students.filter(
+    (student) => student.performance
+  );
 
   if (studentsWithPerformance.length === 0) {
     return (
@@ -34,7 +41,9 @@ export function PerformanceList({ students }: PerformanceListProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Student Performance</h2>
+          <h2 className="text-2xl font-bold tracking-tight">
+            Student Performance
+          </h2>
           <p className="text-muted-foreground">
             Performance data for {studentsWithPerformance.length} student(s)
           </p>
@@ -47,7 +56,10 @@ export function PerformanceList({ students }: PerformanceListProps) {
             <CardHeader>
               <div className="flex items-center gap-4">
                 <Avatar className="h-10 w-10">
-                  <AvatarImage src={student.image || undefined} alt={student.name} />
+                  <AvatarImage
+                    src={student.image || undefined}
+                    alt={student.name}
+                  />
                   <AvatarFallback>
                     {student.name
                       .split(" ")
@@ -58,7 +70,9 @@ export function PerformanceList({ students }: PerformanceListProps) {
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <CardTitle className="text-lg truncate">{student.name}</CardTitle>
+                  <CardTitle className="text-lg truncate">
+                    {student.name}
+                  </CardTitle>
                   <CardDescription className="flex items-center gap-1 mt-1">
                     <Mail className="h-3 w-3" />
                     <span className="truncate">{student.email}</span>
@@ -100,4 +114,3 @@ export function PerformanceList({ students }: PerformanceListProps) {
     </div>
   );
 }
-

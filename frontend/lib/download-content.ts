@@ -2,13 +2,7 @@ import { toast } from "sonner";
 
 export type DownloadFormat = "word" | "markdown";
 
-/**
- * Downloads content as a Word document (.doc)
- * Uses HTML format that Word can open natively
- */
 export function downloadAsWord(content: string, title: string): void {
-  // Convert markdown-like content to HTML for Word
-  // Word can open HTML files with .doc extension
   const htmlContent = `
     <!DOCTYPE html>
     <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
@@ -96,9 +90,6 @@ export function downloadAsWord(content: string, title: string): void {
   toast.success("Content downloaded as Word document");
 }
 
-/**
- * Downloads content as a Markdown file (.md)
- */
 export function downloadAsMarkdown(content: string, title: string): void {
   const blob = new Blob([content], { type: "text/markdown" });
   const url = URL.createObjectURL(blob);
@@ -112,9 +103,6 @@ export function downloadAsMarkdown(content: string, title: string): void {
   toast.success("Content downloaded as Markdown");
 }
 
-/**
- * Downloads content in the specified format
- */
 export function downloadContent(
   content: string,
   title: string,
@@ -127,18 +115,12 @@ export function downloadContent(
   }
 }
 
-/**
- * Helper function to escape HTML
- */
 function escapeHtml(text: string): string {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
 }
 
-/**
- * Helper function to sanitize filename
- */
 function sanitizeFilename(filename: string): string {
   return filename
     .replace(/[^a-z0-9]/gi, "_")
@@ -147,59 +129,53 @@ function sanitizeFilename(filename: string): string {
     .substring(0, 100);
 }
 
-/**
- * Converts markdown-like content to HTML for Word document
- * This is a simple converter for basic markdown syntax
- */
 function convertMarkdownToHtml(content: string): string {
   let html = content;
 
-  // Convert headers
   html = html.replace(/^### (.*$)/gim, "<h3>$1</h3>");
   html = html.replace(/^## (.*$)/gim, "<h2>$1</h2>");
   html = html.replace(/^# (.*$)/gim, "<h1>$1</h1>");
 
-  // Convert bold
   html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/__(.*?)__/g, "<strong>$1</strong>");
 
-  // Convert italic
   html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
   html = html.replace(/_(.*?)_/g, "<em>$1</em>");
 
-  // Convert code blocks
   html = html.replace(/```[\s\S]*?```/g, (match) => {
     const code = match.replace(/```/g, "").trim();
     return `<pre>${escapeHtml(code)}</pre>`;
   });
 
-  // Convert inline code
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
 
-  // Convert unordered lists
   html = html.replace(/^\* (.*$)/gim, "<li>$1</li>");
   html = html.replace(/^- (.*$)/gim, "<li>$1</li>");
-  html = html.replace(/(<li>[\s\S]*?<\/li>(?:\s*<li>[\s\S]*?<\/li>)*)/g, "<ul>$1</ul>");
+  html = html.replace(
+    /(<li>[\s\S]*?<\/li>(?:\s*<li>[\s\S]*?<\/li>)*)/g,
+    "<ul>$1</ul>"
+  );
 
-  // Convert ordered lists
   html = html.replace(/^\d+\. (.*$)/gim, "<li>$1</li>");
-  html = html.replace(/(<li>[\s\S]*?<\/li>(?:\s*<li>[\s\S]*?<\/li>)*)/g, "<ol>$1</ol>");
+  html = html.replace(
+    /(<li>[\s\S]*?<\/li>(?:\s*<li>[\s\S]*?<\/li>)*)/g,
+    "<ol>$1</ol>"
+  );
 
-  // Convert line breaks to paragraphs
-  html = html.split("\n\n").map((para) => {
-    if (para.trim() && !para.match(/^<[h|u|o|l|p]/)) {
-      return `<p>${para.trim()}</p>`;
-    }
-    return para;
-  }).join("\n");
+  html = html
+    .split("\n\n")
+    .map((para) => {
+      if (para.trim() && !para.match(/^<[h|u|o|l|p]/)) {
+        return `<p>${para.trim()}</p>`;
+      }
+      return para;
+    })
+    .join("\n");
 
-  // Convert single line breaks to <br>
   html = html.replace(/\n/g, "<br>");
 
-  // Clean up empty paragraphs
   html = html.replace(/<p><\/p>/g, "");
   html = html.replace(/<p><br><\/p>/g, "");
 
   return html;
 }
-

@@ -8,4 +8,3 @@ export const teamMemberInviteSchema = z.object({
 });
 
 export type TeamMemberInviteValues = z.infer<typeof teamMemberInviteSchema>;
-

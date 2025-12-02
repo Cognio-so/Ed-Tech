@@ -1,6 +1,12 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import type { StudentData } from "@/data/get-student-data";
@@ -12,7 +18,6 @@ interface FeedbackListProps {
 }
 
 export function FeedbackList({ students }: FeedbackListProps) {
-  // Filter students who have feedback
   const studentsWithFeedback = students.filter((student) => student.feedback);
 
   if (studentsWithFeedback.length === 0) {
@@ -32,10 +37,13 @@ export function FeedbackList({ students }: FeedbackListProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Student Feedbacks</h2>
+          <h2 className="text-2xl font-bold tracking-tight">
+            Student Feedbacks
+          </h2>
           <p className="text-muted-foreground">
             {studentsWithFeedback.length}{" "}
-            {studentsWithFeedback.length === 1 ? "feedback" : "feedbacks"} received
+            {studentsWithFeedback.length === 1 ? "feedback" : "feedbacks"}{" "}
+            received
           </p>
         </div>
       </div>
@@ -46,7 +54,10 @@ export function FeedbackList({ students }: FeedbackListProps) {
             <CardHeader>
               <div className="flex items-start gap-4">
                 <Avatar className="h-10 w-10">
-                  <AvatarImage src={student.image || undefined} alt={student.name} />
+                  <AvatarImage
+                    src={student.image || undefined}
+                    alt={student.name}
+                  />
                   <AvatarFallback>
                     {student.name
                       .split(" ")
@@ -88,7 +99,8 @@ export function FeedbackList({ students }: FeedbackListProps) {
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Calendar className="h-3 w-3" />
                     <span>
-                      Received on {format(new Date(student.createdAt), "MMM dd, yyyy")}
+                      Received on{" "}
+                      {format(new Date(student.createdAt), "MMM dd, yyyy")}
                     </span>
                   </div>
                 )}
@@ -102,7 +114,8 @@ export function FeedbackList({ students }: FeedbackListProps) {
         <Card className="border-dashed">
           <CardContent className="py-6">
             <p className="text-sm text-muted-foreground text-center">
-              {students.filter((s) => !s.feedback).length} student(s) haven't shared feedback yet
+              {students.filter((s) => !s.feedback).length} student(s) haven't
+              shared feedback yet
             </p>
           </CardContent>
         </Card>
@@ -110,4 +123,3 @@ export function FeedbackList({ students }: FeedbackListProps) {
     </div>
   );
 }
-

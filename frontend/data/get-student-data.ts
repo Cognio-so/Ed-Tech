@@ -19,7 +19,7 @@ export interface StudentData {
 /**
  * Fetches all students of the same grade as the logged-in teacher.
  * Returns student data including name, grade, performance, achievements, feedback, and issues.
- * 
+ *
  * @returns Array of student data with their details
  */
 export async function getStudentData(): Promise<StudentData[]> {
@@ -41,12 +41,10 @@ export async function getStudentData(): Promise<StudentData[]> {
       },
     });
 
-    // Only proceed if user is a teacher and has a grade assigned
     if (!teacher || teacher.role !== "teacher" || !teacher.gradeId) {
       return [];
     }
 
-    // Fetch all students with the same grade
     const students = await prisma.user.findMany({
       where: {
         role: "student",
@@ -69,24 +67,19 @@ export async function getStudentData(): Promise<StudentData[]> {
       },
     });
 
-    // Map students to StudentData format
-    // Note: performance, achievements, feedback, and issues are not in the schema yet
-    // They will be added later, for now we return null
     return students.map((student) => ({
       id: student.id,
       name: student.name,
       email: student.email,
       grade: student.grade?.name || null,
-      performance: null, // To be added later
-      achievements: null, // To be added later
-      feedback: null, // To be added later
-      issues: null, // To be added later
+      performance: null,
+      achievements: null,
+      feedback: null,
+      issues: null,
       image: student.image,
       createdAt: student.createdAt,
     }));
   } catch (error) {
-    console.error("Error fetching student data:", error);
     return [];
   }
 }
-

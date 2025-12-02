@@ -1,7 +1,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Heart, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -17,13 +23,14 @@ export default function RejectedInvitationPage() {
           </div>
           <CardTitle className="text-2xl">Thanks, See You Soon!</CardTitle>
           <CardDescription className="text-base">
-            We respect your decision. If you change your mind, feel free to reach out to us.
+            We respect your decision. If you change your mind, feel free to
+            reach out to us.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-center text-sm text-muted-foreground">
-            We appreciate you taking the time to consider our invitation. 
-            You're always welcome to join us in the future!
+            We appreciate you taking the time to consider our invitation. You're
+            always welcome to join us in the future!
           </p>
           <Button
             onClick={() => router.push("/")}
@@ -38,4 +45,3 @@ export default function RejectedInvitationPage() {
     </div>
   );
 }
-

@@ -1,7 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAllUsers } from "@/data/get-all-users";
+import { protectRoute } from "@/lib/arcjet";
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const protection = await protectRoute(request);
+  if (protection) return protection;
+
   try {
     const { searchParams } = new URL(request.url);
     const searchQuery = searchParams.get("search") || undefined;

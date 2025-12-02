@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { protectRoute } from "@/lib/arcjet";
 
 export async function POST(request: NextRequest) {
+  const protection = await protectRoute(request);
+  if (protection) return protection;
+
   try {
     const body = await request.json();
     const { email, name, role, message, token } = body;
@@ -13,16 +17,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Configure nodemailer for Gmail
     const gmailUsername = process.env.GMAIL_USERNAME || process.env.GMAIL_USER;
     const gmailPassword = process.env.GMAIL_PASSWORD;
-    const senderName = process.env.MAIL_SENDER_NAME || process.env.GMAIL_SENDER_NAME || "Team";
+    const senderName =
+      process.env.MAIL_SENDER_NAME || process.env.GMAIL_SENDER_NAME || "Team";
 
-    // Verify Gmail credentials
     if (!gmailUsername || !gmailPassword) {
       console.error("Gmail credentials not configured");
       return NextResponse.json(
-        { error: "Gmail credentials not configured. Please set GMAIL_USERNAME and GMAIL_PASSWORD in your .env file" },
+        {
+          error:
+            "Gmail credentials not configured. Please set GMAIL_USERNAME and GMAIL_PASSWORD in your .env file",
+        },
         { status: 500 }
       );
     }
@@ -35,7 +41,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL;
     const invitationLink = `${baseUrl}/invitation/accept?token=${token}`;
 
     const emailHtml = `
@@ -55,7 +61,11 @@ export async function POST(request: NextRequest) {
             <p style="font-size: 16px; margin-bottom: 20px;">
               You have been invited to join our team as a <strong>${role}</strong>.
             </p>
-            ${message ? `<p style="font-size: 16px; margin-bottom: 20px; font-style: italic; color: #666;">"${message}"</p>` : ""}
+            ${
+              message
+                ? `<p style="font-size: 16px; margin-bottom: 20px; font-style: italic; color: #666;">"${message}"</p>`
+                : ""
+            }
             <p style="font-size: 16px; margin-bottom: 30px;">
               Click the button below to accept the invitation and set up your account:
             </p>
@@ -117,4 +127,3 @@ This invitation will expire in 7 days.
     );
   }
 }
-

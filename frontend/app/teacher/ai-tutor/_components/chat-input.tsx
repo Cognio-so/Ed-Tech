@@ -23,15 +23,18 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export interface ChatInputProps {
-  onSend: (message: string, options?: {
-    docUrl?: string;
-    uploadedDocs?: Array<{
-      url: string;
-      filename: string;
-      type: string;
-    }>;
-    model?: string;
-  }) => void;
+  onSend: (
+    message: string,
+    options?: {
+      docUrl?: string;
+      uploadedDocs?: Array<{
+        url: string;
+        filename: string;
+        type: string;
+      }>;
+      model?: string;
+    }
+  ) => void;
   isLoading?: boolean;
   disabled?: boolean;
   className?: string;
@@ -45,34 +48,87 @@ interface ModelInfo {
 }
 
 export const MODEL_MAPPING: ModelInfo[] = [
-  { frontendValue: "gemini_2_5_flash", displayName: "Gemini 2.5 Flash", backendName: "google/gemini-2.5-flash" },
-  { frontendValue: "gemini_2_5_pro", displayName: "Gemini 2.5 Pro", backendName: "google/gemini-2.5-pro" },
-  { frontendValue: "gemini_2_5_flash_lite", displayName: "Gemini 2.5 Flash-lite", backendName: "google/gemini-2.5-flash-lite" },
-  { frontendValue: "gpt_4_1", displayName: "GPT 4.1", backendName: "openai/gpt-4.1" },
+  {
+    frontendValue: "gemini_2_5_flash",
+    displayName: "Gemini 2.5 Flash",
+    backendName: "google/gemini-2.5-flash",
+  },
+  {
+    frontendValue: "gemini_2_5_pro",
+    displayName: "Gemini 2.5 Pro",
+    backendName: "google/gemini-2.5-pro",
+  },
+  {
+    frontendValue: "gemini_2_5_flash_lite",
+    displayName: "Gemini 2.5 Flash-lite",
+    backendName: "google/gemini-2.5-flash-lite",
+  },
+  {
+    frontendValue: "gpt_4_1",
+    displayName: "GPT 4.1",
+    backendName: "openai/gpt-4.1",
+  },
   { frontendValue: "gpt_5", displayName: "GPT 5", backendName: "openai/gpt-5" },
-  { frontendValue: "gpt_5_thinking_high", displayName: "GPT 5 Thinking High", backendName: "openai/gpt-5-thinking-high" },
-  { frontendValue: "gpt_5_mini", displayName: "GPT 5 mini", backendName: "openai/gpt-5-mini" },
-  { frontendValue: "gpt_5_nano", displayName: "GPT 5 nano", backendName: "openai/gpt-5-nano" },
-  { frontendValue: "gpt_4o", displayName: "GPT-4o", backendName: "openai/gpt-4o" },
-  { frontendValue: "claude_sonnet_4_5", displayName: "Claude Sonnet 4.5", backendName: "anthropic/claude-4.5-sonnet" },
-  { frontendValue: "claude_opus_4_1", displayName: "Claude Opus 4.1", backendName: "anthropic/claude-4.1-opus" },
-  { frontendValue: "claude_haiku_3_5", displayName: "Claude Haiku 3.5", backendName: "anthropic/claude-3.5-haiku" },
-  { frontendValue: "grok_4_fast", displayName: "Grok 4 Fast", backendName: "x-ai/grok-4-fast" },
-  { frontendValue: "deepseek_v3_1", displayName: "DeepSeek V3.1", backendName: "deepseek/deepseek-chat-v3.1" },
-  { frontendValue: "meta_llama_3_3_70b", displayName: "meta/llama 3.3 70b", backendName: "meta-llama/llama-3.3-70b-instruct:free" },
-  { frontendValue: "kimi_k2_0905", displayName: "Kimi K2 0905", backendName: "moonshotai/kimi-k2-0905" },
+  {
+    frontendValue: "gpt_5_thinking_high",
+    displayName: "GPT 5 Thinking High",
+    backendName: "openai/gpt-5-thinking-high",
+  },
+  {
+    frontendValue: "gpt_5_mini",
+    displayName: "GPT 5 mini",
+    backendName: "openai/gpt-5-mini",
+  },
+  {
+    frontendValue: "gpt_5_nano",
+    displayName: "GPT 5 nano",
+    backendName: "openai/gpt-5-nano",
+  },
+  {
+    frontendValue: "gpt_4o",
+    displayName: "GPT-4o",
+    backendName: "openai/gpt-4o",
+  },
+  {
+    frontendValue: "claude_sonnet_4_5",
+    displayName: "Claude Sonnet 4.5",
+    backendName: "anthropic/claude-4.5-sonnet",
+  },
+  {
+    frontendValue: "claude_opus_4_1",
+    displayName: "Claude Opus 4.1",
+    backendName: "anthropic/claude-4.1-opus",
+  },
+  {
+    frontendValue: "claude_haiku_3_5",
+    displayName: "Claude Haiku 3.5",
+    backendName: "anthropic/claude-3.5-haiku",
+  },
+  {
+    frontendValue: "grok_4_fast",
+    displayName: "Grok 4 Fast",
+    backendName: "x-ai/grok-4-fast",
+  },
+  {
+    frontendValue: "deepseek_v3_1",
+    displayName: "DeepSeek V3.1",
+    backendName: "deepseek/deepseek-chat-v3.1",
+  },
+  {
+    frontendValue: "meta_llama_3_3_70b",
+    displayName: "meta/llama 3.3 70b",
+    backendName: "meta-llama/llama-3.3-70b-instruct:free",
+  },
+  {
+    frontendValue: "kimi_k2_0905",
+    displayName: "Kimi K2 0905",
+    backendName: "moonshotai/kimi-k2-0905",
+  },
 ];
 
-// Helper function to get backend name from frontend value
 const getBackendName = (frontendValue: string): string | undefined => {
   const model = MODEL_MAPPING.find((m) => m.frontendValue === frontendValue);
   return model?.backendName;
-};
-
-// Helper function to get display name from frontend value
-const getDisplayName = (frontendValue: string): string => {
-  const model = MODEL_MAPPING.find((m) => m.frontendValue === frontendValue);
-  return model?.displayName || frontendValue;
 };
 
 interface UploadedDoc {
@@ -97,7 +153,6 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-expand textarea based on content
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -107,7 +162,11 @@ export function ChatInput({
   }, [message]);
 
   const handleSend = useCallback(() => {
-    if ((message.trim() || uploadedDocs.length > 0) && !isLoading && !isUploading) {
+    if (
+      (message.trim() || uploadedDocs.length > 0) &&
+      !isLoading &&
+      !isUploading
+    ) {
       const backendModelName = getBackendName(selectedModel);
       onSend(message.trim() || "Files attached", {
         docUrl: uploadedDocs.length > 0 ? uploadedDocs[0].url : undefined,
@@ -198,10 +257,6 @@ export function ChatInput({
     [handleSend]
   );
 
-  const handleVoiceClick = useCallback(() => {
-    toast.info("Voice input coming soon!");
-  }, []);
-
   const canSend = Boolean(message.trim() || uploadedDocs.length > 0);
 
   const getFileIcon = (type: string) => {
@@ -223,7 +278,13 @@ export function ChatInput({
   };
 
   return (
-    <div className={cn("w-full max-w-4xl mx-auto", hasMessages ? "" : "px-2 sm:px-4", className)}>
+    <div
+      className={cn(
+        "w-full max-w-4xl mx-auto",
+        hasMessages ? "" : "px-2 sm:px-4",
+        className
+      )}
+    >
       {/* Show uploaded files */}
       {uploadedDocs.length > 0 && (
         <div className="mb-2 sm:mb-3 flex flex-wrap gap-1.5 sm:gap-2">
@@ -232,9 +293,14 @@ export function ChatInput({
               key={index}
               className="flex items-center gap-1.5 sm:gap-2 bg-muted/50 border border-border rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm"
             >
-              <span className="text-base sm:text-lg">{getFileIcon(doc.type)}</span>
+              <span className="text-base sm:text-lg">
+                {getFileIcon(doc.type)}
+              </span>
               <div className="flex flex-col min-w-0">
-                <span className="font-medium truncate max-w-[80px] sm:max-w-[120px]" title={doc.filename}>
+                <span
+                  className="font-medium truncate max-w-[80px] sm:max-w-[120px]"
+                  title={doc.filename}
+                >
                   {doc.filename}
                 </span>
                 <span className="text-[10px] sm:text-xs text-muted-foreground">
@@ -261,7 +327,9 @@ export function ChatInput({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder={isUploading ? "Uploading documents..." : "Ask anything..."}
+            placeholder={
+              isUploading ? "Uploading documents..." : "Ask anything..."
+            }
             disabled={isLoading || isUploading}
             className="w-full min-h-[40px] sm:min-h-[44px] max-h-[120px] sm:max-h-[180px] resize-none outline-none text-sm sm:text-base leading-snug bg-transparent placeholder:text-muted-foreground disabled:opacity-50 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding"
             rows={2}
@@ -304,7 +372,11 @@ export function ChatInput({
                 <SelectContent className="max-h-[300px] sm:max-h-[400px] overflow-y-auto">
                   <div className="grid grid-cols-1 gap-1 p-2">
                     {MODEL_MAPPING.map((model) => (
-                      <SelectItem key={model.frontendValue} value={model.frontendValue} className="text-xs sm:text-sm">
+                      <SelectItem
+                        key={model.frontendValue}
+                        value={model.frontendValue}
+                        className="text-xs sm:text-sm"
+                      >
                         {model.displayName}
                       </SelectItem>
                     ))}
@@ -318,7 +390,11 @@ export function ChatInput({
               size="icon"
               className="h-6 w-6 sm:h-7 sm:w-7 rounded-full"
             >
-              {canSend ? <ArrowUp className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : <AudioLines className="h-3 w-3 sm:h-3.5 sm:w-3.5" />}
+              {canSend ? (
+                <ArrowUp className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+              ) : (
+                <AudioLines className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+              )}
             </Button>
           </div>
 
@@ -339,7 +415,11 @@ export function ChatInput({
                 <SelectContent className="max-h-[400px] overflow-y-auto">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-1 p-2">
                     {MODEL_MAPPING.map((model) => (
-                      <SelectItem key={model.frontendValue} value={model.frontendValue} className="text-sm">
+                      <SelectItem
+                        key={model.frontendValue}
+                        value={model.frontendValue}
+                        className="text-sm"
+                      >
                         {model.displayName}
                       </SelectItem>
                     ))}
@@ -365,7 +445,11 @@ export function ChatInput({
                 className="h-7 w-7 rounded-full"
                 title="Send message"
               >
-                {canSend ? <ArrowUp className="h-3.5 w-3.5" /> : <AudioLines className="h-3.5 w-3.5" />}
+                {canSend ? (
+                  <ArrowUp className="h-3.5 w-3.5" />
+                ) : (
+                  <AudioLines className="h-3.5 w-3.5" />
+                )}
               </Button>
             </div>
           </div>

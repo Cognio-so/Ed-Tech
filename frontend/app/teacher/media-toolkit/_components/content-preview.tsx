@@ -14,7 +14,9 @@ import { toast } from "sonner";
 import { DownloadDialog } from "@/components/ui/download-dialog";
 
 interface ContentPreviewProps {
-  content: string;
+  content?: string;
+  streamingContent?: string;
+  isStreaming?: boolean;
   title: string;
   onCopy?: () => void;
   onDownload?: () => void;
@@ -24,6 +26,8 @@ interface ContentPreviewProps {
 
 export function ContentPreview({
   content,
+  streamingContent,
+  isStreaming = false,
   title,
   onCopy,
   onDownload,
@@ -32,6 +36,9 @@ export function ContentPreview({
 }: ContentPreviewProps) {
   const [showDownloadDialog, setShowDownloadDialog] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+
+  // Use streaming content if available, otherwise fall back to regular content
+  const displayContent = streamingContent || content || "";
 
   const handleSave = async () => {
     if (!onSave) return;
@@ -49,7 +56,7 @@ export function ContentPreview({
     if (onCopy) {
       onCopy();
     } else {
-      navigator.clipboard.writeText(content);
+      navigator.clipboard.writeText(displayContent);
       toast.success("Content copied to clipboard");
     }
   };
@@ -62,18 +69,41 @@ export function ContentPreview({
     }
   };
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      if (isStreaming) {
+        toast.info("Please wait for content generation to complete");
+        return;
+      }
+      onClose();
+    }
+  };
+
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="!w-[1200px] !max-w-[1200px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
+    <Dialog open={true} onOpenChange={handleOpenChange}>
+      <DialogContent 
+        className="!w-[1200px] !max-w-[1200px] max-w-[95vw] max-h-[90vh] overflow-y-auto"
+        onInteractOutside={(e) => {
+          if (isStreaming || displayContent) {
+            e.preventDefault();
+          }
+        }}
+        onEscapeKeyDown={(e) => {
+          if (isStreaming) {
+            e.preventDefault();
+            toast.info("Please wait for content generation to complete");
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>{title}</span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleCopy}>
+            <div className="flex gap-2 mr-8">
+              <Button variant="outline" size="sm" onClick={handleCopy} disabled={!displayContent}>
                 <Copy className="mr-2 h-4 w-4" />
                 Copy
               </Button>
-              <Button variant="outline" size="sm" onClick={handleDownload}>
+              <Button variant="outline" size="sm" onClick={handleDownload} disabled={!displayContent}>
                 <Download className="mr-2 h-4 w-4" />
                 Download
               </Button>
@@ -82,7 +112,7 @@ export function ContentPreview({
                   variant="default"
                   size="sm"
                   onClick={handleSave}
-                  disabled={isSaving}
+                  disabled={isSaving || isStreaming || !displayContent}
                 >
                   {isSaving ? (
                     <>
@@ -101,15 +131,21 @@ export function ContentPreview({
           </DialogTitle>
         </DialogHeader>
         <div className="mt-4 border rounded-lg p-6 bg-muted/50 max-h-[70vh] overflow-y-auto">
-          <Markdown content={content} />
+          {isStreaming && !displayContent ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Generating content...</span>
+            </div>
+          ) : (
+            <Markdown content={displayContent} />
+          )}
         </div>
       </DialogContent>
 
-      {/* Download Dialog */}
       <DownloadDialog
         open={showDownloadDialog}
         onOpenChange={setShowDownloadDialog}
-        content={content}
+        content={displayContent}
         title={title}
       />
     </Dialog>

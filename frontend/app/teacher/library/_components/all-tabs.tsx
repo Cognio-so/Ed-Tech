@@ -34,7 +34,6 @@ export function AllTabs({ content }: AllTabsProps) {
     title: string;
   } | null>(null);
 
-  // Filter content by type
   const mediaToolkitContent = localContent.filter(
     (item) => item.type === "media-toolkit"
   );
@@ -45,7 +44,6 @@ export function AllTabs({ content }: AllTabsProps) {
     (item) => item.type === "assessment"
   );
 
-  // Count by content type
   const counts = {
     all: localContent.length,
     content: contentGenerationContent.length,
@@ -79,7 +77,6 @@ export function AllTabs({ content }: AllTabsProps) {
 
       let contentToDownload = item.content;
 
-      // For JSON content, try to parse and format
       try {
         const parsed = JSON.parse(item.content);
         if (parsed.presentation_url) {
@@ -93,9 +90,7 @@ export function AllTabs({ content }: AllTabsProps) {
           return;
         }
         contentToDownload = JSON.stringify(parsed, null, 2);
-      } catch {
-        // Not JSON, use as is
-      }
+      } catch {}
 
       setDownloadContent({
         content: contentToDownload,
@@ -140,13 +135,10 @@ export function AllTabs({ content }: AllTabsProps) {
     const contentType = previewItem.contentType;
     const content = previewItem.content;
 
-    // Try to parse JSON content
     let parsedContent: any = null;
     try {
       parsedContent = JSON.parse(content);
-    } catch {
-      // Not JSON, use as string
-    }
+    } catch {}
 
     if (contentType === "assessment") {
       return (
@@ -215,7 +207,6 @@ export function AllTabs({ content }: AllTabsProps) {
       );
     }
 
-    // Default preview for content generation items
     return (
       <ContentPreview
         content={content}
@@ -242,17 +233,13 @@ export function AllTabs({ content }: AllTabsProps) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {items.map((item) => {
-          // Extract image URL from content based on content type
           let imageUrl: string | undefined;
 
           if (item.contentType === "image") {
-            // For images, content IS the image URL (string, not JSON)
             imageUrl = item.content;
           } else if (item.contentType === "comic") {
-            // For comics, content is JSON with panels array
             try {
               const parsed = JSON.parse(item.content);
-              // Get the first panel's URL if available
               if (
                 parsed.panels &&
                 Array.isArray(parsed.panels) &&
@@ -260,18 +247,13 @@ export function AllTabs({ content }: AllTabsProps) {
               ) {
                 imageUrl = parsed.panels[0].url;
               }
-            } catch {
-              // Not valid JSON
-            }
+            } catch {}
           } else {
-            // For other types, try to parse as JSON
             try {
               const parsed = JSON.parse(item.content);
               imageUrl =
                 parsed.image_url || parsed.url || parsed.presentation_url;
-            } catch {
-              // Not JSON or no image URL
-            }
+            } catch {}
           }
 
           return (

@@ -4,11 +4,15 @@ import { headers } from "next/headers";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import { protectRoute } from "@/lib/arcjet";
 
 const UPLOAD_DIR = join(process.cwd(), "public", "uploads");
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
+  const protection = await protectRoute(request);
+  if (protection) return protection;
+
   try {
     const session = await auth.api.getSession({
       headers: await headers(),
@@ -50,7 +54,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Ensure upload directory exists
     if (!existsSync(UPLOAD_DIR)) {
       await mkdir(UPLOAD_DIR, { recursive: true });
     }
@@ -61,7 +64,6 @@ export async function POST(request: NextRequest) {
     const filename = `${session.user.id}_${timestamp}_${randomString}.${fileExtension}`;
     const filepath = join(UPLOAD_DIR, filename);
 
-    // Save file
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     await writeFile(filepath, buffer);

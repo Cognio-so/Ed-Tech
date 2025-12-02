@@ -1,15 +1,15 @@
-import prisma from "@/lib/prisma"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
-import { redirect } from "next/navigation"
+import prisma from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 export interface TeacherConversation {
-  id: string
-  title: string
-  messages: string
-  metadata: string | null
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  title: string;
+  messages: string;
+  metadata: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export async function getTeacherHistory(
@@ -17,28 +17,30 @@ export async function getTeacherHistory(
   pageSize: number = 10,
   searchQuery?: string
 ): Promise<{
-  conversations: TeacherConversation[]
-  total: number
-  totalPages: number
+  conversations: TeacherConversation[];
+  total: number;
+  totalPages: number;
 }> {
   const session = await auth.api.getSession({
     headers: await headers(),
-  })
+  });
 
   if (!session?.user?.id) {
-    redirect("/login")
+    redirect("/login");
   }
 
   try {
-    const skip = (page - 1) * pageSize
+    const skip = (page - 1) * pageSize;
 
     let whereClause: any = {
       userId: session.user.id,
-    }
+    };
 
     if (searchQuery && searchQuery.trim()) {
-      const searchLower = searchQuery.toLowerCase().trim()
-      const allConversations = await (prisma as any).teacherConversation.findMany({
+      const searchLower = searchQuery.toLowerCase().trim();
+      const allConversations = await (
+        prisma as any
+      ).teacherConversation.findMany({
         where: {
           userId: session.user.id,
         },
@@ -50,32 +52,32 @@ export async function getTeacherHistory(
           createdAt: true,
           updatedAt: true,
         },
-      })
+      });
 
       const filtered = allConversations.filter((conv: any) => {
-        const titleMatch = conv.title?.toLowerCase().includes(searchLower)
-        
-        let contentMatch = false
+        const titleMatch = conv.title?.toLowerCase().includes(searchLower);
+
+        let contentMatch = false;
         try {
-          const messages = JSON.parse(conv.messages || "[]")
+          const messages = JSON.parse(conv.messages || "[]");
           const allContent = messages
             .map((msg: any) => msg.content || "")
             .join(" ")
-            .toLowerCase()
-          contentMatch = allContent.includes(searchLower)
+            .toLowerCase();
+          contentMatch = allContent.includes(searchLower);
         } catch {
-          contentMatch = false
+          contentMatch = false;
         }
 
-        return titleMatch || contentMatch
-      })
+        return titleMatch || contentMatch;
+      });
 
       const sorted = filtered.sort(
         (a: any, b: any) =>
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      )
+      );
 
-      const paginated = sorted.slice(skip, skip + pageSize)
+      const paginated = sorted.slice(skip, skip + pageSize);
 
       return {
         conversations: paginated.map((conv: any) => ({
@@ -85,7 +87,7 @@ export async function getTeacherHistory(
         })),
         total: filtered.length,
         totalPages: Math.ceil(filtered.length / pageSize),
-      }
+      };
     }
 
     const [conversations, total] = await Promise.all([
@@ -108,9 +110,9 @@ export async function getTeacherHistory(
       (prisma as any).teacherConversation.count({
         where: whereClause,
       }),
-    ])
+    ]);
 
-    const totalPages = Math.ceil(total / pageSize)
+    const totalPages = Math.ceil(total / pageSize);
 
     return {
       conversations: conversations.map((conv: any) => ({
@@ -120,14 +122,13 @@ export async function getTeacherHistory(
       })),
       total,
       totalPages,
-    }
+    };
   } catch (error) {
-    console.error("Error fetching teacher history:", error)
     return {
       conversations: [],
       total: 0,
       totalPages: 0,
-    }
+    };
   }
 }
 
@@ -136,10 +137,10 @@ export async function getConversationById(
 ): Promise<TeacherConversation | null> {
   const session = await auth.api.getSession({
     headers: await headers(),
-  })
+  });
 
   if (!session?.user?.id) {
-    redirect("/login")
+    redirect("/login");
   }
 
   try {
@@ -156,19 +157,18 @@ export async function getConversationById(
         createdAt: true,
         updatedAt: true,
       },
-    })
+    });
 
     if (!conversation) {
-      return null
+      return null;
     }
 
     return {
       ...conversation,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
-    }
+    };
   } catch (error) {
-    console.error("Error fetching conversation:", error)
-    return null
+    return null;
   }
 }

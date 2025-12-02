@@ -3,9 +3,19 @@
 import { useEffect, useState, useTransition, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { CheckCircle2, XCircle, Loader2, Mail } from "lucide-react";
-import { acceptInvitation, rejectInvitation, getInvitationByToken } from "@/app/invitation/action";
+import {
+  acceptInvitation,
+  rejectInvitation,
+  getInvitationByToken,
+} from "@/app/invitation/action";
 import { toast } from "sonner";
 
 function AcceptInvitationContent() {
@@ -114,7 +124,8 @@ function AcceptInvitationContent() {
               Invitation Already Accepted
             </CardTitle>
             <CardDescription>
-              This invitation has already been accepted. You can log in to your account.
+              This invitation has already been accepted. You can log in to your
+              account.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -156,7 +167,8 @@ function AcceptInvitationContent() {
               Invitation Expired
             </CardTitle>
             <CardDescription>
-              This invitation has expired. Please contact the administrator for a new invitation.
+              This invitation has expired. Please contact the administrator for
+              a new invitation.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -179,16 +191,24 @@ function AcceptInvitationContent() {
         <CardContent className="space-y-6">
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Name:</span>
+              <span className="text-sm font-medium text-muted-foreground">
+                Name:
+              </span>
               <span className="text-sm font-semibold">{invitation.name}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Email:</span>
+              <span className="text-sm font-medium text-muted-foreground">
+                Email:
+              </span>
               <span className="text-sm font-semibold">{invitation.email}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Role:</span>
-              <span className="text-sm font-semibold capitalize">{invitation.role}</span>
+              <span className="text-sm font-medium text-muted-foreground">
+                Role:
+              </span>
+              <span className="text-sm font-semibold capitalize">
+                {invitation.role}
+              </span>
             </div>
             {invitation.message && (
               <div className="pt-2 border-t">
@@ -239,13 +259,14 @@ function AcceptInvitationContent() {
 
 export default function AcceptInvitationPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      }
+    >
       <AcceptInvitationContent />
     </Suspense>
   );
 }
-
