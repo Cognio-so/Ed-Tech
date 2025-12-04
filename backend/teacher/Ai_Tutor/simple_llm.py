@@ -16,6 +16,29 @@ from backend.teacher.Ai_Tutor.graph_type import GraphState
 from backend.teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
 
 
+def _format_last_turns(messages, k=3):
+    """Format last k messages for context."""
+    if not messages:
+        return "(no previous conversation)"
+    
+    formatted = []
+    for m in messages[-k:]:
+        if isinstance(m, dict):
+            role = (m.get("type") or m.get("role") or "").lower()
+            content = m.get("content", "")
+        else:
+            role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
+            content = getattr(m, "content", "") if hasattr(m, "content") else str(m)
+        
+        if not content:
+            continue
+        
+        speaker = "User" if role in ("human", "user") else "Assistant"
+        formatted.append(f"{speaker}: {content}")
+    
+    return "\n".join(formatted) if formatted else "(no previous conversation)"
+
+
 def format_student_data(student_data: Any) -> str:
     """Format student data for context."""
     if not student_data:
@@ -334,6 +357,9 @@ async def simple_llm_node(state: GraphState) -> GraphState:
     <context>
         <role>Expert AI Tutor for Teachers</role>
         <task>Help teachers with educational content, students, and curriculum-related questions</task>
+        <recent_conversation>
+{_format_last_turns(messages, k=3)}
+        </recent_conversation>
     </context>
     
     <parameters>

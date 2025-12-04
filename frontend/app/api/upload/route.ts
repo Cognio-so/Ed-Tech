@@ -76,6 +76,38 @@ export async function POST(request: NextRequest) {
         : "http://localhost:3000";
     const absoluteUrl = `${baseUrl}${fileUrl}`;
 
+    // 🔄 Immediately trigger backend embedding so RAG is ready before chat
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+    if (backendUrl) {
+      try {
+        // Use a dedicated upload session id (doesn't need to match chat session)
+        const uploadSessionId = `upload_${session.user.id}_${timestamp}`;
+
+        await fetch(
+          `${backendUrl}/api/teacher/${session.user.id}/session/${uploadSessionId}/add-documents`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              documents: [
+                {
+                  file_url: absoluteUrl,
+                  filename: file.name,
+                  file_type: file.type || fileExtension || "txt",
+                  id: `${session.user.id}_${timestamp}_${randomString}`,
+                  size: file.size,
+                },
+              ],
+            }),
+          }
+        );
+      } catch (err) {
+        console.error("Error triggering backend document embedding:", err);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       url: absoluteUrl,

@@ -6,6 +6,7 @@ class GraphState(TypedDict):
     messages: Annotated[List[BaseMessage], "add_messages"]
     user_query: Optional[str]
     teacher_id: str
+    session_id: Optional[str]
     student_data: Optional[Dict[str, Any]]
     teacher_data: Optional[Dict[str, Any]]
     topic: Optional[str]
@@ -30,4 +31,11 @@ class GraphState(TypedDict):
     current_task: Optional[str]
     resolved_query: Optional[str]
     intermediate_results: Optional[List[Dict[str, Any]]]
+    uploaded_doc: Optional[bool]  # Flag indicating if new document was just uploaded
+    new_uploaded_docs: Optional[List[Dict[str, Any]]]  # List of newly uploaded documents with metadata
+    active_docs: Optional[List[Dict[str, Any]]]  # Currently active documents in session
+    is_image: Optional[bool]  # Flag for image generation/editing intent
+    edit_img_urls: Optional[List[str]]  # Image URLs for editing
+    img_urls: Optional[List[str]]  # Generated or processed image URLs
+    next_node: Optional[str]  # Next node to route to
 
