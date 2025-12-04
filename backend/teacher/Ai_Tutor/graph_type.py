@@ -7,10 +7,13 @@ class GraphState(TypedDict):
     user_query: Optional[str]
     teacher_id: str
     student_data: Optional[Dict[str, Any]]
+    teacher_data: Optional[Dict[str, Any]]
     topic: Optional[str]
     subject: Optional[str]
+    content_type: Optional[Any]  # Can be string or list of content items
     doc_url: Optional[str]
     language: Optional[str]
+    model: Optional[str]  # Selected AI model (e.g., "deepseek-v3.1")
     context: Optional[Dict[str, Any]]
     should_continue: bool
     chunk_callback: Optional[Any]
