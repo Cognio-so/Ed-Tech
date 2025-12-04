@@ -44,11 +44,7 @@ langchain_community
 pillow
 requests
 openai-agents
-openai>=1.0.0
 websockets
 aiortc
-pyaudio
 sounddevice
-asposeslidescloud
 python-pptx
-PyMuPDF
