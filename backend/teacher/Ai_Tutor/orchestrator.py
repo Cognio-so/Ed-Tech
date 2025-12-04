@@ -1,5 +1,6 @@
 """
-Orchestrator node for AI Tutor with LLM-based routing.
+Orchestrator node for AI Tutor with enhanced routing.
+Supports: Documents (PDF, DOCX, TXT, Images), Image Generation/Editing, WebSearch, SimpleLLM
 """
 import sys
 from pathlib import Path
@@ -21,7 +22,7 @@ from backend.teacher.Ai_Tutor.graph_type import GraphState
 
 
 def load_orchestrator_prompt() -> str:
-    """Load orchestrator prompt from XML file and pass it directly to the LLM."""
+    """Load orchestrator prompt from XML file."""
     prompt_file = Path(__file__).parent / "orchestrator_prompt.xml"
     try:
         return prompt_file.read_text(encoding="utf-8")
@@ -40,19 +41,13 @@ Your job is to analyze user queries and decide which processing node should hand
 
 <available_nodes>
 - SimpleLLM: For straightforward questions, explanations, definitions
-- RAG: For questions requiring document analysis, when user documents are available
-- WebSearch: For current events, latest information, real-time data
-- Image: For image generation requests
+- RAG: For questions requiring document/image analysis
+- WebSearch: For current events, latest information
+- Image: For image generation/editing
 </available_nodes>
 
 <output_format>
-Analyze the user query and conversation context, then return JSON with:
-{
-    "execution_order": ["node1", "node2", ...],
-    "reasoning": "brief explanation"
-}
-
-Return only valid JSON.
+Return JSON: {"execution_order": ["node1", "node2"], "reasoning": "explanation"}
 </output_format>
 </system>"""
 
@@ -74,13 +69,14 @@ def normalize_route(name: str) -> str:
         "simplellm": "simple_llm",
         "llm": "simple_llm",
         "image": "image",
+        "img": "image",
         "end": "end",
     }
     return mapping.get(key, "simple_llm")
 
 
-def _format_conversation_history(messages, max_turns=10):
-    """Format full conversation history for context."""
+def _format_conversation_history(messages, max_turns=3, max_words_assistant=300):
+    """Format conversation history with truncation for assistant messages."""
     if not messages:
         return "(no previous conversation)"
     
@@ -97,7 +93,14 @@ def _format_conversation_history(messages, max_turns=10):
             continue
         
         speaker = "User" if role in ("human", "user") else "Assistant"
-        formatted.append(f"{speaker}: {content}")
+        
+        # Truncate assistant messages to avoid overwhelming context
+        if speaker == "Assistant":
+            words = content.split()
+            if len(words) > max_words_assistant:
+                content = " ".join(words[:max_words_assistant]) + " ..."
+        
+        formatted.append(f"{speaker}: {content.strip()}")
     
     return "\n".join(formatted) if formatted else "(no previous conversation)"
 
@@ -107,18 +110,158 @@ def _format_last_turns(messages, k=3):
     return _format_conversation_history(messages, max_turns=k)
 
 
+async def summarizer(state: GraphState, keep_last=2):
+    """
+    Summarizes older conversation and keeps only last `keep_last` turns.
+    Each turn is truncated to max 300 words.
+    """
+    msgs = state.get("messages") or []
+    if len(msgs) <= keep_last:
+        return
+
+    older = msgs[:-keep_last]
+    recent = msgs[-keep_last:]
+
+    print(f"[Orchestrator] 📝 Session summary called, summarizing {len(older)} older messages")
+    
+    def truncate_text(text: str, word_limit: int = 300):
+        words = text.split()
+        return " ".join(words[:word_limit]) + ("..." if len(words) > word_limit else "")
+
+    for m in recent:
+        if "content" in m and isinstance(m["content"], str):
+            m["content"] = truncate_text(m["content"])
+
+    # Build old conversation text
+    old_text = []
+    for m in older:
+        role = (m.get("type") or m.get("role") or "").lower()
+        content = m.get("content") or ""
+        if not content:
+            continue
+        speaker = "User" if role in ("human", "user") else "Assistant"
+        old_text.append(f"{speaker}: {content}")
+    full_old_text = "\n".join(old_text)[:8000]
+    
+    system_prompt = (
+        "You are a summarization agent. Summarize the following chat history into <300 words, "
+        "preserving key intents, facts, and unresolved items. Output only plain text."
+    )
+    user_prompt = f"Summarize this conversation:\n\n{full_old_text}"
+
+    try:
+        llm = ChatGroq(
+            model="openai/gpt-oss-20b",
+            temperature=0.4,
+            groq_api_key=os.getenv("GROQ_API_KEY")
+        )
+        result = await llm.ainvoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ])
+        summary = (result.content or "").strip()
+    except Exception as e:
+        print(f"[Orchestrator] Summarization error: {e}")
+        summary = "Summary of earlier conversation: user and assistant discussed multiple related topics."
+
+    # Store summary in context
+    ctx = state.get("context") or {}
+    sess = ctx.get("session") or {}
+    sess["summary"] = summary
+    ctx["session"] = sess
+    state["context"] = ctx
+    state["messages"] = recent
+
+
+async def is_followup(
+    user_query: str,
+    history: List[dict],
+    docs_present: bool,
+    kb_present: bool,
+) -> dict:
+    """
+    Ask LLM to judge if user message is a conversational follow-up.
+    Returns: {"is_followup": bool, "should_use_rag": bool, "confidence": float, "rationale": str}
+    """
+    turns = []
+    for m in (history or [])[-12:]:
+        role = (m.get("type") or m.get("role") or "").lower()
+        content = m.get("content") if isinstance(m, dict) else getattr(m, "content", "")
+        if not content:
+            continue
+        prefix = "User" if role in ("human", "user") else "Assistant"
+        turns.append(f"{prefix}: {content}")
+    
+    sys = (
+        "You are a routing judge. Decide if the NEW user message is a FOLLOW-UP in the same thread "
+        "that should keep using the same sources (uploaded documents and/or knowledge base). "
+        "Consider the conversation and the presence of docs/KB in the session.\n"
+        "Output STRICT JSON with keys: is_followup (bool), should_use_rag (bool), "
+        "confidence (0..1), rationale (short string)."
+    )
+    usr = (
+        f"Docs present: {bool(docs_present)} | KB present: {bool(kb_present)}\n"
+        f"Conversation (most recent first):\n" + "\n".join(turns) + "\n\n"
+        f"NEW user message: {user_query}\n"
+        "Return JSON only."
+    )
+    
+    try:
+        google_api_key = os.getenv("GOOGLE_API_KEY", "")
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            temperature=0.3,
+            api_key=google_api_key,
+        )
+        result = await llm.ainvoke([SystemMessage(sys), HumanMessage(usr)])
+        text = result.content.strip()
+        obj = json.loads(text)
+    except Exception:
+        obj = {
+            "is_followup": True if len(user_query.split()) < 8 else False,
+            "should_use_rag": bool(docs_present or kb_present),
+            "confidence": 0.4,
+            "rationale": "Fallback heuristic because LLM did not return valid JSON."
+        }
+    return obj
+
+
 async def analyze_query(
     user_message: str,
     recent_messages_text: str,
     session_summary: str,
     last_route: Optional[str],
+    is_image: bool = False,
+    uploaded_images: List[str] = None,
+    new_uploaded_docs: List[dict] = None,
     doc_url: Optional[str] = None,
     is_websearch: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
     Analyze user query using LLM to decide routing.
+    Supports: RAG, WebSearch, SimpleLLM, Image
     """
     try:
+        # Build uploaded images context
+        uploaded_images_text = ""
+        if uploaded_images and len(uploaded_images) > 0:
+            uploaded_images_text = f"\nUploaded Images: {len(uploaded_images)} image URL(s) available in session"
+        
+        # Build document context from new_uploaded_docs
+        doc_context_text = ""
+        if new_uploaded_docs and len(new_uploaded_docs) > 0:
+            doc_types = {}
+            for doc in new_uploaded_docs:
+                if isinstance(doc, dict):
+                    file_type = doc.get("file_type", "unknown")
+                    doc_types[file_type] = doc_types.get(file_type, 0) + 1
+            
+            doc_summary = []
+            for doc_type, count in doc_types.items():
+                doc_summary.append(f"{count} {doc_type}(s)")
+            
+            doc_context_text = f"\nNewly Uploaded Documents: {', '.join(doc_summary)}"
+        
         dynamic_context = f"""<context>
 <user_message>
 {user_message}
@@ -139,13 +282,14 @@ async def analyze_query(
 <system_state>
 <document_available>{bool(doc_url)}</document_available>
 <websearch_enabled>{is_websearch}</websearch_enabled>
+<image_intent_flag>{is_image}</image_intent_flag>{uploaded_images_text}{doc_context_text}
 </system_state>
 </context>
 
 <task>
 Analyze the query and full conversation history, then return JSON with execution_order (list of node names) and reasoning.
 Available nodes: SimpleLLM, RAG, WebSearch, Image
-Consider the conversation context when making routing decisions.
+Consider the conversation context, uploaded documents, and image intent flag when making routing decisions.
 </task>"""
         
         messages = [
@@ -153,25 +297,29 @@ Consider the conversation context when making routing decisions.
             HumanMessage(content=dynamic_context)
         ]
 
-
-        
-        chat = get_llm("x-ai/grok-4.1-fast", 0.4)
-        
+        chat = ChatGroq(
+            model="openai/gpt-oss-120b",
+            temperature=0.4,
+            groq_api_key=os.getenv("GROQ_API_KEY")
+        )
         response = await chat.ainvoke(messages)
         content = (response.content or "").strip()
+        
+        print(f"[Orchestrator] 🤖 Analyzer Raw Output: {content}")
         
         json_match = re.search(r"\{[\s\S]*\}", content)
         if json_match:
             json_str = json_match.group(0).replace("{{", "{").replace("}}", "}")
+            print(f"[Orchestrator] 📋 Extracted JSON: {json_str}")
             return json.loads(json_str)
         
         return json.loads(content)
         
     except Exception as e:
-        print(f"[Orchestrator] Error in analyze_query: {e}")
+        print(f"[Orchestrator] ❌ Error in analyze_query: {e}")
         import traceback
         traceback.print_exc()
-        if doc_url:
+        if doc_url or new_uploaded_docs:
             return {"execution_order": ["RAG"], "reasoning": "Document available, using RAG"}
         return {"execution_order": ["SimpleLLM"], "reasoning": "Default to SimpleLLM"}
 
@@ -180,26 +328,43 @@ async def rewrite_query(state: GraphState) -> str:
     """Rewrite query for current task context."""
     user_query = state.get("user_query", "")
     current_task = state.get("current_task", "")
+    plan = state.get("tasks", [])
+    idx = state.get("task_index", 0)
     intermediate_results = state.get("intermediate_results", [])
     
-    is_first_node = (not intermediate_results or len(intermediate_results) == 0)
+    is_first_node = (idx == 0 or not intermediate_results)
+    print(f"[Orchestrator] 🌟 Is First Node in Plan? {is_first_node}")
     
     if is_first_node:
         summary = state.get("context", {}).get("session", {}).get("summary", "")
         messages = state.get("messages", [])
-        recent_text = _format_last_turns(messages, k=2)
-        
+        last_msgs = []
+        for m in messages[-2:]:
+            # Handle both dict and LangChain message objects
+            if isinstance(m, dict):
+                role = (m.get("type") or m.get("role") or "").lower()
+                content = m.get("content") or ""
+            else:
+                # LangChain message object
+                role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
+                content = getattr(m, "content", "") if hasattr(m, "content") else str(m)
+            
+            speaker = "User" if role in ("human", "user") else "Assistant"
+            last_msgs.append(f"{speaker}: {content}")
+        recent_text = "\n".join(last_msgs)
+
         context_text = (
-            f"User Goal: {user_query}\n\n"
-            f"Summary: {summary[:300]}\n\nRecent: {recent_text[:300]}"
-            if summary or recent_text else f"User Query: {user_query}"
+            f"Current User Goal: {user_query}\n\n"
+            f"Summary:\n{summary[:300]}\n\nRecent Conversation:\n{recent_text[:300]}"
+            if summary or recent_text else f"Current User Query: {user_query}\n\nNo previous conversation available."
         )
     else:
         last_result = intermediate_results[-1]
         context_text = (
-            f"Previous node ({last_result['node']}):\n"
+            f"Context from previous node ({last_result['node']}):\n"
             f"{last_result['output'][:300]}"
         )
+        print(f"[Orchestrator] 📚 Using Previous Node Context: {last_result['node']}")
     
     prompt = f"""<task>
 Rewrite the query for the next step in the workflow.
@@ -209,9 +374,13 @@ Rewrite the query for the next step in the workflow.
 {user_query}
 </user_goal>
 
-<current_task>
+<plan>
+{plan}
+</plan>
+
+<next_step>
 {current_task}
-</current_task>
+</next_step>
 
 <context>
 {context_text}
@@ -219,13 +388,17 @@ Rewrite the query for the next step in the workflow.
 
 <instructions>
 Create a concise, self-contained query (≤150 words) for the next step.
-Output ONLY the rewritten query, no explanation.
+If this is a follow-up, merge relevant context naturally.
+If it's a continuation of a multi-node flow, refine using only the previous node's output.
+Output ONLY the rewritten query. No explanation or formatting.
 </instructions>"""
     
     try:
-        groq_api_key = os.getenv("GROQ_API_KEY")
-        
-        llm = get_llm("x-ai/grok-4.1-fast", 0.4)
+        llm = ChatGroq(
+            model="openai/gpt-oss-120b",
+            temperature=0.4,
+            groq_api_key=os.getenv("GROQ_API_KEY")
+        )
         
         result = await llm.ainvoke([
             SystemMessage(content="<system>You are a query rewriter. Output only the rewritten query.</system>"),
@@ -235,58 +408,131 @@ Output ONLY the rewritten query, no explanation.
         rewritten = (result.content or "").strip()
         words = rewritten.split()
         if len(words) > 150:
-            rewritten = " ".join(words[:150])
+            rewritten = " ".join(words[:150]) + " ..."
+            print(f"[Orchestrator] ⚠️ Query exceeded 150 words, truncated to {len(rewritten.split())} words.")
         
+        print(f"[Orchestrator] ✅ REWRITTEN QUERY ({len(rewritten.split())} words): {rewritten}")
         return rewritten
         
     except Exception as e:
-        print(f"[Orchestrator] Rewrite error: {e}")
+        print(f"[Orchestrator] 🚨 Rewrite error: {e}")
+        import traceback
+        traceback.print_exc()
+        print("[Orchestrator] ⚠️ Falling back to original user query.")
         return user_query
 
 
 async def orchestrator_node(state: GraphState) -> GraphState:
     """
-    Orchestrator node with LLM-based routing.
+    Enhanced orchestrator node with document and image routing support.
+    Handles: Documents, Images, WebSearch, SimpleLLM
     """
+    user_query = state.get("user_query", "")
     doc_url = state.get("doc_url")
     messages = state.get("messages", [])
-    user_query = state.get("user_query", "")
     teacher_id = state.get("teacher_id", "")
+    
+    # Enhanced state fields
+    uploaded_doc = state.get("uploaded_doc", False)
+    new_uploaded_docs = state.get("new_uploaded_docs", [])
+    print(f"[ORCHESTRATOR] 📂 new_uploaded_docs: {len(new_uploaded_docs) if new_uploaded_docs else 0} files")
+    is_image = state.get("is_image", False)
     
     print(f"[ORCHESTRATOR] 🎯 Orchestrator node called")
     print(f"[ORCHESTRATOR] 📝 User query: {user_query[:100]}...")
     print(f"[ORCHESTRATOR] 📎 doc_url: {doc_url}")
-    print(f"[ORCHESTRATOR] 👤 teacher_id: {teacher_id}")
+    print(f"[ORCHESTRATOR] 📄 uploaded_doc flag: {uploaded_doc}")
+    print(f"[ORCHESTRATOR] 📂 new_uploaded_docs: {len(new_uploaded_docs) if new_uploaded_docs else 0} files")
+    print(f"[ORCHESTRATOR] 🖼️ is_image: {is_image}")
     
     if not user_query and messages:
         last_msg = messages[-1]
         user_query = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
         state["user_query"] = user_query
+    
     if not state.get("context"):
         state["context"] = {"session": {}}
+    
+    # Initialize active_docs if not present
+    if not state.get("active_docs"):
+        state["active_docs"] = None
+        print("[Orchestrator] Initialized active_docs as None.")
+    
+    # Update active_docs with new uploads
+    if new_uploaded_docs:
+        state["active_docs"] = new_uploaded_docs
+        print(f"[Orchestrator] Updated active_docs with {len(new_uploaded_docs)} new documents")
     
     ctx = state.get("context", {})
     sess = ctx.get("session", {})
     last_route = sess.get("last_route")
-
+    print(f"[ORCHESTRATOR] 🔄 Last route: {last_route}")
+    
+    # Extract image URLs from new_uploaded_docs
+    edit_img_urls = []
+    if new_uploaded_docs:
+        for doc in new_uploaded_docs:
+            if isinstance(doc, dict):
+                file_type = doc.get("file_type", "")
+                file_url = doc.get("file_url") or doc.get("url")
+                if file_type == "image" and file_url:
+                    edit_img_urls.append(file_url)
+    
+    if edit_img_urls:
+        state["edit_img_urls"] = edit_img_urls
+        print(f"[Orchestrator] Extracted {len(edit_img_urls)} image URL(s): {edit_img_urls}")
+    
     if not state.get("tasks"):
-        conversation_history = _format_conversation_history(messages, max_turns=3)
+        conversation_history = _format_conversation_history(messages, max_turns=6)
         session_summary = sess.get("summary", "")
         
         print(f"[ORCHESTRATOR] 📜 Conversation history: {len(messages)} messages")
-        print(f"[ORCHESTRATOR] 🤖 Analyzing query to determine routing (doc_url available: {bool(doc_url)})")
-        result = await analyze_query(
+        print(f"[ORCHESTRATOR] 🤖 Analyzing query to determine routing...")
+        
+        # Parallel execution of analyze and tentative rewrite
+        analyze_task = analyze_query(
             user_message=user_query,
             recent_messages_text=conversation_history,
             session_summary=session_summary,
             last_route=last_route,
+            is_image=is_image,
+            uploaded_images=edit_img_urls,
+            new_uploaded_docs=new_uploaded_docs,
             doc_url=doc_url,
             is_websearch=True,
         )
         
+        tentative_rewrite_task = rewrite_query(state)
+        
+        result, tentative_rewrite = await asyncio.gather(analyze_task, tentative_rewrite_task)
+        
         plan = result.get("execution_order", ["SimpleLLM"]) if result else ["SimpleLLM"]
         if not plan:
             plan = ["SimpleLLM"]
+        
+        # Check for image node in plan
+        has_image_in_plan = any(task.lower() in ["image", "img"] for task in plan)
+        if not has_image_in_plan:
+            print(f"[Orchestrator] No image node in plan, clearing img_urls")
+            state["img_urls"] = []
+        
+        # Handle image editing scenario
+        if len(edit_img_urls) == len(new_uploaded_docs) and is_image and plan[0].lower() == "image":
+            state["img_urls"] = edit_img_urls
+            print(f"[Orchestrator] Image editing scenario detected")
+        elif uploaded_doc:
+            state["img_urls"] = []
+            print(f"[Orchestrator] Document uploaded scenario")
+            
+            # Force RAG routing for new document uploads
+            if len(plan) == 1 and plan[0].lower() == "rag":
+                pass  # Already routing to RAG
+            elif len(plan) == 1 and plan[0].lower() != "rag":
+                plan = ["rag"]
+            elif len(plan) == 0:
+                plan = ["rag"]
+            
+            print(f"[Orchestrator] New doc uploaded → updated plan = {plan}")
         
         plan = [normalize_route(task) for task in plan]
         
@@ -297,12 +543,13 @@ async def orchestrator_node(state: GraphState) -> GraphState:
         state["task_index"] = 0
         state["current_task"] = plan[0]
         
+        # Use original query for single RAG, rewritten for others
         if len(plan) == 1 and plan[0] == "rag":
             state["resolved_query"] = user_query
-            print(f"[ORCHESTRATOR] ✅ Routing to RAG node with query: {user_query[:100]}...")
+            print(f"[ORCHESTRATOR] ✅ Routing to RAG with original query")
         else:
-            state["resolved_query"] = await rewrite_query(state)
-            print(f"[ORCHESTRATOR] ✏️ Rewritten query: {state['resolved_query'][:100]}...")
+            state["resolved_query"] = tentative_rewrite
+            print(f"[ORCHESTRATOR] ✏️ Using rewritten query: {tentative_rewrite[:100]}...")
         
         route = normalize_route(plan[0])
         state["route"] = route
@@ -315,6 +562,7 @@ async def orchestrator_node(state: GraphState) -> GraphState:
         state["context"] = ctx
         
     else:
+        # Multi-step execution: move to next task
         completed = state.get("current_task")
         if completed and state.get("response"):
             state.setdefault("intermediate_results", []).append({
@@ -334,8 +582,11 @@ async def orchestrator_node(state: GraphState) -> GraphState:
             state["resolved_query"] = clean_query
             state["route"] = route
             state["next_node"] = route
+            print(f"[ORCHESTRATOR] ⏭️ Moving to next task: {route}")
         else:
+            # All tasks completed
             if len(state["tasks"]) > 1:
+                print(f"[ORCHESTRATOR] ✅ Multi-step plan ({len(state['tasks'])} steps) finished")
                 if state.get("intermediate_results"):
                     combined = []
                     for result in state["intermediate_results"]:
@@ -344,6 +595,7 @@ async def orchestrator_node(state: GraphState) -> GraphState:
                 else:
                     state["final_answer"] = state.get("response", "Task completed.")
             else:
+                print(f"[ORCHESTRATOR] ✅ Single-step plan finished")
                 if state.get("intermediate_results"):
                     state["final_answer"] = state["intermediate_results"][-1]["output"]
                 else:
@@ -351,6 +603,10 @@ async def orchestrator_node(state: GraphState) -> GraphState:
             
             state["route"] = "end"
             state["next_node"] = "end"
+    
+    # Summarize session if ending
+    if state.get("route") == "end":
+        await summarizer(state, keep_last=2)
     
     state["should_continue"] = True
     return state
@@ -360,7 +616,7 @@ def route_decision(state: GraphState) -> str:
     """
     Route decision function for graph conditional edges.
     Returns the next node name based on state.route.
-    This is the single routing function used by the graph.
+    Supports: simple_llm, rag, websearch, image, END
     """
     route = state.get("route", "simple_llm")
     
@@ -368,11 +624,11 @@ def route_decision(state: GraphState) -> str:
         route_lower = route.lower()
         if route_lower in ["end", "finish", "done"]:
             return "END"
-        if route_lower in ["simplellm", "simple_llm", "llm", "simplellm"]:
+        if route_lower in ["simplellm", "simple_llm", "llm"]:
             return "simple_llm"
         if route_lower in ["rag"]:
             return "rag"
-        if route_lower in ["websearch", "web_search", "search", "websearch"]:
+        if route_lower in ["websearch", "web_search", "search"]:
             return "websearch"
         if route_lower in ["image", "img"]:
             return "image"

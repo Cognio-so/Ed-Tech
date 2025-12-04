@@ -26,6 +26,7 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
     grade = student_profile.get("grade", "")
     language = state.get("language", "English")
     student_id = state.get("student_id", "")
+    session_id = state.get("session_id")
     chunk_callback = state.get("chunk_callback")
 
     query = state.get("resolved_query") or state.get("user_query", "")
@@ -40,6 +41,7 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
         try:
             user_docs = await retrieve_relevant_documents(
                 student_id=student_id,
+                session_id=session_id,
                 query=query,
                 collection_type="user_docs",
                 top_k=5,

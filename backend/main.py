@@ -44,7 +44,7 @@ import httpx
 from teacher.voice_agent.voice_agent_webrtc import VoiceAgentBridge
 from Student.Ai_tutor.graph import create_student_ai_tutor_graph
 from Student.Ai_tutor.graph_type import StudentGraphState
-from Student.Ai_tutor.qdrant_utils import store_documents as store_student_documents
+from backend.teacher.Ai_Tutor.qdrant_utils import delete_teacher_session_collection
 from Student.student_voice_agent.student_voice_agent import StudyBuddyBridge
 
 load_dotenv()
@@ -277,7 +277,11 @@ class StudentVoiceSchema(BaseModel):
         description="List of recently completed assignments"
     )
     voice: Literal['alloy', 'echo', 'shimmer'] = Field('shimmer', description="Voice preference")
+import time
+from contextlib import asynccontextmanager
 
+# Import the delete function
+from teacher.Ai_Tutor.qdrant_utils import delete_teacher_session_collection
 class SessionManager:
     @staticmethod
     async def create_session(teacher_id: str, existing_session_id: Optional[str] = None) -> str:
@@ -286,7 +290,9 @@ class SessionManager:
             sessions[session_id] = {
                 "session_id": session_id,
                 "teacher_id": teacher_id,
+                "created_at_ts": time.time(),
                 "created_at": str(uuid4()), 
+                "newly_uploaded_docs":[],
                 "content_generation": [],
                 "messages": [],
             }
@@ -1342,6 +1348,30 @@ async def add_documents_by_url(
     Add documents by URL for AI Tutor.
     Downloads documents, extracts text, chunks, and embeds into Qdrant.
     """
+    # ========================== DEBUGGING LOGS START ==========================
+    print(f"\n{'='*20} INCOMING FRONTEND DATA {'='*20}")
+    print(f"DEBUG: Teacher ID: {teacher_id}")
+    print(f"DEBUG: Session ID: {session_id}")
+    
+    # 1. Check how many docs came in
+    print(f"DEBUG: Number of documents received: {len(payload.documents)}")
+    
+    # 2. Iterate and print specific metadata for every document
+    for i, doc in enumerate(payload.documents):
+        print(f"--- Document #{i+1} ---")
+        print(f"DEBUG: Full Dictionary: {doc}")
+        print(f"DEBUG: Keys present: {list(doc.keys())}")
+        
+        # Check specific fields usually expected
+        print(f"   -> file_url: {doc.get('file_url')}")
+        print(f"   -> filename: {doc.get('filename')}")
+        print(f"   -> file_type: {doc.get('file_type')}")
+        print(f"   -> id: {doc.get('id')}")
+        print(f"   -> size: {doc.get('size')}")
+        
+    print(f"{'='*60}\n")
+    # ========================== DEBUGGING LOGS END ============================
+
     current_session_id = await SessionManager.create_session(teacher_id, session_id)
     session = await SessionManager.get_session(current_session_id)
     
@@ -1360,14 +1390,14 @@ async def add_documents_by_url(
                 logger.warning(f"Document {index + 1} missing file_url, skipping")
                 return None
             
-            logger.info(f"[DOC EMBEDDING] Processing document {index + 1}/{len(documents)}: {filename}")
+            # logger.info(f"[DOC EMBEDDING] Processing document {index + 1}/{len(documents)}: {filename}")
             print(f"[DOC EMBEDDING] 📄 Starting processing: {filename} from URL: {file_url}")
             
             async with httpx.AsyncClient() as client:
                 response = await client.get(file_url, timeout=30.0)
                 response.raise_for_status()
                 file_content = response.content
-                logger.info(f"[DOC EMBEDDING] Downloaded {len(file_content)} bytes from {filename}")
+                # logger.info(f"[DOC EMBEDDING] Downloaded {len(file_content)} bytes from {filename}")
                 print(f"[DOC EMBEDDING] ✅ Downloaded {len(file_content)} bytes from {filename}")
             
             file_extension = filename.split('.')[-1].lower() if '.' in filename else ''
@@ -1408,12 +1438,13 @@ async def add_documents_by_url(
             
             print(f"[DOC EMBEDDING] 💾 Storing document in Qdrant for teacher_id: {teacher_id}, collection: user_docs")
             logger.info(f"[DOC EMBEDDING] Storing document in Qdrant for teacher_id: {teacher_id}")
+            
+            # --- Ensure you updated qdrant_utils.py as per previous instructions to handle these arguments ---
             success = await store_documents(
                 teacher_id=teacher_id,
+                session_id=current_session_id,
                 documents=[document],
-                collection_type="user_docs",
-                is_hybrid=False,
-                clear_existing=False,
+               
                 metadata={"source_url": file_url, "file_type": file_extension, "doc_id": doc_id, "filename": filename}
             )
             
@@ -1426,10 +1457,10 @@ async def add_documents_by_url(
                     "file_type": file_extension or "txt",
                     "size": doc.get("size", len(file_content))
                 }
-                logger.info(f"Successfully processed and embedded {filename}")
+                # logger.info(f"Successfully processed and embedded {filename}")
                 return processed_doc
             else:
-                logger.error(f"[DOC EMBEDDING] Failed to store {filename} in Qdrant")
+                # logger.error(f"[DOC EMBEDDING] Failed to store {filename} in Qdrant")
                 print(f"[DOC EMBEDDING] ❌ ERROR: Failed to store {filename} in Qdrant")
                 return None
                 
@@ -1437,14 +1468,14 @@ async def add_documents_by_url(
             logger.error(f"Error processing {doc.get('filename', 'unknown')}: {e}", exc_info=True)
             return None
     
-    logger.info(f"[DOC EMBEDDING] Starting parallel processing of {len(documents)} documents...")
+    # logger.info(f"[DOC EMBEDDING] Starting parallel processing of {len(documents)} documents...")
     print(f"[DOC EMBEDDING] 🚀 Starting parallel processing of {len(documents)} documents for teacher_id: {teacher_id}")
     doc_tasks = [process_single_document(doc, i) for i, doc in enumerate(documents)]
     results = await asyncio.gather(*doc_tasks, return_exceptions=True)
     
     for i, result in enumerate(results):
         if isinstance(result, Exception):
-            logger.error(f"[DOC EMBEDDING] Document {i + 1} raised exception: {result}")
+            # logger.error(f"[DOC EMBEDDING] Document {i + 1} raised exception: {result}")
             print(f"[DOC EMBEDDING] ❌ Document {i + 1} raised exception: {result}")
         elif result is not None:
             processed_docs.append(result)
@@ -1453,9 +1484,27 @@ async def add_documents_by_url(
         session["uploaded_docs"] = []
     
     session["uploaded_docs"].extend(processed_docs)
+    
+    # ✅ NEW: Accumulate newly uploaded docs (like old project)
+    # These will be cleared after user sends first query
+    uploaded_files = []
+    for doc in processed_docs:
+        clean_doc = {
+            "filename": doc.get("filename"),
+            "file_url": doc.get("file_url"),
+            "file_type": doc.get("file_type", "unknown"),
+            "id": doc.get("id"),
+            "size": doc.get("size")
+        }
+        uploaded_files.append(clean_doc)
+    
+    # Append to newly_uploaded_docs (accumulates until query is sent)
+    session.setdefault("newly_uploaded_docs", []).extend(uploaded_files)
+    print(f"[DOC EMBEDDING] 📂 Accumulated {len(session['newly_uploaded_docs'])} docs in newly_uploaded_docs")
+    
     await SessionManager.update_session(current_session_id, session)
     
-    logger.info(f"[DOC EMBEDDING] Successfully processed {len(processed_docs)}/{len(documents)} documents")
+    # logger.info(f"[DOC EMBEDDING] Successfully processed {len(processed_docs)}/{len(documents)} documents")
     print(f"[DOC EMBEDDING] ✅ COMPLETE: Successfully processed {len(processed_docs)}/{len(documents)} documents")
     
     return {
@@ -1479,21 +1528,111 @@ async def get_documents(
     }
 
 
-async def process_document_from_url(url: str, teacher_id: str) -> Dict[str, Any]:
-    """Process document from URL: download, extract text, and store in Qdrant"""
+@app.delete("/api/teacher/{teacher_id}/session/{session_id}/documents")
+async def delete_teacher_session_documents(teacher_id: str, session_id: str) -> Dict[str, Any]:
+    """Clear all embeddings and metadata for a teacher session."""
+    await clear_session_documents(teacher_id, session_id)
     try:
-        logger.info(f"Processing document from URL: {url}")
-        
-        return {
-            "success": True,
-            "content": "Document will be processed in orchestrator",
-            "file_type": url.split('.')[-1].lower() if '.' in url else 'txt',
-            "url": url
+        session = await SessionManager.get_session(session_id)
+        session["uploaded_docs"] = []
+        await SessionManager.update_session(session_id, session)
+    except HTTPException:
+        pass
+    return {"message": "Session documents cleared", "session_id": session_id}
+
+
+async def process_document_from_url(
+    url: str, teacher_id: str, session_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Process a single teacher document from a URL:
+    - downloads the file
+    - extracts text
+    - embeds & stores in Qdrant (user_docs collection)
+
+    Returns a dict with embedding status and metadata (url, filename, file_type, doc_id, size, content).
+    """
+    try:
+        # logger.info(f"[DOC EMBEDDING] Processing single document from URL: {url}")
+
+        # Basic file info
+        filename = url.split("/")[-1].split("?")[0] or "document"
+        file_extension = filename.split(".")[-1].lower() if "." in filename else "txt"
+        doc_id = str(uuid4())
+
+        # Download file
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=30.0)
+            response.raise_for_status()
+            file_content = response.content
+
+        # logger.info(f"[DOC EMBEDDING] Downloaded {len(file_content)} bytes from {filename}")
+
+        # Extract text based on extension
+        text = ""
+        if file_extension == "pdf":
+            text = await asyncio.to_thread(extract_text_from_pdf, file_content)
+        elif file_extension == "docx":
+            text = await asyncio.to_thread(extract_text_from_docx, file_content)
+        elif file_extension == "json":
+            text = extract_text_from_json(file_content)
+        else:
+            text = extract_text_from_txt(file_content)
+
+        if not text.strip():
+            logger.warning(f"[DOC EMBEDDING] No text extracted from {filename}")
+            return {
+                "success": False,
+                "url": url,
+                "filename": filename,
+                "file_type": file_extension,
+                "doc_id": doc_id,
+                "size": len(file_content),
+                "content": "",
+            }
+
+        from langchain_core.documents import Document
+
+        base_metadata = {
+            "source": url,
+            "file_type": file_extension,
+            "doc_id": doc_id,
+            "filename": filename,
         }
-        
+
+        document = Document(page_content=text, metadata=base_metadata)
+
+        # logger.info(f"[DOC EMBEDDING] Storing single document in Qdrant for teacher_id={teacher_id}")
+        success = await store_documents(
+            teacher_id=teacher_id,
+            session_id=session_id,
+            documents=[document],
+            clear_existing=False,
+            metadata={
+                "source_url": url,
+                "file_type": file_extension,
+                "doc_id": doc_id,
+                "filename": filename,
+            },
+        )
+
+        return {
+            "success": bool(success),
+            "url": url,
+            "filename": filename,
+            "file_type": file_extension,
+            "doc_id": doc_id,
+            "size": len(file_content),
+            "content": text,
+        }
+
     except Exception as e:
-        logger.error(f"Error processing document: {e}", exc_info=True)
-        return {"success": False, "content": ""}
+        logger.error(f"[DOC EMBEDDING] Error processing document from URL {url}: {e}", exc_info=True)
+        return {
+            "success": False,
+            "url": url,
+            "content": "",
+        }
 
 
 @app.post(
@@ -1531,72 +1670,37 @@ async def ai_tutor_stream_chat(
         if not doc_already_processed:
             print(f"[CHAT ENDPOINT] ⚡ Document not yet processed. Auto-processing and embedding...")
             try:
-                filename = payload.doc_url.split('/')[-1].split('?')[0]
-                file_extension = filename.split('.')[-1].lower() if '.' in filename else 'txt'
-                doc_id = str(uuid4())
-                
-                print(f"[CHAT ENDPOINT] 📥 Downloading document: {filename}")
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(payload.doc_url, timeout=30.0)
-                    response.raise_for_status()
-                    file_content = response.content
-                    print(f"[CHAT ENDPOINT] ✅ Downloaded {len(file_content)} bytes")
-                
-                print(f"[CHAT ENDPOINT] 🔍 Extracting text from {filename} (type: {file_extension})")
-                text = ""
-                if file_extension == 'pdf':
-                    text = await asyncio.to_thread(extract_text_from_pdf, file_content)
-                elif file_extension == 'docx':
-                    text = await asyncio.to_thread(extract_text_from_docx, file_content)
-                elif file_extension == 'json':
-                    text = extract_text_from_json(file_content)
-                else:
-                    text = extract_text_from_txt(file_content)
-                
-                if not text.strip():
-                    print(f"[CHAT ENDPOINT] ⚠️ WARNING: No text extracted from {filename}")
-                else:
-                    print(f"[CHAT ENDPOINT] ✅ Extracted {len(text)} characters from {filename}")
-                    
-                    from langchain_core.documents import Document
-                    doc_metadata = {
-                        "source": payload.doc_url,
-                        "file_type": file_extension,
-                        "doc_id": doc_id,
-                        "filename": filename,
-                    }
-                    document = Document(page_content=text, metadata=doc_metadata)
-                    
-                    print(f"[CHAT ENDPOINT] 💾 Embedding document in Qdrant...")
-                    success = await store_documents(
-                        teacher_id=teacher_id,
-                        documents=[document],
-                        collection_type="user_docs",
-                        is_hybrid=False,
-                        clear_existing=False,
-                        metadata={"source_url": payload.doc_url, "file_type": file_extension, "doc_id": doc_id, "filename": filename}
+                result = await process_document_from_url(
+                    payload.doc_url, teacher_id, current_session_id
+                )
+
+                if result.get("success"):
+                    print(f"[CHAT ENDPOINT] ✅ Successfully embedded document in Qdrant")
+                    session["uploaded_docs"].append(
+                        {
+                            "url": result.get("url"),
+                            "file_url": result.get("url"),
+                            "file_type": result.get("file_type"),
+                            "id": result.get("doc_id"),
+                            "filename": result.get("filename"),
+                            "processed": True,
+                            "size": result.get("size"),
+                        }
                     )
-                    
-                    if success:
-                        print(f"[CHAT ENDPOINT] ✅ Successfully embedded document in Qdrant")
-                        session["uploaded_docs"].append({
+                else:
+                    print(f"[CHAT ENDPOINT] ❌ Failed to embed document in Qdrant")
+                    session["uploaded_docs"].append(
+                        {
                             "url": payload.doc_url,
                             "file_url": payload.doc_url,
-                            "file_type": file_extension,
-                            "id": doc_id,
-                            "filename": filename,
-                            "processed": True,
-                            "size": len(file_content)
-                        })
-                        await SessionManager.update_session(current_session_id, session)
-                    else:
-                        print(f"[CHAT ENDPOINT] ❌ Failed to embed document in Qdrant")
-                        session["uploaded_docs"].append({
-                            "url": payload.doc_url,
-                            "file_type": file_extension,
-                            "processed": False
-                        })
-                        await SessionManager.update_session(current_session_id, session)
+                            "file_type": (payload.doc_url.split(".")[-1].lower() if "." in payload.doc_url else "txt"),
+                            "id": result.get("doc_id"),
+                            "filename": result.get("filename") or payload.doc_url.split("/")[-1].split("?")[0],
+                            "processed": False,
+                        }
+                    )
+
+                await SessionManager.update_session(current_session_id, session)
             except Exception as e:
                 logger.error(f"[CHAT ENDPOINT] Error auto-processing document: {e}", exc_info=True)
                 print(f"[CHAT ENDPOINT] ❌ ERROR auto-processing document: {e}")
@@ -1645,6 +1749,38 @@ async def ai_tutor_stream_chat(
     
     print(f"[CHAT ENDPOINT] ✅ Total messages sent to graph: {len(langchain_messages)}")
     
+    # ✅ NEW: Get newly uploaded docs from session (like old project)
+    # These accumulate from /add-documents endpoint until user sends query
+    newly_uploaded_docs = session.get("newly_uploaded_docs", [])
+    uploaded_doc_flag = bool(newly_uploaded_docs)
+    
+    if newly_uploaded_docs:
+        print(f"[CHAT ENDPOINT] 📂 Found {len(newly_uploaded_docs)} newly uploaded docs")
+        print(f"[CHAT ENDPOINT] 📋 Doc types: {[doc.get('file_type') for doc in newly_uploaded_docs]}")
+    else:
+        print(f"[CHAT ENDPOINT] ℹ️ No newly uploaded docs")
+    
+    # ✅ NEW: Detect image intent
+    def detect_image_intent(query: str) -> bool:
+        """Detect if user wants image generation/editing."""
+        generation_verbs = ["generate", "create", "make", "draw", "produce", "build"]
+        editing_verbs = ["edit", "modify", "change", "adjust", "enhance", "brighten", "darken"]
+        
+        query_lower = query.lower()
+        
+        # Don't set flag for prompt requests
+        if "prompt" in query_lower and any(v in query_lower for v in ["give", "create", "write", "generate"]):
+            return False
+        
+        # Check for action verbs + image-related words
+        has_image_word = any(word in query_lower for word in ["image", "picture", "photo", "visual"])
+        has_action_verb = any(verb in query_lower for verb in generation_verbs + editing_verbs)
+        
+        return has_image_word and has_action_verb
+    
+    is_image = detect_image_intent(payload.message)
+    print(f"[CHAT ENDPOINT] 🖼️ Image intent detected: {is_image}")
+    
     print(f"[CHAT ENDPOINT] 🎯 Creating graph state with doc_url: {payload.doc_url}")
     print(f"[CHAT ENDPOINT] 👤 Teacher ID: {teacher_id}, Topic: {payload.topic}, Subject: {payload.subject}")
     
@@ -1652,6 +1788,7 @@ async def ai_tutor_stream_chat(
         "messages": langchain_messages,
         "user_query": payload.message,
         "teacher_id": teacher_id,
+        "session_id": current_session_id,
         "student_data": payload.student_data,
         "teacher_data": payload.teacher_data,
         "topic": payload.topic,
@@ -1669,6 +1806,14 @@ async def ai_tutor_stream_chat(
         "should_continue": True,  
         "chunk_callback": chunk_callback,
         "token_usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        
+        # ✅ NEW: Enhanced orchestrator fields
+        "uploaded_doc": uploaded_doc_flag,
+        "new_uploaded_docs": newly_uploaded_docs,  # Note: orchestrator expects "new_uploaded_docs"
+        "active_docs": session.get("uploaded_docs", []),
+        "is_image": is_image,
+        "edit_img_urls": [],
+        "img_urls": session.get("img_urls", []),
     }
     
     print(f"[CHAT ENDPOINT] ✅ Graph state created. doc_url in state: {state.get('doc_url')}")
@@ -1681,7 +1826,7 @@ async def ai_tutor_stream_chat(
             async def run_graph():
                 nonlocal final_state, stream_error_message
                 try:
-                    logger.info("Starting AI Tutor graph execution")
+                    # logger.info("Starting AI Tutor graph execution")
                     async for node_result in ai_tutor_graph.astream(state):
                         logger.debug(f"Node result: {list(node_result.keys())}")
                         final_state = node_result
@@ -1749,7 +1894,9 @@ async def ai_tutor_stream_chat(
                     "is_complete": True,
                     "full_response": response or full_response,
                     "image_result": state.get("image_result"),
+                    "img_urls": state.get("img_urls", []),  # ✅ NEW
                     "token_usage": token_usage,
+                    "route_taken": state.get("tasks", []),  # ✅ NEW
                     "error_message": stream_error_message
                 }
             }
@@ -1765,6 +1912,20 @@ async def ai_tutor_stream_chat(
                 session["last_route"] = state["context"]["session"]["last_route"]
             if state.get("route"):
                 session["last_route"] = state["route"]
+            
+            # ✅ NEW: Store image results if any
+            if state.get("img_urls"):
+                session["img_urls"] = state.get("img_urls", [])
+                # print(f"[CHAT ENDPOINT] 🖼️ Stored {len(state['img_urls'])} image URLs")
+            
+            if state.get("image_result"):
+                session["last_image_result"] = state.get("image_result")
+                # print(f"[CHAT ENDPOINT] 🖼️ Stored image result")
+            
+            # ✅ NEW: Clear newly_uploaded_docs after query is processed (like old project)
+            if session.get("newly_uploaded_docs"):
+                # print(f"[CHAT ENDPOINT] 🗑️ Clearing {len(session['newly_uploaded_docs'])} docs from newly_uploaded_docs")
+                session["newly_uploaded_docs"] = []
             
             await SessionManager.update_session(current_session_id, session)
             
@@ -1855,6 +2016,7 @@ async def student_ai_tutor_stream_chat(
 
                     success = await store_student_documents(
                         student_id=student_id,
+                        session_id=current_session_id,
                         documents=[document],
                         collection_type="user_docs",
                         is_hybrid=False,
@@ -1928,6 +2090,7 @@ async def student_ai_tutor_stream_chat(
         "messages": langchain_messages,
         "user_query": payload.message,
         "student_id": student_id,
+        "session_id": current_session_id,
         "student_profile": payload.student_profile,
         "pending_assignments": payload.pending_assignments,
         "assessment_data": payload.assessment_data,
@@ -1965,7 +2128,7 @@ async def student_ai_tutor_stream_chat(
             async def run_graph():
                 nonlocal final_state, stream_error_message
                 try:
-                    logger.info("Starting Student AI Tutor graph execution")
+                    # logger.info("Starting Student AI Tutor graph execution")
                     async for node_result in student_ai_tutor_graph.astream(state):
                         final_state = node_result
                         for node_name, node_state in node_result.items():

@@ -6,6 +6,7 @@ class StudentGraphState(TypedDict, total=False):
     messages: Annotated[List[BaseMessage], "add_messages"]
     user_query: Optional[str]
     student_id: str
+    session_id: Optional[str]
     student_profile: Optional[Dict[str, Any]]
     pending_assignments: Optional[List[Dict[str, Any]]]
     assessment_data: Optional[Dict[str, Any]]
