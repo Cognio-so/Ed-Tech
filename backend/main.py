@@ -162,6 +162,7 @@ class SessionManager:
                 "newly_uploaded_docs":[],
                 "content_generation": [],
                 "messages": [],
+                "teacher_payload":[]
             }
         return session_id
 
@@ -1521,6 +1522,8 @@ async def ai_tutor_stream_chat(
     print(f"[CHAT ENDPOINT] 📥 Received chat request - teacher_id: {teacher_id}, session_id: {current_session_id}")
     print(f"[CHAT ENDPOINT] 📝 Message: {payload.message[:100]}...")
     print(f"[CHAT ENDPOINT] 📎 doc_url: {payload.doc_url}")
+    session["teacher_payload"] = payload
+    print("teacher_payload:-----------------------", session["teacher_payload"])
     print(f"hiii", payload)
     if payload.doc_url:
         print(f"[CHAT ENDPOINT] 🔗 Document URL provided: {payload.doc_url}")
