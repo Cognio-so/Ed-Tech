@@ -59,6 +59,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Suppress verbose httpx logs (Qdrant HTTP requests)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 BASE_DIR = Path(__file__).parent
 
 ai_tutor_graph = create_ai_tutor_graph()
@@ -1253,35 +1256,35 @@ async def add_documents_by_url(
                 return None
             
             # logger.info(f"[DOC EMBEDDING] Processing document {index + 1}/{len(documents)}: {filename}")
-            print(f"[DOC EMBEDDING] 📄 Starting processing: {filename} from URL: {file_url}")
+            # print(f"[DOC EMBEDDING] 📄 Starting processing: {filename} from URL: {file_url}")
             
             async with httpx.AsyncClient() as client:
                 response = await client.get(file_url, timeout=30.0)
                 response.raise_for_status()
                 file_content = response.content
                 # logger.info(f"[DOC EMBEDDING] Downloaded {len(file_content)} bytes from {filename}")
-                print(f"[DOC EMBEDDING] ✅ Downloaded {len(file_content)} bytes from {filename}")
+                # print(f"[DOC EMBEDDING] ✅ Downloaded {len(file_content)} bytes from {filename}")
             
             file_extension = filename.split('.')[-1].lower() if '.' in filename else ''
             
             text = ""
-            print(f"[DOC EMBEDDING] 🔍 Extracting text from {filename} (type: {file_extension})")
+            # print(f"[DOC EMBEDDING] 🔍 Extracting text from {filename} (type: {file_extension})")
             if file_extension == 'pdf' or 'pdf' in file_type.lower():
                 text = await asyncio.to_thread(extract_text_from_pdf, file_content)
-                print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from PDF")
+                # print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from PDF")
             elif file_extension == 'docx' or 'wordprocessingml' in file_type.lower():
                 text = await asyncio.to_thread(extract_text_from_docx, file_content)
-                print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from DOCX")
+                # print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from DOCX")
             elif file_extension == 'json' or 'json' in file_type.lower():
                 text = extract_text_from_json(file_content)
-                print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from JSON")
+                # print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from JSON")
             else:
                 text = extract_text_from_txt(file_content)
-                print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from TXT")
+                # print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from TXT")
             
             if not text.strip():
                 logger.warning(f"[DOC EMBEDDING] No text content extracted from {filename}")
-                print(f"[DOC EMBEDDING] ⚠️ WARNING: No text content extracted from {filename}")
+                # print(f"[DOC EMBEDDING] ⚠️ WARNING: No text content extracted from {filename}")
                 return None
             
             from langchain_core.documents import Document
@@ -1298,8 +1301,8 @@ async def add_documents_by_url(
                 metadata=doc_metadata
             )
             
-            print(f"[DOC EMBEDDING] 💾 Storing document in Qdrant for teacher_id: {teacher_id}, collection: user_docs")
-            logger.info(f"[DOC EMBEDDING] Storing document in Qdrant for teacher_id: {teacher_id}")
+            # print(f"[DOC EMBEDDING] 💾 Storing document in Qdrant for teacher_id: {teacher_id}, collection: user_docs")
+            # logger.info(f"[DOC EMBEDDING] Storing document in Qdrant for teacher_id: {teacher_id}")
             
             # --- Ensure you updated qdrant_utils.py as per previous instructions to handle these arguments ---
             success = await store_documents(
@@ -1311,7 +1314,7 @@ async def add_documents_by_url(
             )
             
             if success:
-                print(f"[DOC EMBEDDING] ✅ Successfully embedded document {filename} in Qdrant")
+                # print(f"[DOC EMBEDDING] ✅ Successfully embedded document {filename} in Qdrant")
                 processed_doc = {
                     "id": doc_id,
                     "filename": filename,
@@ -1323,7 +1326,7 @@ async def add_documents_by_url(
                 return processed_doc
             else:
                 # logger.error(f"[DOC EMBEDDING] Failed to store {filename} in Qdrant")
-                print(f"[DOC EMBEDDING] ❌ ERROR: Failed to store {filename} in Qdrant")
+                # print(f"[DOC EMBEDDING] ❌ ERROR: Failed to store {filename} in Qdrant")
                 return None
                 
         except Exception as e:
@@ -1331,14 +1334,15 @@ async def add_documents_by_url(
             return None
     
     # logger.info(f"[DOC EMBEDDING] Starting parallel processing of {len(documents)} documents...")
-    print(f"[DOC EMBEDDING] 🚀 Starting parallel processing of {len(documents)} documents for teacher_id: {teacher_id}")
+    # print(f"[DOC EMBEDDING] 🚀 Starting parallel processing of {len(documents)} documents for teacher_id: {teacher_id}")
     doc_tasks = [process_single_document(doc, i) for i, doc in enumerate(documents)]
     results = await asyncio.gather(*doc_tasks, return_exceptions=True)
     
     for i, result in enumerate(results):
         if isinstance(result, Exception):
             # logger.error(f"[DOC EMBEDDING] Document {i + 1} raised exception: {result}")
-            print(f"[DOC EMBEDDING] ❌ Document {i + 1} raised exception: {result}")
+            # print(f"[DOC EMBEDDING] ❌ Document {i + 1} raised exception: {result}")
+            pass
         elif result is not None:
             processed_docs.append(result)
     
@@ -1362,12 +1366,12 @@ async def add_documents_by_url(
     
     # Append to newly_uploaded_docs (accumulates until query is sent)
     session.setdefault("newly_uploaded_docs", []).extend(uploaded_files)
-    print(f"[DOC EMBEDDING] 📂 Accumulated {len(session['newly_uploaded_docs'])} docs in newly_uploaded_docs")
+    # print(f"[DOC EMBEDDING] 📂 Accumulated {len(session['newly_uploaded_docs'])} docs in newly_uploaded_docs")
     
     await SessionManager.update_session(current_session_id, session)
     
     # logger.info(f"[DOC EMBEDDING] Successfully processed {len(processed_docs)}/{len(documents)} documents")
-    print(f"[DOC EMBEDDING] ✅ COMPLETE: Successfully processed {len(processed_docs)}/{len(documents)} documents")
+    # print(f"[DOC EMBEDDING] ✅ COMPLETE: Successfully processed {len(processed_docs)}/{len(documents)} documents")
     
     return {
         "message": f"Added {len(processed_docs)} documents",
@@ -1641,11 +1645,7 @@ async def ai_tutor_stream_chat(
         return has_image_word and has_action_verb
     
     is_image = detect_image_intent(payload.message)
-    print(f"[CHAT ENDPOINT] 🖼️ Image intent detected: {is_image}")
-    
-    print(f"[CHAT ENDPOINT] 🎯 Creating graph state with doc_url: {payload.doc_url}")
-    print(f"[CHAT ENDPOINT] 👤 Teacher ID: {teacher_id}, Topic: {payload.topic}, Subject: {payload.subject}")
-    
+   
     state: GraphState = {
         "messages": langchain_messages,
         "user_query": payload.message,

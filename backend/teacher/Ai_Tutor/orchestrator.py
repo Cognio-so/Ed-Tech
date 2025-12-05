@@ -191,64 +191,6 @@ async def summarizer(state: GraphState, keep_last=2):
     state["messages"] = recent
 
 
-async def is_followup(
-    user_query: str,
-    history: List[dict],
-    docs_present: bool,
-    kb_present: bool,
-) -> dict:
-    """
-    Ask LLM to judge if user message is a conversational follow-up.
-    Returns: {"is_followup": bool, "should_use_rag": bool, "confidence": float, "rationale": str}
-    """
-    turns = []
-    for m in (history or [])[-12:]:
-        if isinstance(m, dict):
-            role = (m.get("type") or m.get("role") or "").lower()
-            content = m.get("content", "")
-        else:
-            role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
-            content = getattr(m, "content", "") if hasattr(m, "content") else str(m)
-        
-        if not content:
-            continue
-        prefix = "User" if role in ("human", "user") else "Assistant"
-        turns.append(f"{prefix}: {content}")
-    
-    sys = (
-        "You are a routing judge. Decide if the NEW user message is a FOLLOW-UP in the same thread "
-        "that should keep using the same sources (uploaded documents and/or knowledge base). "
-        "Consider the conversation and the presence of docs/KB in the session.\n"
-        "Output STRICT JSON with keys: is_followup (bool), should_use_rag (bool), "
-        "confidence (0..1), rationale (short string)."
-    )
-    usr = (
-        f"Docs present: {bool(docs_present)} | KB present: {bool(kb_present)}\n"
-        f"Conversation (most recent first):\n" + "\n".join(turns) + "\n\n"
-        f"NEW user message: {user_query}\n"
-        "Return JSON only."
-    )
-    
-    try:
-        google_api_key = os.getenv("GOOGLE_API_KEY", "")
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite",
-            temperature=0.3,
-            api_key=google_api_key,
-        )
-        result = await llm.ainvoke([SystemMessage(sys), HumanMessage(usr)])
-        text = result.content.strip()
-        obj = json.loads(text)
-    except Exception:
-        obj = {
-            "is_followup": True if len(user_query.split()) < 8 else False,
-            "should_use_rag": bool(docs_present or kb_present),
-            "confidence": 0.4,
-            "rationale": "Fallback heuristic because LLM did not return valid JSON."
-        }
-    return obj
-
-
 async def analyze_query(
     user_message: str,
     recent_messages_text: str,
@@ -347,103 +289,6 @@ Consider the conversation context, uploaded documents, and image intent flag whe
         return {"execution_order": ["SimpleLLM"], "reasoning": "Default to SimpleLLM"}
 
 
-async def rewrite_query(state: GraphState) -> str:
-    """Rewrite query for current task context."""
-    user_query = state.get("user_query", "")
-    current_task = state.get("current_task", "")
-    plan = state.get("tasks", [])
-    idx = state.get("task_index", 0)
-    intermediate_results = state.get("intermediate_results", [])
-    
-    is_first_node = (idx == 0 or not intermediate_results)
-    print(f"[Orchestrator] 🌟 Is First Node in Plan? {is_first_node}")
-    
-    if is_first_node:
-        summary = state.get("context", {}).get("session", {}).get("summary", "")
-        messages = state.get("messages", [])
-        last_msgs = []
-        for m in messages[-2:]:
-            # Handle both dict and LangChain message objects
-            if isinstance(m, dict):
-                role = (m.get("type") or m.get("role") or "").lower()
-                content = m.get("content") or ""
-            else:
-                # LangChain message object
-                role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
-                content = getattr(m, "content", "") if hasattr(m, "content") else str(m)
-            
-            speaker = "User" if role in ("human", "user") else "Assistant"
-            last_msgs.append(f"{speaker}: {content}")
-        recent_text = "\n".join(last_msgs)
-
-        context_text = (
-            f"Current User Goal: {user_query}\n\n"
-            f"Summary:\n{summary[:300]}\n\nRecent Conversation:\n{recent_text[:300]}"
-            if summary or recent_text else f"Current User Query: {user_query}\n\nNo previous conversation available."
-        )
-    else:
-        last_result = intermediate_results[-1]
-        context_text = (
-            f"Context from previous node ({last_result['node']}):\n"
-            f"{last_result['output'][:300]}"
-        )
-        print(f"[Orchestrator] 📚 Using Previous Node Context: {last_result['node']}")
-    
-    prompt = f"""<task>
-Rewrite the query for the next step in the workflow.
-</task>
-
-<user_goal>
-{user_query}
-</user_goal>
-
-<plan>
-{plan}
-</plan>
-
-<next_step>
-{current_task}
-</next_step>
-
-<context>
-{context_text}
-</context>
-
-<instructions>
-Create a concise, self-contained query (≤150 words) for the next step.
-If this is a follow-up, merge relevant context naturally.
-If it's a continuation of a multi-node flow, refine using only the previous node's output.
-Output ONLY the rewritten query. No explanation or formatting.
-</instructions>"""
-    
-    try:
-        llm = ChatGroq(
-            model="openai/gpt-oss-120b",
-            temperature=0.4,
-            groq_api_key=os.getenv("GROQ_API_KEY")
-        )
-        
-        result = await llm.ainvoke([
-            SystemMessage(content="<system>You are a query rewriter. Output only the rewritten query.</system>"),
-            HumanMessage(content=prompt)
-        ])
-        
-        rewritten = (result.content or "").strip()
-        words = rewritten.split()
-        if len(words) > 150:
-            rewritten = " ".join(words[:150]) + " ..."
-            print(f"[Orchestrator] ⚠️ Query exceeded 150 words, truncated to {len(rewritten.split())} words.")
-        
-        print(f"[Orchestrator] ✅ REWRITTEN QUERY ({len(rewritten.split())} words): {rewritten}")
-        return rewritten
-        
-    except Exception as e:
-        print(f"[Orchestrator] 🚨 Rewrite error: {e}")
-        import traceback
-        traceback.print_exc()
-        print("[Orchestrator] ⚠️ Falling back to original user query.")
-        return user_query
-
 
 async def orchestrator_node(state: GraphState) -> GraphState:
     """
@@ -525,9 +370,8 @@ async def orchestrator_node(state: GraphState) -> GraphState:
             is_websearch=True,
         )
         
-        tentative_rewrite_task = rewrite_query(state)
-        
-        result, tentative_rewrite = await asyncio.gather(analyze_task, tentative_rewrite_task)
+        result = await analyze_task
+        resolved_query = user_query  # Use original query directly since rewrite was removed
         
         plan = result.get("execution_order", ["SimpleLLM"]) if result else ["SimpleLLM"]
         if not plan:
@@ -566,13 +410,9 @@ async def orchestrator_node(state: GraphState) -> GraphState:
         state["task_index"] = 0
         state["current_task"] = plan[0]
         
-        # Use original query for single RAG, rewritten for others
-        if len(plan) == 1 and plan[0] == "rag":
-            state["resolved_query"] = user_query
-            print(f"[ORCHESTRATOR] ✅ Routing to RAG with original query")
-        else:
-            state["resolved_query"] = tentative_rewrite
-            print(f"[ORCHESTRATOR] ✏️ Using rewritten query: {tentative_rewrite[:100]}...")
+        # Use original query for all cases (rewrite removed)
+        state["resolved_query"] = user_query
+        print(f"[ORCHESTRATOR] ✅ Using original query: {user_query[:100]}...")
         
         route = normalize_route(plan[0])
         state["route"] = route
@@ -601,8 +441,8 @@ async def orchestrator_node(state: GraphState) -> GraphState:
             next_task = state["tasks"][state["task_index"]]
             state["current_task"] = next_task
             route = normalize_route(next_task)
-            clean_query = await rewrite_query(state)
-            state["resolved_query"] = clean_query
+            # Use original query for next task (rewrite removed)
+            state["resolved_query"] = user_query
             state["route"] = route
             state["next_node"] = route
             print(f"[ORCHESTRATOR] ⏭️ Moving to next task: {route}")
