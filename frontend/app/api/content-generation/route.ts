@@ -141,21 +141,27 @@ export async function POST(request: NextRequest) {
             const lines = chunk.split("\n");
             for (const line of lines) {
               if (line.startsWith("data: ")) {
-                const data = line.slice(6);
+                const data = line.slice(6).trim();
+                
+                // Skip empty data lines
+                if (!data) continue;
+                
                 try {
                   const parsed = JSON.parse(data);
+                  
+                  // Only send content chunks, ignore metadata
                   if (parsed.type === "content" && parsed.data?.chunk) {
                     const textEncoder = new TextEncoder();
                     controller.enqueue(textEncoder.encode(parsed.data.chunk));
                   }
+                  // Silently ignore other types (metadata, status, etc.)
                 } catch (e) {
-                  const textEncoder = new TextEncoder();
-                  controller.enqueue(textEncoder.encode(data));
+                  // If JSON parsing fails, log it but don't send raw data
+                  console.error("Failed to parse SSE data:", data.substring(0, 100));
+                  // Don't enqueue anything - skip malformed data
                 }
-              } else if (line.trim() && !line.startsWith(":")) {
-                const textEncoder = new TextEncoder();
-                controller.enqueue(textEncoder.encode(line + "\n"));
               }
+              // Ignore comment lines and empty lines
             }
           }
           controller.close();
