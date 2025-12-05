@@ -17,8 +17,12 @@ from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
-from backend.llm import get_llm
-from backend.teacher.Ai_Tutor.graph_type import GraphState
+try:
+    from backend.llm import get_llm
+    from backend.teacher.Ai_Tutor.graph_type import GraphState
+except ImportError:
+    from llm import get_llm
+    from teacher.Ai_Tutor.graph_type import GraphState
 
 
 def load_orchestrator_prompt() -> str:

@@ -11,7 +11,10 @@ backend_path = Path(__file__).resolve().parents[3]
 if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 # Import functions from llm.py
-from backend.llm import get_llm, stream_with_token_tracking
+try:
+    from backend.llm import get_llm, stream_with_token_tracking
+except ImportError:
+    from llm import get_llm, stream_with_token_tracking
 
 load_dotenv()
 

@@ -6,10 +6,16 @@ backend_path = Path(__file__).resolve().parents[3]
 if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 
-from backend.llm import get_llm, stream_with_token_tracking
-from backend.utils.websearch import get_youtube_links
-from backend.embedding import embed_query
-from backend.qdrant_service import get_qdrant_client
+try:
+    from backend.llm import get_llm, stream_with_token_tracking
+    from backend.utils.websearch import get_youtube_links
+    from backend.embedding import embed_query
+    from backend.qdrant_service import get_qdrant_client
+except ImportError:
+    from llm import get_llm, stream_with_token_tracking
+    from utils.websearch import get_youtube_links
+    from embedding import embed_query
+    from qdrant_service import get_qdrant_client
 from langchain_core.messages import HumanMessage, SystemMessage
 from qdrant_client import models
 

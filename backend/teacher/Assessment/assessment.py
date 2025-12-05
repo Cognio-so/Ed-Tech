@@ -8,9 +8,14 @@ if str(backend_path) not in sys.path:
 import asyncio
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from backend.embedding import embed_query
-from backend.llm import get_llm, stream_with_token_tracking
-from backend.qdrant_service import get_qdrant_client
+try:
+    from backend.embedding import embed_query
+    from backend.llm import get_llm, stream_with_token_tracking
+    from backend.qdrant_service import get_qdrant_client
+except ImportError:
+    from embedding import embed_query
+    from llm import get_llm, stream_with_token_tracking
+    from qdrant_service import get_qdrant_client
 from langchain_core.messages import HumanMessage, SystemMessage
 
 LANGUAGES = {
