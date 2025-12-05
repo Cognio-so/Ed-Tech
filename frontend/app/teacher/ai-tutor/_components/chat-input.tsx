@@ -18,9 +18,13 @@ import {
   Globe,
   Telescope,
   Sparkles,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { LiveWaveform } from "@/components/ui/live-waveform";
+import { useVoiceStream } from "@/hooks/use-voice-stream";
 
 export interface ChatInputProps {
   onSend: (
@@ -39,6 +43,10 @@ export interface ChatInputProps {
   disabled?: boolean;
   className?: string;
   hasMessages?: boolean;
+  teacherId?: string;
+  sessionId?: string;
+  teacherName?: string;
+  onTranscription?: (text: string, role: "user" | "assistant") => void;
 }
 
 interface ModelInfo {
@@ -143,6 +151,10 @@ export function ChatInput({
   disabled = false,
   className,
   hasMessages = false,
+  teacherId,
+  sessionId,
+  teacherName,
+  onTranscription,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [selectedModel, setSelectedModel] = useState("gemini_2_5_flash");
@@ -150,8 +162,25 @@ export function ChatInput({
   const [isUploading, setIsUploading] = useState(false);
   const [webSearch, setWebSearch] = useState(false);
   const [deepSearch, setDeepSearch] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Voice stream hook
+  const { status, isRecording, error, connect, disconnect, toggleMute } =
+    useVoiceStream();
+
+  // Sync voiceMode with actual connection status
+  useEffect(() => {
+    if (status === "connected") {
+      setVoiceMode(true);
+      setIsListening(isRecording);
+    } else if (status === "disconnected" || status === "idle") {
+      setVoiceMode(false);
+      setIsListening(false);
+    }
+  }, [status, isRecording]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -277,6 +306,43 @@ export function ChatInput({
     return "File";
   };
 
+  const handleVoiceToggle = useCallback(async () => {
+    // Check if already connected or connecting
+    if (status === "connected" || status === "connecting") {
+      // Disconnect
+      console.log("🔴 Disconnecting voice...");
+      await disconnect();
+    } else {
+      // Connect - check if we have required data
+      if (!teacherId || !sessionId) {
+        toast.error("Session not initialized. Please refresh the page.");
+        return;
+      }
+
+      console.log("🟢 Connecting voice...");
+
+      // Connect to voice agent
+      await connect({
+        sessionId,
+        teacherId,
+        teacherName: teacherName || "Teacher",
+        grade: "General",
+        subject: "",
+        instructions: "",
+        voice: "shimmer",
+        onTranscription,
+      });
+    }
+  }, [
+    status,
+    teacherId,
+    sessionId,
+    teacherName,
+    connect,
+    disconnect,
+    onTranscription,
+  ]);
+
   return (
     <div
       className={cn(
@@ -322,18 +388,34 @@ export function ChatInput({
 
       <div className="relative bg-muted/20 rounded-xl sm:rounded-2xl shadow-sm border border-border overflow-hidden">
         <div className="p-1.5 sm:p-2">
-          <textarea
-            ref={textareaRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder={
-              isUploading ? "Uploading documents..." : "Ask anything..."
-            }
-            disabled={isLoading || isUploading}
-            className="w-full min-h-[40px] sm:min-h-[44px] max-h-[120px] sm:max-h-[180px] resize-none outline-none text-sm sm:text-base leading-snug bg-transparent placeholder:text-muted-foreground disabled:opacity-50 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding"
-            rows={2}
-          />
+          {voiceMode ? (
+            <div className="min-h-[80px] flex items-center justify-center">
+              <LiveWaveform
+                active={isListening}
+                processing={false}
+                height={70}
+                barWidth={3}
+                barGap={2}
+                mode="static"
+                fadeEdges={true}
+                barColor="primary"
+                historySize={100}
+              />
+            </div>
+          ) : (
+            <textarea
+              ref={textareaRef}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder={
+                isUploading ? "Uploading documents..." : "Ask anything..."
+              }
+              disabled={isLoading || isUploading}
+              className="w-full min-h-[40px] sm:min-h-[44px] max-h-[120px] sm:max-h-[180px] resize-none outline-none text-sm sm:text-base leading-snug bg-transparent placeholder:text-muted-foreground disabled:opacity-50 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding"
+              rows={2}
+            />
+          )}
         </div>
         <div className="flex flex-col gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2">
           <input
@@ -385,13 +467,25 @@ export function ChatInput({
               </Select>
             </div>
             <Button
-              onClick={handleSend}
-              disabled={!canSend || isLoading || isUploading}
+              onClick={canSend ? handleSend : handleVoiceToggle}
+              disabled={isLoading || isUploading}
               size="icon"
-              className="h-6 w-6 sm:h-7 sm:w-7 rounded-full"
+              className={cn(
+                "h-6 w-6 sm:h-7 sm:w-7 rounded-full",
+                !canSend && voiceMode && "bg-green-600 hover:bg-green-700"
+              )}
+              title={
+                canSend
+                  ? "Send message"
+                  : voiceMode
+                  ? "Stop voice mode"
+                  : "Start voice chat"
+              }
             >
               {canSend ? (
                 <ArrowUp className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+              ) : voiceMode ? (
+                <Mic className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               ) : (
                 <AudioLines className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               )}
@@ -439,14 +533,25 @@ export function ChatInput({
                 <Paperclip className="h-3.5 w-3.5" />
               </Button>
               <Button
-                onClick={handleSend}
-                disabled={!canSend || isLoading || isUploading}
+                onClick={canSend ? handleSend : handleVoiceToggle}
+                disabled={isLoading || isUploading}
                 size="icon"
-                className="h-7 w-7 rounded-full"
-                title="Send message"
+                className={cn(
+                  "h-7 w-7 rounded-full",
+                  !canSend && voiceMode && "bg-green-600 hover:bg-green-700"
+                )}
+                title={
+                  canSend
+                    ? "Send message"
+                    : voiceMode
+                    ? "Stop voice mode"
+                    : "Start voice chat"
+                }
               >
                 {canSend ? (
                   <ArrowUp className="h-3.5 w-3.5" />
+                ) : voiceMode ? (
+                  <Mic className="h-3.5 w-3.5" />
                 ) : (
                   <AudioLines className="h-3.5 w-3.5" />
                 )}

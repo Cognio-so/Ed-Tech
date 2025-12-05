@@ -1,33 +1,43 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Save, Download } from "lucide-react"
-import { toast } from "sonner"
+import * as React from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Save, Download } from "lucide-react";
+import { toast } from "sonner";
 
 interface ImagePreviewProps {
-  imageUrl: string
-  topic: string
-  onSave: () => void
-  onClose: () => void
+  imageUrl: string;
+  topic: string;
+  onSave: () => void;
+  onClose: () => void;
 }
 
-export function ImagePreview({ imageUrl, topic, onSave, onClose }: ImagePreviewProps) {
+export function ImagePreview({
+  imageUrl,
+  topic,
+  onSave,
+  onClose,
+}: ImagePreviewProps) {
   const handleDownload = () => {
     if (!imageUrl) {
-      toast.error("No image to download")
-      return
+      toast.error("No image to download");
+      return;
     }
 
-    const link = document.createElement("a")
-    link.href = imageUrl
-    link.download = `${topic || "image"}.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    toast.success("Image downloaded")
-  }
+    const link = document.createElement("a");
+    link.href = imageUrl;
+    link.download = `${topic || "image"}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Image downloaded");
+  };
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -36,26 +46,18 @@ export function ImagePreview({ imageUrl, topic, onSave, onClose }: ImagePreviewP
           <DialogTitle className="flex items-center justify-between">
             <span>Image Preview</span>
             <div className="flex gap-2 mr-8">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDownload}
-              >
+              <Button variant="outline" size="sm" onClick={handleDownload}>
                 <Download className="mr-2 h-4 w-4" />
                 Download
               </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={onSave}
-              >
+              <Button variant="default" size="sm" onClick={onSave}>
                 <Save className="mr-2 h-4 w-4" />
                 Save
               </Button>
             </div>
           </DialogTitle>
         </DialogHeader>
-        <div className="mt-4 border rounded-lg p-6 bg-muted/50">
+        <div className="mt-4 border rounded-lg bg-muted/50">
           <img
             src={imageUrl}
             alt={topic}
@@ -64,6 +66,5 @@ export function ImagePreview({ imageUrl, topic, onSave, onClose }: ImagePreviewP
         </div>
       </DialogContent>
     </Dialog>
-  )
+  );
 }
-

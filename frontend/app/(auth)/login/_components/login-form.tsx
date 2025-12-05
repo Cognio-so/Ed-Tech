@@ -13,18 +13,36 @@ import { Label } from "@/components/ui/label";
 import { useTransition } from "react";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Github, Loader2 } from "lucide-react";
 
 export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
-  const [isPending, startTransition] = useTransition();
+  const [isGooglePending, startGoogleTransition] = useTransition();
+  const [isGithubPending, startGithubTransition] = useTransition();
 
   async function signInWithGoogle() {
-    startTransition(async () => {
+    startGoogleTransition(async () => {
       await authClient.signIn.social({
         provider: "google",
+        callbackURL: "/",
+        fetchOptions: {
+          onSuccess: () => {
+            toast.success("Signed in successfully, redirecting...");
+          },
+          onError: () => {
+            toast.error("Internal server error");
+          },
+        },
+      });
+    });
+  }
+
+  async function signInWithGithub() {
+    startGithubTransition(async () => {
+      await authClient.signIn.social({
+        provider: "github",
         callbackURL: "/",
         fetchOptions: {
           onSuccess: () => {
@@ -63,10 +81,10 @@ export function LoginForm({
                 type="submit"
                 variant="outline"
                 className="w-full flex items-center gap-2 cursor-pointer"
-                disabled={isPending}
+                disabled={isGooglePending}
                 onClick={signInWithGoogle}
               >
-                {isPending ? (
+                {isGooglePending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Signing in ...
@@ -96,6 +114,25 @@ export function LoginForm({
                       />
                     </svg>
                     Login with Google
+                  </>
+                )}
+              </Button>
+              <Button
+                type="submit"
+                variant="outline"
+                className="w-full flex items-center gap-2 cursor-pointer"
+                disabled={isGithubPending}
+                onClick={signInWithGithub}
+              >
+                {isGithubPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in ...
+                  </>
+                ) : (
+                  <>
+                    <Github className="mr-2 h-4 w-4 text-blue-500" />
+                    Login with Github
                   </>
                 )}
               </Button>

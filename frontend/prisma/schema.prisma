@@ -35,6 +35,7 @@ model User {
   comics        Comic[]
   videos        Video[]
   conversations TeacherConversation[]
+  lessons       Lesson[]
 
   @@unique([email])
   @@map("user")
@@ -264,4 +265,57 @@ model TeacherConversation {
   @@index([userId])
   @@index([createdAt])
   @@map("teacher_conversation")
+}
+
+model Lesson {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonName        String
+  lessonDescription String?  @db.Text
+  grade             String?
+  subject           String?
+  topic             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  lessonItems       LessonItem[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("lesson")
+}
+
+model LessonItem {
+  id                String   @id @default(cuid())
+  lessonId          String
+  lesson            Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  contentType       String   
+  contentId         String   
+  title             String
+  content           String   @db.Text
+  grade             String?
+  subject           String?
+  topic             String?
+  language          String?
+  learningObjective String?  @map("learning_objective")
+  difficultyLevel   String?  @map("difficulty_level")
+  duration          String?
+  confidenceLevel   Int?     @map("confidence_level")
+  correctAnswers    String?  @db.Text @map("correct_answers") 
+  solutions         String?  @db.Text 
+  imageUrl          String?  @map("image_url")
+  videoUrl          String?  @map("video_url")
+  presentationUrl   String?  @map("presentation_url")
+  instructionDepth  String?  @map("instruction_depth")
+  numberOfSessions  String?  @map("number_of_sessions")
+  durationOfSession String?  @map("duration_of_session")
+  metadata          String?  @db.Text
+  order             Int      @default(0) 
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([lessonId])
+  @@index([contentType])
+  @@index([contentId])
+  @@map("lesson_item")
 }
