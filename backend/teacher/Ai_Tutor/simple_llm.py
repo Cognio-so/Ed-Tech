@@ -50,15 +50,12 @@ def format_student_data(student_data: Any) -> str:
         return "No student data provided."
     
     if isinstance(student_data, dict):
-        # Check if it's a single student or multiple students
         if "name" in student_data or "grade" in student_data or "language" in student_data:
-            # Single student object
             name = student_data.get("name", "N/A")
             grade = student_data.get("grade", "N/A")
             language = student_data.get("language", "N/A")
             return f"Student: {name}, Grade: {grade}, Language: {language}"
         elif "students" in student_data:
-            # Multiple students in a list
             students = student_data.get("students", [])
             formatted = []
             for i, student in enumerate(students, 1):
@@ -68,7 +65,6 @@ def format_student_data(student_data: Any) -> str:
                 formatted.append(f"Student {i}: {name}, Grade: {grade}, Language: {language}")
             return "\n".join(formatted)
         else:
-            # Try to format as list of students
             formatted = []
             for key, value in student_data.items():
                 if isinstance(value, dict):
@@ -80,7 +76,6 @@ def format_student_data(student_data: Any) -> str:
                     formatted.append(f"{key}: {value}")
             return "\n".join(formatted) if formatted else str(student_data)
     elif isinstance(student_data, list):
-        # List of students
         formatted = []
         for i, student in enumerate(student_data, 1):
             if isinstance(student, dict):
@@ -99,12 +94,8 @@ def format_content_type(content_type: Any) -> str:
     """Format content_type (generated content list) for context."""
     if not content_type:
         return "No generated content available."
-    
-    # If it's a string, return as is
     if isinstance(content_type, str):
         return f"Content Type: {content_type}"
-    
-    # If it's a list of content items
     if isinstance(content_type, list):
         if not content_type:
             return "No generated content available."
@@ -134,8 +125,6 @@ def format_content_type(content_type: Any) -> str:
                 formatted.append(f"  Content {i}: {content_item}")
         
         return "\n".join(formatted)
-    
-    # If it's a dict
     if isinstance(content_type, dict):
         formatted = ["Generated Content:"]
         content_type_name = content_type.get("type") or content_type.get("contentType", "Unknown")
@@ -167,8 +156,6 @@ def format_teacher_data(teacher_data: Any) -> str:
     
     if isinstance(teacher_data, dict):
         formatted = []
-        
-        # Teacher basic information
         name = teacher_data.get("name", "N/A")
         grade = teacher_data.get("grade", "N/A")
         subjects = teacher_data.get("subjects", [])
@@ -184,12 +171,9 @@ def format_teacher_data(teacher_data: Any) -> str:
         formatted.append(f"Total Content Generated: {total_content}")
         formatted.append(f"Total Assessments: {total_assessments}")
         formatted.append(f"Total Students: {total_students}")
-        
-        # Students array - format with clear names for easy identification
         students = teacher_data.get("students", [])
         if students and isinstance(students, list):
             formatted.append("\n=== STUDENT LIST ===")
-            # First, list all student names for quick reference
             student_names = []
             for student in students:
                 if isinstance(student, dict):
@@ -209,8 +193,6 @@ def format_teacher_data(teacher_data: Any) -> str:
                     achievements = student.get("achievements", "N/A")
                     feedback = student.get("feedback", "N/A")
                     issues = student.get("issues", "N/A")
-                    
-                    # Use clear formatting with student name as header
                     student_info = f"\n--- STUDENT: {student_name} ---"
                     if student_grade and student_grade != "N/A":
                         student_info += f"\n  Grade: {student_grade}"
@@ -261,69 +243,39 @@ async def simple_llm_node(state: GraphState) -> GraphState:
     teacher_data = state.get("teacher_data", {})
     content_type = state.get("content_type")
     language = state.get("language", "English")
-    model = state.get("model")  # Get selected model from state
+    model = state.get("model")  
     chunk_callback = state.get("chunk_callback")
-    
-    # Format all context information
-    # Students are now in teacher_data.students, but keep student_data formatting for backward compatibility
     student_context = format_student_data(student_data)
     teacher_context = format_teacher_data(teacher_data)
     content_context = format_content_type(content_type)
-    
-    # Get list of student names for quick reference
     student_names_list = get_student_names_list(teacher_data)
     
-    # Extract grade from teacher_data or student_data
+    # Extract grade from teacher_data
     grade = ""
     if isinstance(teacher_data, dict):
-        grade = teacher_data.get("grade", "")
-        # Also check students array in teacher_data
-        if not grade:
-            students = teacher_data.get("students", [])
-            if students and isinstance(students, list) and len(students) > 0:
-                if isinstance(students[0], dict):
-                    grade = students[0].get("grade", "")
+        grades = teacher_data.get("grades", [])
+        if grades and isinstance(grades, list) and len(grades) > 0:
+            grade = str(grades[0])
     
-    # Fallback to student_data if grade not found in teacher_data
-    if not grade and isinstance(student_data, dict):
-        grade = student_data.get("grade", "")
-        if not grade and "students" in student_data:
-            students = student_data.get("students", [])
-            if students and isinstance(students[0], dict):
-                grade = students[0].get("grade", "")
-    elif isinstance(student_data, list) and student_data:
-        if isinstance(student_data[0], dict):
-            grade = student_data[0].get("grade", "")
-    
-    # KB/RAG search for curriculum-related questions
-    # Only perform KB search if grade, subject, and language are all available
     kb_retrieved_contexts = []
+    print(f"[SIMPLE_LLM] 📊 Extracted grade: '{grade}', subject: '{subject}', language: '{language}'")
     if grade and subject and language:
-        # Normalize values for collection name
         subject_normalized = subject.lower().replace(" ", "_")
         lang_code = LANGUAGES.get(language, language).lower()
         collection_name = f"kb_grad_{grade}_sub_{subject_normalized}_lang_{lang_code}"
-        
-        # Get user query for KB search
         user_query = ""
         if messages:
-            # Get the last human message
             for msg in reversed(messages):
                 if hasattr(msg, 'content') and msg.content:
                     msg_type = getattr(msg, 'type', None) or getattr(msg, 'role', None)
                     if msg_type and msg_type.lower() in ('human', 'user'):
                         user_query = msg.content
                         break
-        
-        # Fallback to resolved_query or user_query from state
         if not user_query:
             user_query = state.get("resolved_query") or state.get("user_query", "")
-        
-        # Perform KB search if we have a query
         if user_query:
             try:
                 print(f"[SimpleLLM KB] 🔍 Searching collection '{collection_name}' for query: {user_query[:120]}...")
-                # Await the async KB retrieval operation
                 kb_retrieved_contexts = await retrieve_kb_context(collection_name, user_query, top_k=5)
                 if kb_retrieved_contexts:
                     print(f"[SimpleLLM KB] ✅ Retrieved {len(kb_retrieved_contexts)} context chunk(s) from knowledge base")
@@ -347,16 +299,9 @@ async def simple_llm_node(state: GraphState) -> GraphState:
         if not language:
             missing.append("language")
         print(f"[SimpleLLM KB] ⚠️ Skipping KB search - missing: {', '.join(missing)}")
-    
-    # Build comprehensive context
-    # Note: Students are now primarily in teacher_data.students, but we keep student_context for backward compatibility
-    
-    # Format KB context if available
     formatted_kb_context = ""
     if kb_retrieved_contexts:
         formatted_kb_context = "\n\n".join(kb_retrieved_contexts[:5])
-    
-    # Build XML-formatted prompt
     xml_prompt = f"""
 <ai_tutor_request>
     <context>
@@ -454,8 +399,6 @@ async def simple_llm_node(state: GraphState) -> GraphState:
     </instructions>
 </ai_tutor_request>
 """
-    
-    # Use the selected model if provided, otherwise default to grok
     model_name = model if model else "x-ai/grok-4.1-fast"
     llm = get_llm(model_name, temperature=0.6)
     
