@@ -47,6 +47,7 @@ from teacher.Ai_Tutor.graph_type import GraphState
 from langchain_core.messages import HumanMessage, AIMessage
 from doument_processor import extract_text_from_pdf, extract_text_from_docx, extract_text_from_txt, extract_text_from_json
 from teacher.Ai_Tutor.qdrant_utils import store_documents
+from teacher.Ai_Tutor.cleanup_scheduler import start_cleanup_scheduler
 import httpx
 from teacher.voice_agent.voice_agent_webrtc import VoiceAgentBridge
 from Student.Ai_tutor.graph import create_student_ai_tutor_graph
@@ -223,6 +224,15 @@ app.add_middleware(
 @app.get("/healthz", tags=["System"])
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize background tasks on application startup."""
+    # Start the document cleanup scheduler (runs every hour)
+    asyncio.create_task(start_cleanup_scheduler())
+    logger.info("🚀 Document cleanup scheduler started (24-hour TTL)")
+
 
 
 async def generate_video_background(
@@ -1518,10 +1528,6 @@ async def ai_tutor_stream_chat(
     """
     current_session_id = await SessionManager.create_session(teacher_id, session_id)
     session = await SessionManager.get_session(current_session_id)
-    
-    print(f"[CHAT ENDPOINT] 📥 Received chat request - teacher_id: {teacher_id}, session_id: {current_session_id}")
-    print(f"[CHAT ENDPOINT] 📝 Message: {payload.message[:100]}...")
-    print(f"[CHAT ENDPOINT] 📎 doc_url: {payload.doc_url}")
     session["teacher_payload"] = payload
     print("teacher_payload:-----------------------", session["teacher_payload"])
     print(f"hiii", payload)
@@ -1617,9 +1623,6 @@ async def ai_tutor_stream_chat(
             langchain_messages.append(AIMessage(content=msg.get("content", "")))
     
     print(f"[CHAT ENDPOINT] ✅ Total messages sent to graph: {len(langchain_messages)}")
-    
-    # ✅ NEW: Get newly uploaded docs from session (like old project)
-    # These accumulate from /add-documents endpoint until user sends query
     newly_uploaded_docs = session.get("newly_uploaded_docs", [])
     uploaded_doc_flag = bool(newly_uploaded_docs)
     
@@ -1628,27 +1631,6 @@ async def ai_tutor_stream_chat(
         print(f"[CHAT ENDPOINT] 📋 Doc types: {[doc.get('file_type') for doc in newly_uploaded_docs]}")
     else:
         print(f"[CHAT ENDPOINT] ℹ️ No newly uploaded docs")
-    
-    # ✅ NEW: Detect image intent
-    def detect_image_intent(query: str) -> bool:
-        """Detect if user wants image generation/editing."""
-        generation_verbs = ["generate", "create", "make", "draw", "produce", "build"]
-        editing_verbs = ["edit", "modify", "change", "adjust", "enhance", "brighten", "darken"]
-        
-        query_lower = query.lower()
-        
-        # Don't set flag for prompt requests
-        if "prompt" in query_lower and any(v in query_lower for v in ["give", "create", "write", "generate"]):
-            return False
-        
-        # Check for action verbs + image-related words
-        has_image_word = any(word in query_lower for word in ["image", "picture", "photo", "visual"])
-        has_action_verb = any(verb in query_lower for verb in generation_verbs + editing_verbs)
-        
-        return has_image_word and has_action_verb
-    
-    is_image = detect_image_intent(payload.message)
-   
     state: GraphState = {
         "messages": langchain_messages,
         "user_query": payload.message,
@@ -1676,7 +1658,7 @@ async def ai_tutor_stream_chat(
         "uploaded_doc": uploaded_doc_flag,
         "new_uploaded_docs": newly_uploaded_docs,  # Note: orchestrator expects "new_uploaded_docs"
         "active_docs": session.get("uploaded_docs", []),
-        "is_image": is_image,
+        "is_image": False,
         "edit_img_urls": [],
         "img_urls": session.get("img_urls", []),
     }
@@ -1775,21 +1757,16 @@ async def ai_tutor_stream_chat(
                 session["summary"] = state["context"]["session"]["summary"]
             if state.get("context", {}).get("session", {}).get("last_route"):
                 session["last_route"] = state["context"]["session"]["last_route"]
-            if state.get("route"):
+            
+            # ✅ FIX: Update last_route from executed tasks, ignoring "end"
+            tasks = state.get("tasks", [])
+            if tasks:
+                session["last_route"] = tasks[-1]
+            elif state.get("route") and state.get("route") != "end":
                 session["last_route"] = state["route"]
-            
-            # ✅ NEW: Store image results if any
-            if state.get("img_urls"):
-                session["img_urls"] = state.get("img_urls", [])
-                # print(f"[CHAT ENDPOINT] 🖼️ Stored {len(state['img_urls'])} image URLs")
-            
             if state.get("image_result"):
                 session["last_image_result"] = state.get("image_result")
-                # print(f"[CHAT ENDPOINT] 🖼️ Stored image result")
-            
-            # ✅ NEW: Clear newly_uploaded_docs after query is processed (like old project)
             if session.get("newly_uploaded_docs"):
-                # print(f"[CHAT ENDPOINT] 🗑️ Clearing {len(session['newly_uploaded_docs'])} docs from newly_uploaded_docs")
                 session["newly_uploaded_docs"] = []
             
             await SessionManager.update_session(current_session_id, session)
