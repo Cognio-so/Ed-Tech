@@ -11,8 +11,7 @@ export async function POST(
     console.log("📦 Disconnect request for:", { teacherId, sessionId });
 
     // Forward to FastAPI backend
-    const backendUrl =
-      process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
     const endpoint = `${backendUrl}/api/teacher/${teacherId}/session/${sessionId}/voice_agent/disconnect`;
 
     console.log("🔄 Proxying voice disconnect request to:", endpoint);
