@@ -129,14 +129,28 @@ async def summarizer(state: GraphState, keep_last=2):
         return " ".join(words[:word_limit]) + ("..." if len(words) > word_limit else "")
 
     for m in recent:
-        if "content" in m and isinstance(m["content"], str):
-            m["content"] = truncate_text(m["content"])
+        if isinstance(m, dict):
+            if "content" in m and isinstance(m["content"], str):
+                m["content"] = truncate_text(m["content"])
+        else:
+            # Handle LangChain message objects
+            content = getattr(m, "content", "")
+            if isinstance(content, str):
+                try:
+                    m.content = truncate_text(content)
+                except Exception:
+                    pass
 
     # Build old conversation text
     old_text = []
     for m in older:
-        role = (m.get("type") or m.get("role") or "").lower()
-        content = m.get("content") or ""
+        if isinstance(m, dict):
+            role = (m.get("type") or m.get("role") or "").lower()
+            content = m.get("content") or ""
+        else:
+            role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
+            content = getattr(m, "content", "") if hasattr(m, "content") else str(m)
+        
         if not content:
             continue
         speaker = "User" if role in ("human", "user") else "Assistant"
@@ -185,8 +199,13 @@ async def is_followup(
     """
     turns = []
     for m in (history or [])[-12:]:
-        role = (m.get("type") or m.get("role") or "").lower()
-        content = m.get("content") if isinstance(m, dict) else getattr(m, "content", "")
+        if isinstance(m, dict):
+            role = (m.get("type") or m.get("role") or "").lower()
+            content = m.get("content", "")
+        else:
+            role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
+            content = getattr(m, "content", "") if hasattr(m, "content") else str(m)
+        
         if not content:
             continue
         prefix = "User" if role in ("human", "user") else "Assistant"
