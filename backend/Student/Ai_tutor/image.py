@@ -8,7 +8,10 @@ backend_path = Path(__file__).resolve().parents[3]
 if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 
-from backend.Student.Ai_tutor.graph_type import StudentGraphState
+try:
+    from backend.Student.Ai_tutor.graph_type import StudentGraphState
+except ImportError:
+    from Student.Ai_tutor.graph_type import StudentGraphState
 from teacher.media_toolkit.image_gen import ImageGenerator
 
 

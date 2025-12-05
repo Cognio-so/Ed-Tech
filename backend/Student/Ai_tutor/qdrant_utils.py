@@ -25,12 +25,20 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
 # Adjust these imports to match your project structure
-from backend.embedding import embed_chunks_parallel, embed_query
-from backend.qdrant_service import (
-    get_qdrant_client,
-    VECTOR_SIZE,
-    QDRANT_UPSERT_BATCH_SIZE,
-)
+try:
+    from backend.embedding import embed_chunks_parallel, embed_query
+    from backend.qdrant_service import (
+        get_qdrant_client,
+        VECTOR_SIZE,
+        QDRANT_UPSERT_BATCH_SIZE,
+    )
+except ImportError:
+    from embedding import embed_chunks_parallel, embed_query
+    from qdrant_service import (
+        get_qdrant_client,
+        VECTOR_SIZE,
+        QDRANT_UPSERT_BATCH_SIZE,
+    )
 
 QDRANT_CLIENT = get_qdrant_client()
 

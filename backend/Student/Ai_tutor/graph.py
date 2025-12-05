@@ -10,13 +10,22 @@ if str(backend_path) not in sys.path:
 
 from langgraph.graph import StateGraph, END
 
-from backend.Student.Ai_tutor.graph_type import StudentGraphState
-from backend.Student.Ai_tutor.observality import trace_node
-from backend.Student.Ai_tutor.orchestrator import orchestrator_node, route_decision
-from backend.Student.Ai_tutor.simple_llm import simple_llm_node
-from backend.Student.Ai_tutor.rag import rag_node
-from backend.Student.Ai_tutor.websearch import websearch_node
-from backend.Student.Ai_tutor.image import image_node
+try:
+    from backend.Student.Ai_tutor.graph_type import StudentGraphState
+    from backend.Student.Ai_tutor.observality import trace_node
+    from backend.Student.Ai_tutor.orchestrator import orchestrator_node, route_decision
+    from backend.Student.Ai_tutor.simple_llm import simple_llm_node
+    from backend.Student.Ai_tutor.rag import rag_node
+    from backend.Student.Ai_tutor.websearch import websearch_node
+    from backend.Student.Ai_tutor.image import image_node
+except ImportError:
+    from Student.Ai_tutor.graph_type import StudentGraphState
+    from Student.Ai_tutor.observality import trace_node
+    from Student.Ai_tutor.orchestrator import orchestrator_node, route_decision
+    from Student.Ai_tutor.simple_llm import simple_llm_node
+    from Student.Ai_tutor.rag import rag_node
+    from Student.Ai_tutor.websearch import websearch_node
+    from Student.Ai_tutor.image import image_node
 
 
 def create_student_ai_tutor_graph():

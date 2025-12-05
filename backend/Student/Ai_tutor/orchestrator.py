@@ -14,8 +14,12 @@ from typing import Dict, Any, Optional
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from backend.llm import get_llm
-from backend.Student.Ai_tutor.graph_type import StudentGraphState
+try:
+    from backend.llm import get_llm
+    from backend.Student.Ai_tutor.graph_type import StudentGraphState
+except ImportError:
+    from llm import get_llm
+    from Student.Ai_tutor.graph_type import StudentGraphState
 
 
 def load_orchestrator_prompt() -> str:

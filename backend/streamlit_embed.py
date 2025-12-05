@@ -10,21 +10,34 @@ parent_path = Path(__file__).resolve().parent.parent
 if str(parent_path) not in sys.path:
     sys.path.append(str(parent_path))
 
-from backend.doument_processor import process_knowledge_base_files
-from backend.embedding import embed_chunks_parallel
-from backend.models import DocumentInfo
+try:
+    from backend.doument_processor import process_knowledge_base_files
+    from backend.embedding import embed_chunks_parallel
+    from backend.models import DocumentInfo
+    from backend.qdrant_service import (
+        get_qdrant_client,
+        get_qdrant_status,
+        is_qdrant_in_memory,
+        VECTOR_SIZE,
+        QDRANT_UPSERT_BATCH_SIZE,
+    )
+except ImportError:
+    from doument_processor import process_knowledge_base_files
+    from embedding import embed_chunks_parallel
+    from models import DocumentInfo
+    from qdrant_service import (
+        get_qdrant_client,
+        get_qdrant_status,
+        is_qdrant_in_memory,
+        VECTOR_SIZE,
+        QDRANT_UPSERT_BATCH_SIZE,
+    )
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import models
 import uuid
 from dotenv import load_dotenv
 load_dotenv()
-from backend.qdrant_service import (
-    get_qdrant_client,
-    get_qdrant_status,
-    is_qdrant_in_memory,
-    VECTOR_SIZE,
-    QDRANT_UPSERT_BATCH_SIZE,
-)
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 
 # OpenAI API Key check

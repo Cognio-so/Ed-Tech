@@ -10,9 +10,14 @@ if str(backend_path) not in sys.path:
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
-from backend.llm import get_llm, stream_with_token_tracking
-from backend.Student.Ai_tutor.graph_type import StudentGraphState
-from backend.Student.Ai_tutor.qdrant_utils import retrieve_relevant_documents
+try:
+    from backend.llm import get_llm, stream_with_token_tracking
+    from backend.Student.Ai_tutor.graph_type import StudentGraphState
+    from backend.Student.Ai_tutor.qdrant_utils import retrieve_relevant_documents
+except ImportError:
+    from llm import get_llm, stream_with_token_tracking
+    from Student.Ai_tutor.graph_type import StudentGraphState
+    from Student.Ai_tutor.qdrant_utils import retrieve_relevant_documents
 
 
 async def rag_node(state: StudentGraphState) -> StudentGraphState:

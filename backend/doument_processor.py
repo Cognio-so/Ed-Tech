@@ -5,7 +5,10 @@ import json
 from io import BytesIO
 import uuid
 from fastapi import UploadFile
-from backend.models import DocumentInfo
+try:
+    from backend.models import DocumentInfo
+except ImportError:
+    from models import DocumentInfo
 
 # Try to import fitz (PyMuPDF), fallback to pypdf if not available
 try:

@@ -10,8 +10,12 @@ if str(backend_path) not in sys.path:
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
-from backend.llm import get_llm, stream_with_token_tracking
-from backend.Student.Ai_tutor.graph_type import StudentGraphState
+try:
+    from backend.llm import get_llm, stream_with_token_tracking
+    from backend.Student.Ai_tutor.graph_type import StudentGraphState
+except ImportError:
+    from llm import get_llm, stream_with_token_tracking
+    from Student.Ai_tutor.graph_type import StudentGraphState
 
 
 def _format_assignments(pending_assignments):
