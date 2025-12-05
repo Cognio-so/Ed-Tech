@@ -7,6 +7,7 @@ import { ChatMessages } from "./_components/chat-message";
 import { ChatHeader } from "./_components/chat-header";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
 
 interface TeacherStats {
   name: string;
@@ -36,8 +37,17 @@ export default function AITutorPage() {
   const [subjects, setSubjects] = useState<Array<{ id: string; name: string }>>(
     []
   );
-  const { messages, isLoading, streamingContent, sendMessage, clearMessages } =
-    useAITutor();
+  const [sessionId, setSessionId] = useState<string>("");
+  const [teacherId, setTeacherId] = useState<string>("");
+
+  const {
+    messages,
+    isLoading,
+    streamingContent,
+    sendMessage,
+    clearMessages,
+    addVoiceMessage,
+  } = useAITutor();
 
   const hasMessages = messages.length > 0;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -46,6 +56,13 @@ export default function AITutorPage() {
   useEffect(() => {
     async function fetchStats() {
       try {
+        // Get current user session
+        const sessionData = await authClient.getSession();
+        if (sessionData?.data?.user?.id) {
+          setTeacherId(sessionData.data.user.id);
+          setSessionId(`session-${Date.now()}`);
+        }
+
         const response = await fetch("/api/teacher/stats");
         if (response.ok) {
           const stats = await response.json();
@@ -195,6 +212,15 @@ export default function AITutorPage() {
     return selectedSubject || "all";
   };
 
+  const handleTranscription = useCallback(
+    (text: string, role: "user" | "assistant") => {
+      // Add transcription as a message in the chat
+      console.log(`💬 Transcription (${role}):`, text);
+      addVoiceMessage(text, role);
+    },
+    [addVoiceMessage]
+  );
+
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden">
       <ChatHeader
@@ -240,6 +266,10 @@ export default function AITutorPage() {
           isLoading={isLoading}
           disabled={false}
           hasMessages={hasMessages}
+          teacherId={teacherId}
+          sessionId={sessionId}
+          teacherName={teacherStats?.name}
+          onTranscription={handleTranscription}
         />
       </div>
     </div>

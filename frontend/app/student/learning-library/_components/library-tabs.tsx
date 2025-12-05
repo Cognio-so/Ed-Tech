@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ContentCard } from "@/components/ui/content-card";
-import { LibraryContent } from "@/data/get-library-content";
+import { StudentContent } from "@/data/get-student-content";
 import { AssessmentPreview } from "@/app/teacher/assessment-generation/_components/assessment-preview";
 import { SlidePreview } from "@/components/ui/slide-preview";
 import { ImagePreview } from "@/components/ui/image-preview";
@@ -13,55 +13,53 @@ import { WebSearchPreview } from "@/components/ui/web-search-preview";
 import { ContentPreview } from "@/app/teacher/media-toolkit/_components/content-preview";
 import { DownloadDialog } from "@/components/ui/download-dialog";
 import { toast } from "sonner";
-import { deleteMediaContent } from "@/app/teacher/media-toolkit/action";
-import { deleteAssessment } from "@/app/teacher/assessment-generation/action";
-import { deleteContent } from "@/app/teacher/content-generation/action";
-import { addToLesson } from "@/app/teacher/library/action";
-import { useRouter } from "next/navigation";
 
-interface AllTabsProps {
-  content: LibraryContent[];
+interface LibraryTabsProps {
+  content: StudentContent[];
 }
 
-export function AllTabs({ content }: AllTabsProps) {
-  const router = useRouter();
-  const [previewItem, setPreviewItem] = React.useState<LibraryContent | null>(
+export function LibraryTabs({ content }: LibraryTabsProps) {
+  const [previewItem, setPreviewItem] = React.useState<StudentContent | null>(
     null
   );
-  const [localContent, setLocalContent] = React.useState(content);
   const [showDownloadDialog, setShowDownloadDialog] = React.useState(false);
   const [downloadContent, setDownloadContent] = React.useState<{
     content: string;
     title: string;
   } | null>(null);
 
-  const mediaToolkitContent = localContent.filter(
-    (item) => item.type === "media-toolkit"
+  const lessonPlanContent = content.filter(
+    (item) => item.contentType === "lesson_plan"
   );
-  const contentGenerationContent = localContent.filter(
-    (item) => item.type === "content-generation"
+  const presentationContent = content.filter(
+    (item) => item.contentType === "presentation"
   );
-  const assessmentContent = localContent.filter(
-    (item) => item.type === "assessment"
+  const quizContent = content.filter((item) => item.contentType === "quiz");
+  const worksheetContent = content.filter(
+    (item) => item.contentType === "worksheet"
   );
+  const assessmentContent = content.filter(
+    (item) => item.contentType === "assessment"
+  );
+  const slideContent = content.filter((item) => item.contentType === "slide");
+  const imageContent = content.filter((item) => item.contentType === "image");
+  const videoContent = content.filter((item) => item.contentType === "video");
+  const comicContent = content.filter((item) => item.contentType === "comic");
 
   const counts = {
-    all: localContent.length,
-    content: contentGenerationContent.length,
-    slides: mediaToolkitContent.filter((item) => item.contentType === "slide")
-      .length,
-    comics: mediaToolkitContent.filter((item) => item.contentType === "comic")
-      .length,
-    images: mediaToolkitContent.filter((item) => item.contentType === "image")
-      .length,
-    videos: mediaToolkitContent.filter((item) => item.contentType === "video")
-      .length,
-    assessments: assessmentContent.length,
-    webSearch: mediaToolkitContent.filter((item) => item.contentType === "web")
-      .length,
+    all: content.length,
+    lessonPlan: lessonPlanContent.length,
+    presentation: presentationContent.length,
+    quiz: quizContent.length,
+    worksheet: worksheetContent.length,
+    assessment: assessmentContent.length,
+    slide: slideContent.length,
+    image: imageContent.length,
+    video: videoContent.length,
+    comic: comicContent.length,
   };
 
-  const handlePreview = (item: LibraryContent) => {
+  const handlePreview = (item: StudentContent) => {
     setPreviewItem(item);
   };
 
@@ -69,7 +67,7 @@ export function AllTabs({ content }: AllTabsProps) {
     setPreviewItem(null);
   };
 
-  const handleDownload = async (item: LibraryContent) => {
+  const handleDownload = async (item: StudentContent) => {
     try {
       if (!item.content) {
         toast.error("No content to download");
@@ -101,51 +99,6 @@ export function AllTabs({ content }: AllTabsProps) {
     } catch (error) {
       console.error("Error downloading content:", error);
       toast.error("Failed to download content");
-    }
-  };
-
-  const handleDelete = async (item: LibraryContent) => {
-    if (!confirm(`Are you sure you want to delete "${item.title}"?`)) {
-      return;
-    }
-
-    try {
-      if (item.type === "media-toolkit") {
-        await deleteMediaContent(item.id, item.contentType);
-      } else if (item.type === "assessment") {
-        await deleteAssessment(item.id);
-      } else if (item.type === "content-generation") {
-        await deleteContent(item.id);
-      } else {
-        toast.error("Delete functionality not available for this content type");
-        return;
-      }
-
-      setLocalContent(localContent.filter((c) => c.id !== item.id));
-      toast.success("Content deleted successfully");
-      router.refresh();
-    } catch (error) {
-      console.error("Error deleting content:", error);
-      toast.error("Failed to delete content");
-    }
-  };
-
-  const handleAddToLesson = async (item: LibraryContent) => {
-    try {
-      const formData = new FormData();
-      formData.append("contentType", item.contentType);
-      formData.append("contentId", item.id);
-      formData.append("lessonName", `Lesson - ${new Date().toLocaleDateString()}`);
-
-      await addToLesson(formData);
-      toast.success("Content added to lesson successfully");
-    } catch (error) {
-      console.error("Error adding content to lesson:", error);
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to add content to lesson"
-      );
     }
   };
 
@@ -216,17 +169,6 @@ export function AllTabs({ content }: AllTabsProps) {
       );
     }
 
-    if (contentType === "web") {
-      return (
-        <WebSearchPreview
-          content={content}
-          topic={previewItem.topic || previewItem.title}
-          onSave={handleClosePreview}
-          onClose={handleClosePreview}
-        />
-      );
-    }
-
     return (
       <ContentPreview
         content={content}
@@ -241,7 +183,7 @@ export function AllTabs({ content }: AllTabsProps) {
     );
   };
 
-  const renderContentGrid = (items: LibraryContent[]) => {
+  const renderContentGrid = (items: StudentContent[]) => {
     if (items.length === 0) {
       return (
         <div className="text-center py-12 text-muted-foreground">
@@ -255,7 +197,9 @@ export function AllTabs({ content }: AllTabsProps) {
         {items.map((item) => {
           let imageUrl: string | undefined;
 
-          if (item.contentType === "image") {
+          if (item.imageUrl) {
+            imageUrl = item.imageUrl;
+          } else if (item.contentType === "image") {
             imageUrl = item.content;
           } else if (item.contentType === "comic") {
             try {
@@ -283,7 +227,7 @@ export function AllTabs({ content }: AllTabsProps) {
               title={item.title}
               imageUrl={imageUrl}
               imageAlt={item.title}
-              type={item.type}
+              type="content"
               contentType={item.contentType}
               grade={item.grade}
               subject={item.subject}
@@ -291,8 +235,7 @@ export function AllTabs({ content }: AllTabsProps) {
               date={item.createdAt}
               onPreview={() => handlePreview(item)}
               onDownload={() => handleDownload(item)}
-              onDelete={() => handleDelete(item)}
-              onAddToLesson={() => handleAddToLesson(item)}
+              onDelete={() => {}}
             />
           );
         })}
@@ -306,68 +249,69 @@ export function AllTabs({ content }: AllTabsProps) {
         <div className="overflow-x-auto mb-6">
           <TabsList className="inline-flex w-full min-w-max gap-2">
             <TabsTrigger value="all">All ({counts.all})</TabsTrigger>
-            <TabsTrigger value="content">
-              Content ({counts.content})
+            <TabsTrigger value="lessonPlan">
+              Lesson Plans ({counts.lessonPlan})
             </TabsTrigger>
-            <TabsTrigger value="slides">Slides ({counts.slides})</TabsTrigger>
-            <TabsTrigger value="comics">Comics ({counts.comics})</TabsTrigger>
-            <TabsTrigger value="images">Images ({counts.images})</TabsTrigger>
-            <TabsTrigger value="videos">Videos ({counts.videos})</TabsTrigger>
-            <TabsTrigger value="assessments">
-              Assessments ({counts.assessments})
+            <TabsTrigger value="presentation">
+              Presentations ({counts.presentation})
             </TabsTrigger>
-            <TabsTrigger value="webSearch">
-              Web Search ({counts.webSearch})
+            <TabsTrigger value="quiz">Quizzes ({counts.quiz})</TabsTrigger>
+            <TabsTrigger value="worksheet">
+              Worksheets ({counts.worksheet})
             </TabsTrigger>
+            <TabsTrigger value="assessment">
+              Assessments ({counts.assessment})
+            </TabsTrigger>
+            <TabsTrigger value="slide">Slides ({counts.slide})</TabsTrigger>
+            <TabsTrigger value="image">Images ({counts.image})</TabsTrigger>
+            <TabsTrigger value="video">Videos ({counts.video})</TabsTrigger>
+            <TabsTrigger value="comic">Comics ({counts.comic})</TabsTrigger>
           </TabsList>
         </div>
 
         <TabsContent value="all" className="mt-6">
-          {renderContentGrid(localContent)}
+          {renderContentGrid(content)}
         </TabsContent>
 
-        <TabsContent value="content" className="mt-6">
-          {renderContentGrid(contentGenerationContent)}
+        <TabsContent value="lessonPlan" className="mt-6">
+          {renderContentGrid(lessonPlanContent)}
         </TabsContent>
 
-        <TabsContent value="slides" className="mt-6">
-          {renderContentGrid(
-            mediaToolkitContent.filter((item) => item.contentType === "slide")
-          )}
+        <TabsContent value="presentation" className="mt-6">
+          {renderContentGrid(presentationContent)}
         </TabsContent>
 
-        <TabsContent value="comics" className="mt-6">
-          {renderContentGrid(
-            mediaToolkitContent.filter((item) => item.contentType === "comic")
-          )}
+        <TabsContent value="quiz" className="mt-6">
+          {renderContentGrid(quizContent)}
         </TabsContent>
 
-        <TabsContent value="images" className="mt-6">
-          {renderContentGrid(
-            mediaToolkitContent.filter((item) => item.contentType === "image")
-          )}
+        <TabsContent value="worksheet" className="mt-6">
+          {renderContentGrid(worksheetContent)}
         </TabsContent>
 
-        <TabsContent value="videos" className="mt-6">
-          {renderContentGrid(
-            mediaToolkitContent.filter((item) => item.contentType === "video")
-          )}
-        </TabsContent>
-
-        <TabsContent value="assessments" className="mt-6">
+        <TabsContent value="assessment" className="mt-6">
           {renderContentGrid(assessmentContent)}
         </TabsContent>
 
-        <TabsContent value="webSearch" className="mt-6">
-          {renderContentGrid(
-            mediaToolkitContent.filter((item) => item.contentType === "web")
-          )}
+        <TabsContent value="slide" className="mt-6">
+          {renderContentGrid(slideContent)}
+        </TabsContent>
+
+        <TabsContent value="image" className="mt-6">
+          {renderContentGrid(imageContent)}
+        </TabsContent>
+
+        <TabsContent value="video" className="mt-6">
+          {renderContentGrid(videoContent)}
+        </TabsContent>
+
+        <TabsContent value="comic" className="mt-6">
+          {renderContentGrid(comicContent)}
         </TabsContent>
       </Tabs>
 
       {renderPreview()}
 
-      {/* Download Dialog */}
       {downloadContent && (
         <DownloadDialog
           open={showDownloadDialog}

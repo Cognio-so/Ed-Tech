@@ -1,28 +1,29 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Eye, Download, Trash2 } from "lucide-react"
-import { cn } from "@/lib/utils"
-import Image from "next/image"
+import * as React from "react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Eye, Download, Trash2, BookPlus, ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import Image from "next/image";
 
 export interface ContentCardProps {
-  id: string
-  title: string
-  imageUrl?: string
-  imageAlt?: string
-  type: string
-  contentType: string
-  grade?: string | null
-  subject?: string | null
-  topic?: string | null
-  date?: Date | string
-  onPreview: () => void
-  onDownload: () => void
-  onDelete: () => void
-  className?: string
+  id: string;
+  title: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  type: string;
+  contentType: string;
+  grade?: string | null;
+  subject?: string | null;
+  topic?: string | null;
+  date?: Date | string;
+  onPreview?: () => void;
+  onDownload: () => void;
+  onDelete: () => void;
+  onAddToLesson?: () => void;
+  className?: string;
 }
 
 export function ContentCard({
@@ -39,17 +40,18 @@ export function ContentCard({
   onPreview,
   onDownload,
   onDelete,
+  onAddToLesson,
   className,
 }: ContentCardProps) {
   const formatDate = (date?: Date | string) => {
-    if (!date) return ""
-    const d = typeof date === "string" ? new Date(date) : date
+    if (!date) return "";
+    const d = typeof date === "string" ? new Date(date) : date;
     return d.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
-    })
-  }
+    });
+  };
 
   const getTypeLabel = () => {
     const typeMap: Record<string, string> = {
@@ -58,17 +60,22 @@ export function ContentCard({
       presentation: "Content",
       quiz: "Content",
       worksheet: "Content",
-      slide: "Slides",
-      image: "Images",
-      video: "Videos",
-      comic: "Comics",
-      web: "Web Search",
-    }
-    return typeMap[contentType] || "Content"
-  }
+      slide: "Content",
+      image: "Content",
+      video: "Content",
+      comic: "Content",
+      web: "Content",
+    };
+    return typeMap[contentType] || "Content";
+  };
 
   return (
-    <Card className={cn("overflow-hidden flex flex-col w-full p-0 gap-0", className)}>
+    <Card
+      className={cn(
+        "overflow-hidden flex flex-col w-full p-0 gap-0 bg-card border-border",
+        className
+      )}
+    >
       {/* Image section - no padding/margin between card and image */}
       <div className="relative w-full aspect-video bg-muted">
         {imageUrl ? (
@@ -82,22 +89,29 @@ export function ContentCard({
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">
             <div className="text-center p-4">
-              <p className="text-sm font-medium text-muted-foreground">{title}</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                {title}
+              </p>
             </div>
           </div>
         )}
         {/* Type badge overlay */}
         <div className="absolute top-2 left-2">
-          <Badge variant="secondary" className="bg-black/80 text-white border-0">
+          <Badge
+            variant="secondary"
+            className="bg-black/80 text-white border-0"
+          >
             {getTypeLabel()}
           </Badge>
         </div>
       </div>
 
       {/* Content section */}
-      <CardHeader className="flex-1 px-6 pt-6">
-        <h3 className="font-semibold text-lg leading-tight line-clamp-2">{title}</h3>
-        <div className="space-y-2 text-sm text-muted-foreground mt-2">
+      <CardHeader className="flex-1 px-6 pt-2 bg-card">
+        <h3 className="font-semibold text-lg leading-tight line-clamp-2 text-foreground">
+          {title}
+        </h3>
+        <div className="space-y-1 text-sm text-muted-foreground mt-2">
           {topic && (
             <div>
               <span className="font-medium">Topic:</span> {topic}
@@ -121,36 +135,46 @@ export function ContentCard({
         </div>
       </CardHeader>
 
-      {/* Action buttons */}
-      <CardFooter className="flex items-center justify-between gap-2 px-6 pb-6 pt-0">
-        <Button
-          variant="default"
-          size="sm"
-          className="flex-1"
-          onClick={onPreview}
+      {/* Add to Lesson button */}
+      {onAddToLesson && (
+        <div className="px-6 pb-4 mt-4">
+          <Button
+            variant="default"
+            size="sm"
+            className="w-full"
+            onClick={onAddToLesson}
+          >
+            <BookPlus className="h-4 w-4 mr-2" />
+            Add to Lesson
+          </Button>
+        </div>
+      )}
+
+      {/* Action icons - Eye, Download, Delete */}
+      <div className="w-full px-6 mb-2 flex items-center gap-2">
+        <button
+          onClick={onPreview || (() => {})}
+          className="flex-1 bg-muted/80 hover:bg-muted/60 rounded-md p-1.5 text-primary transition-colors flex items-center justify-center min-h-[32px]"
+          title="Preview"
         >
-          <Eye className="h-4 w-4 mr-2" />
-          Preview
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
+          <Eye className="h-4 w-4" strokeWidth={2} />
+        </button>
+        <button
           onClick={onDownload}
+          className="flex-1 bg-muted/80 hover:bg-muted/60 rounded-md p-1.5 text-primary transition-colors flex items-center justify-center gap-1 min-h-[32px]"
           title="Download"
         >
-              <Download className="h-4 w-4" />
-            </Button>
-        <Button
-          variant="ghost"
-          size="sm"
+          <Download className="h-4 w-4" strokeWidth={2} />
+          <ChevronDown className="h-3 w-3" strokeWidth={2} />
+        </button>
+        <button
           onClick={onDelete}
-          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          className="flex-1 bg-muted/80 hover:bg-muted/60 rounded-md p-1.5 text-red-500 hover:text-red-400 transition-colors flex items-center justify-center min-h-[32px]"
           title="Delete"
         >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </CardFooter>
+          <Trash2 className="h-4 w-4" strokeWidth={2} />
+        </button>
+      </div>
     </Card>
-  )
+  );
 }
-

@@ -1,8 +1,8 @@
 import arcjet, { detectBot, fixedWindow, shield } from "@arcjet/next";
 import { NextRequest, NextResponse } from "next/server";
 
-const arcjetMode: "DRY_RUN" | "LIVE" = 
-  (process.env.ARCJET_MODE as "DRY_RUN" | "LIVE" | undefined) || 
+const arcjetMode: "DRY_RUN" | "LIVE" =
+  (process.env.ARCJET_MODE as "DRY_RUN" | "LIVE" | undefined) ||
   (process.env.NODE_ENV === "development" ? "DRY_RUN" : "LIVE");
 
 const aj = arcjet({

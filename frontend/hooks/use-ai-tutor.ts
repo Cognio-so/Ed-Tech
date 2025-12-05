@@ -324,6 +324,19 @@ export function useAITutor(options?: UseAITutorOptions) {
     lastSavedMessagesRef.current = "";
   }, []);
 
+  const addVoiceMessage = useCallback(
+    (content: string, role: "user" | "assistant") => {
+      const message: ChatMessage = {
+        id: `${role}-voice-${Date.now()}`,
+        role,
+        content,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, message]);
+    },
+    []
+  );
+
   return {
     messages,
     isLoading,
@@ -331,5 +344,6 @@ export function useAITutor(options?: UseAITutorOptions) {
     sendMessage,
     stop,
     clearMessages,
+    addVoiceMessage,
   };
 }
