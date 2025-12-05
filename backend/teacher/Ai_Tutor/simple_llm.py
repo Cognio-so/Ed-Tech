@@ -11,9 +11,14 @@ if str(backend_path) not in sys.path:
 import asyncio
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from backend.llm import get_llm, stream_with_token_tracking
-from backend.teacher.Ai_Tutor.graph_type import GraphState
-from backend.teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
+try:
+    from backend.llm import get_llm, stream_with_token_tracking
+    from backend.teacher.Ai_Tutor.graph_type import GraphState
+    from backend.teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
+except ImportError:
+    from llm import get_llm, stream_with_token_tracking
+    from teacher.Ai_Tutor.graph_type import GraphState
+    from teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
 
 
 def _format_last_turns(messages, k=3):

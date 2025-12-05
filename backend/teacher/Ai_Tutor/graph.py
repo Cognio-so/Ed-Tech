@@ -10,13 +10,21 @@ if str(backend_path) not in sys.path:
 from typing import Dict, Any
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage
-from backend.teacher.Ai_Tutor.graph_type import GraphState
 from .observality import trace_node
-from backend.teacher.Ai_Tutor.orchestrator import orchestrator_node, route_decision
-from backend.teacher.Ai_Tutor.simple_llm import simple_llm_node
-from backend.teacher.Ai_Tutor.rag import rag_node
-from backend.teacher.Ai_Tutor.websearch import websearch_node
-from backend.teacher.Ai_Tutor.image import image_node
+try:
+    from backend.teacher.Ai_Tutor.graph_type import GraphState
+    from backend.teacher.Ai_Tutor.orchestrator import orchestrator_node, route_decision
+    from backend.teacher.Ai_Tutor.simple_llm import simple_llm_node
+    from backend.teacher.Ai_Tutor.rag import rag_node
+    from backend.teacher.Ai_Tutor.websearch import websearch_node
+    from backend.teacher.Ai_Tutor.image import image_node
+except ImportError:
+    from teacher.Ai_Tutor.graph_type import GraphState
+    from teacher.Ai_Tutor.orchestrator import orchestrator_node, route_decision
+    from teacher.Ai_Tutor.simple_llm import simple_llm_node
+    from teacher.Ai_Tutor.rag import rag_node
+    from teacher.Ai_Tutor.websearch import websearch_node
+    from teacher.Ai_Tutor.image import image_node
 
 
 def create_ai_tutor_graph():

@@ -8,7 +8,10 @@ if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 
 from typing import Dict, Any
-from backend.teacher.Ai_Tutor.graph_type import GraphState
+try:
+    from backend.teacher.Ai_Tutor.graph_type import GraphState
+except ImportError:
+    from teacher.Ai_Tutor.graph_type import GraphState
 from teacher.media_toolkit.image_gen import ImageGenerator
 
 

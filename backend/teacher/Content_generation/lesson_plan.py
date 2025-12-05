@@ -7,10 +7,16 @@ if str(backend_path) not in sys.path:
 import asyncio
 from typing import Any, Dict, Awaitable, Callable, Optional, List
 
-from backend.llm import get_llm, stream_with_token_tracking
-from backend.utils.websearch import get_youtube_links
-from backend.embedding import embed_query
-from backend.qdrant_service import get_qdrant_client
+try:
+    from backend.llm import get_llm, stream_with_token_tracking
+    from backend.utils.websearch import get_youtube_links
+    from backend.embedding import embed_query
+    from backend.qdrant_service import get_qdrant_client
+except ImportError:
+    from llm import get_llm, stream_with_token_tracking
+    from utils.websearch import get_youtube_links
+    from embedding import embed_query
+    from qdrant_service import get_qdrant_client
 from langchain_core.messages import HumanMessage, SystemMessage
 from qdrant_client import models
 
@@ -49,7 +55,7 @@ async def retrieve_kb_context(collection_name: str, query_text: str, top_k: int 
         
         # 4. Extract points (The response object wraps the list in .points)
         results = results_response.points
-        print(f"[LessonPlan RAG] Retrieved {results} results from Qdrant")
+        # print(f"[LessonPlan RAG] Retrieved {results} results from Qdrant")
         contexts: List[str] = []
         for res in results:
             text = (res.payload or {}).get("text")

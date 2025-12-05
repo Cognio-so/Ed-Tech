@@ -24,12 +24,23 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
-from backend.embedding import embed_chunks_parallel, embed_query
-from backend.qdrant_service import (
-    get_qdrant_client,
-    VECTOR_SIZE,
-    QDRANT_UPSERT_BATCH_SIZE,
-)
+try:
+    from backend.embedding import embed_chunks_parallel, embed_query
+except ImportError:
+    from embedding import embed_chunks_parallel, embed_query
+
+try:
+    from backend.qdrant_service import (
+        get_qdrant_client,
+        VECTOR_SIZE,
+        QDRANT_UPSERT_BATCH_SIZE,
+    )
+except ImportError:
+    from qdrant_service import (
+        get_qdrant_client,
+        VECTOR_SIZE,
+        QDRANT_UPSERT_BATCH_SIZE,
+    )
 
 QDRANT_CLIENT = get_qdrant_client()
 

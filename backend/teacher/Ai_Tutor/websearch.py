@@ -13,8 +13,12 @@ import os
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_tavily import TavilySearch
-from backend.llm import get_llm, stream_with_token_tracking
-from backend.teacher.Ai_Tutor.graph_type import GraphState
+try:
+    from backend.llm import get_llm, stream_with_token_tracking
+    from backend.teacher.Ai_Tutor.graph_type import GraphState
+except ImportError:
+    from llm import get_llm, stream_with_token_tracking
+    from teacher.Ai_Tutor.graph_type import GraphState
 
 
 async def _web_search(topic: str, subject: str, grade: str, language: str) -> str:

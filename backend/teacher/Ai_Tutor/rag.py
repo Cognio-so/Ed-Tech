@@ -9,10 +9,21 @@ if str(backend_path) not in sys.path:
     sys.path.append(str(backend_path))
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from backend.llm import get_llm, stream_with_token_tracking
-from backend.teacher.Ai_Tutor.graph_type import GraphState
-from backend.teacher.Ai_Tutor.qdrant_utils import retrieve_relevant_documents
-from backend.teacher.Ai_Tutor.simple_llm import format_teacher_data, format_student_data
+try:
+    from backend.llm import get_llm, stream_with_token_tracking
+except ImportError:
+    from llm import get_llm, stream_with_token_tracking
+try:
+    from backend.teacher.Ai_Tutor.graph_type import GraphState
+except ImportError:
+    from teacher.Ai_Tutor.graph_type import GraphState
+
+try:
+    from backend.teacher.Ai_Tutor.qdrant_utils import retrieve_relevant_documents
+    from backend.teacher.Ai_Tutor.simple_llm import format_teacher_data, format_student_data
+except ImportError:
+    from teacher.Ai_Tutor.qdrant_utils import retrieve_relevant_documents
+    from teacher.Ai_Tutor.simple_llm import format_teacher_data, format_student_data
 
 def _format_last_turns(messages, k=3):
     """Format last k messages for context."""
