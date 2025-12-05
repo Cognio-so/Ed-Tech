@@ -160,15 +160,17 @@
     </follow_up_rules>
     
     <multi_step_planning>
-        <description>For complex queries requiring multiple actions, create execution order as flat array</description>
+        <description>For complex queries requiring multiple actions, create execution order as flat array. AVOID redundant steps.</description>
         <examples>
             <example>
                 <query>Search for AI news and summarize it</query>
-                <plan>["websearch", "simple_llm"]</plan>
+                <plan>["websearch"]</plan>
+                <note>WebSearch node already includes summarization/generation.</note>
             </example>
             <example>
                 <query>Analyze document and create a summary</query>
-                <plan>["rag", "simple_llm"]</plan>
+                <plan>["rag"]</plan>
+                <note>RAG node already includes generation/summarization.</note>
             </example>
             <example>
                 <query>Extract skills from resume</query>
@@ -178,6 +180,7 @@
     </multi_step_planning>
     
     <critical_rules>
+        <rule>SINGLE NODE PREFERENCE: RAG and WebSearch nodes generate their own final responses. Do NOT append SimpleLLM unless there is a distinct, separate task (e.g., "Search for X, THEN write a poem about it").</rule>
         <rule>NEW DOCUMENTS: If new_uploaded_docs contains files, strongly prefer RAG for analysis UNLESS query is clearly for image editing (with explicit action verbs AND is_image=true).</rule>
         <rule>DOCUMENT TYPES: new_uploaded_docs can contain pdf, docx, txt, xlsx, csv, image (for analysis), etc.</rule>
         <rule>FOLLOW-UPS: Continue same route (WebSearch→WebSearch, RAG→RAG, Image→Image) when appropriate, respecting flags.</rule>

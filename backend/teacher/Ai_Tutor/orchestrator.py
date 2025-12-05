@@ -306,13 +306,6 @@ async def orchestrator_node(state: GraphState) -> GraphState:
     print(f"[ORCHESTRATOR] 📂 new_uploaded_docs: {len(new_uploaded_docs) if new_uploaded_docs else 0} files")
     is_image = state.get("is_image", False)
     
-    print(f"[ORCHESTRATOR] 🎯 Orchestrator node called")
-    print(f"[ORCHESTRATOR] 📝 User query: {user_query[:100]}...")
-    print(f"[ORCHESTRATOR] 📎 doc_url: {doc_url}")
-    print(f"[ORCHESTRATOR] 📄 uploaded_doc flag: {uploaded_doc}")
-    print(f"[ORCHESTRATOR] 📂 new_uploaded_docs: {len(new_uploaded_docs) if new_uploaded_docs else 0} files")
-    print(f"[ORCHESTRATOR] 🖼️ is_image: {is_image}")
-    
     if not user_query and messages:
         last_msg = messages[-1]
         user_query = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)

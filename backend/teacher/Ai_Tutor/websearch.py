@@ -31,7 +31,7 @@ async def _web_search(topic: str, subject: str, grade: str, language: str) -> st
     
     try:
         tavily_tool = TavilySearch(
-            max_results=5,
+            max_results=3,
             api_key=tavily_api_key,
             search_depth="advanced",
             topic="general"
@@ -75,12 +75,28 @@ async def websearch_node(state: GraphState) -> GraphState:
     topic = state.get("topic", "")
     subject = state.get("subject", "")
     student_data = state.get("student_data", {})
+    teacher_data = state.get("teacher_data", {})
     grade = student_data.get("grade", "") if isinstance(student_data, dict) else ""
+    
+    # Extract grade from teacher_data if not in student_data
+    if not grade and isinstance(teacher_data, dict):
+        grades = teacher_data.get("grades", [])
+        if grades and isinstance(grades, list) and len(grades) > 0:
+            grade = str(grades[0])
+    
     language = state.get("language", "English")
     chunk_callback = state.get("chunk_callback")
     
+    # Get user query from state
+    user_query = state.get("resolved_query") or state.get("user_query", "")
+    
+    print(f"[WEBSEARCH] 🔍 Query: {user_query}")
+    print(f"[WEBSEARCH] 📚 Grade: {grade}, Subject: {subject}")
+    
     # Run web search and KB retrieval in parallel
-    websearch_task = _web_search(topic, subject, grade, language)
+    # Use user_query for search instead of just topic
+    search_query = user_query if user_query else f"{topic} {subject} grade {grade}"
+    websearch_task = _web_search(search_query, subject, grade, language)
     kb_task = _retrieve_kb_information(topic, subject, grade)
     
     websearch_results, kb_information = await asyncio.gather(
@@ -117,7 +133,7 @@ async def websearch_node(state: GraphState) -> GraphState:
     
     llm_messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Context:\n{combined_context}\n\nUser Question: {user_message}")
+        HumanMessage(content=f"Context:\n{combined_context}\n\nUser Question: {user_query}")
     ]
     
     # Stream response
