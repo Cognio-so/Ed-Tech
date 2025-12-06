@@ -235,7 +235,7 @@ async def create_teacher_session(
     Create a session for a teacher or reuse an existing one if provided.
     """
     print(f"Creating session for teacher {teacher_id} with existing_session_id: {existing_session_id}")
-    session_id = await SessionManager.create_session(teacher_id)
+    session_id = await SessionManager.create_session(teacher_id, existing_session_id)
     session = await SessionManager.get_session(session_id)
     print(f"session_id: {session_id}, session: {session}")
     return {
@@ -1208,25 +1208,6 @@ async def comics_stream_endpoint(
     )
 
 
-@app.post("/api/teacher/{teacher_id}/sessions", tags=["Session"])
-async def create_teacher_session(
-    teacher_id: str,
-    existing_session_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Create a session for a teacher or reuse an existing one if provided.
-    """
-    print(f"Creating session for teacher {teacher_id} with existing_session_id: {existing_session_id}")
-    session_id = await SessionManager.create_session(teacher_id, existing_session_id)
-    session = await SessionManager.get_session(session_id)
-    return {
-        "session_id": session_id,
-        "teacher_id": teacher_id,
-        "created_at": session.get("created_at"),
-        "content_generation": session.get("content_generation", []),
-    }
-
-
 @app.get("/api/sessions/{session_id}", tags=["Session"])
 async def get_session_details(session_id: str) -> Dict[str, Any]:
     return await SessionManager.get_session(session_id)
@@ -1394,12 +1375,20 @@ async def ai_tutor_stream_chat(
     Accepts teacher data, student data, topic, and user message.
     Streams the AI Tutor response using Server-Sent Events.
     """
-    session = await SessionManager.get_session(session_id)
+    # Try to get existing session, create if it doesn't exist (defensive fallback)
+    # This handles cases where server restarted or session wasn't properly created
+    try:
+        session = await SessionManager.get_session(session_id)
+        current_session_id = session_id
+    except HTTPException:
+        # Session doesn't exist, create it as fallback
+        logger.warning(f"Session {session_id} not found, creating as fallback")
+        current_session_id = await SessionManager.create_session(teacher_id, session_id)
+        session = await SessionManager.get_session(current_session_id)
+    
     session["teacher_payload"] = payload
     print("teacher_payload:-----------------------", session["teacher_payload"])
     print(f"hiii", payload)
-    
-    current_session_id = session_id
     print(f"[CHAT ENDPOINT] 🚀 Starting AI Tutor chat for teacher_id: {teacher_id}, session_id: {current_session_id}")
     queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
     full_response = ""
