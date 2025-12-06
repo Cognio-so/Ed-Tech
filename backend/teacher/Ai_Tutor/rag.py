@@ -31,7 +31,6 @@ except ImportError:
     from teacher.Ai_Tutor.qdrant_utils import retrieve_relevant_documents, get_collection_name, QDRANT_CLIENT
     from teacher.Ai_Tutor.simple_llm import format_teacher_data, format_student_data
 
-# TTL for document embeddings (24 hours)
 USER_DOC_TTL_SECONDS = int(24 * 60 * 60)  # 24 hours
 
 def _format_last_turns(messages, k=3):
@@ -64,8 +63,6 @@ async def cleanup_expired_documents(teacher_id: str, session_id: str) -> bool:
     """
     try:
         collection_name = get_collection_name(teacher_id, session_id)
-        
-        # Check if collection exists
         exists = await asyncio.to_thread(QDRANT_CLIENT.collection_exists, collection_name=collection_name)
         if not exists:
             return False
@@ -264,7 +261,7 @@ async def intelligent_document_selection(
 """
 
     try:
-        llm = get_llm(llm_model, temperature=0.2)
+        llm = get_llm("openai/gpt-oss-120b",0.5)
         response = await llm.ainvoke([HumanMessage(content=classification_prompt)])
         
         content = response.content.strip()
@@ -321,14 +318,18 @@ async def intelligent_document_selection(
                 "reasoning": "No documents available"
             }
 
+import html
+def _escape_xml(text: str) -> str:
+    """Helper to ensure text content doesn't break XML structure."""
+    if not text:
+        return ""
+    return html.escape(str(text))
 
 async def rag_node(state: GraphState) -> GraphState:
     """
-    RAG node with intelligent document selection and automatic cleanup.
+    RAG node with Intelligent Document Selection and XML-Structured Prompting.
     """
     messages = state.get("messages", [])
-    topic = state.get("topic", "")
-    subject = state.get("subject", "")
     teacher_id = state.get("teacher_id", "")
     session_id = state.get("session_id")
     chunk_callback = state.get("chunk_callback")
@@ -339,35 +340,22 @@ async def rag_node(state: GraphState) -> GraphState:
         last_msg = messages[-1]
         query = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
     
-    # Get document URL filter (from frontend)
+    # Get filters
     doc_url = state.get("doc_url")
-    print(f"[RAG] 🔍 Doc URL: {doc_url}")
-    # Get newly uploaded docs metadata
     newly_uploaded_docs = state.get("new_uploaded_docs", [])
     
-    print(f"[RAG] 🔍 Session: {session_id} | New docs: {len(newly_uploaded_docs)} | Doc filter: {doc_url or 'None'}")
-    
-    # Step 1: Cleanup expired documents (24 hour TTL)
+    # --- Step 1 & 2: Cleanup and Get Session Docs ---
     if teacher_id and session_id:
-        try:
-            was_cleaned = await cleanup_expired_documents(teacher_id, session_id)
-            if was_cleaned:
-                print(f"[RAG] 🗑️ Cleaned up expired documents for session {session_id}")
-        except Exception as e:
-            print(f"[RAG] ⚠️ Cleanup error: {e}")
-    
-    # Step 2: Get all available documents in session
-    all_available_docs = []
-    if teacher_id and session_id:
-        try:
-            all_available_docs = await get_all_session_documents(teacher_id, session_id)
-            print(f"[RAG] 📚 Found {(all_available_docs)} total documents in session")
-        except Exception as e:
-            print(f"[RAG] ⚠️ Error getting session documents: {e}")
-    
-    # Step 3: Intelligent document selection (if no specific doc_url filter)
+        await cleanup_expired_documents(teacher_id, session_id)
+        all_available_docs = await get_all_session_documents(teacher_id, session_id)
+    else:
+        all_available_docs = []
+
+    # --- Step 3: Intelligent Document Selection ---
     selected_doc_ids = None
-    if not doc_url and (newly_uploaded_docs or all_available_docs):
+    selection_reasoning = ""
+    
+    if newly_uploaded_docs or all_available_docs:
         try:
             selection_result = await intelligent_document_selection(
                 user_query=query,
@@ -376,97 +364,140 @@ async def rag_node(state: GraphState) -> GraphState:
                 conversation_history=messages,
                 llm_model=state.get("model") or "x-ai/grok-4.1-fast"
             )
-            
             selected_doc_ids = selection_result.get("selected_doc_ids", [])
-            print(f"[RAG] 🎯 Intelligent selection: {len(selected_doc_ids)} documents")
-            print(f"[RAG] 💡 Reasoning: {selection_result.get('reasoning', 'N/A')}")
-            
-        except Exception as e:
-            print(f"[RAG] ⚠️ Selection error: {e}, using all documents")
-    
-    # Step 4: Retrieve documents with filtering
+            selection_reasoning = selection_result.get("reasoning", "")
+        except Exception:
+            # Fallback handled in selection function usually, or continue
+            pass
+
+    # --- Step 4: Retrieval ---
     user_docs = []
     if teacher_id and session_id:
         try:
-            # Build filter based on selection
-            filter_doc_url = doc_url  # Use frontend filter if provided
+            # Logic: If intelligent selection picked specific docs, restrict search to those.
+            if selected_doc_ids:
+                doc_map = {d["id"]: d for d in all_available_docs if d.get("id")}
+                tasks = []
+                for doc_id in selected_doc_ids:
+                    doc_info = doc_map.get(doc_id)
+                    target_url = doc_info.get("file_url") if doc_info else None
+                    if target_url:
+                        tasks.append(retrieve_relevant_documents(
+                            teacher_id=teacher_id,
+                            session_id=session_id,
+                            query=query,
+                            top_k=4, # Slightly higher per doc for better context
+                            score_threshold=0.3,
+                            filter_doc_url=target_url
+                        ))
+                if tasks:
+                    results = await asyncio.gather(*tasks)
+                    for res in results:
+                        user_docs.extend(res)
             
-            # If intelligent selection provided IDs, convert to URL filter
-            # (Note: Qdrant filtering works best with URLs, so we'll use custom logic)
-            if selected_doc_ids and not filter_doc_url:
-                # We'll filter results after retrieval since Qdrant filter is URL-based
-                pass
-            
-            user_docs = await retrieve_relevant_documents(
-                teacher_id=teacher_id,
-                session_id=session_id,
-                query=query,
-                top_k=10,  # Get more initially, we'll filter after
-                score_threshold=0.45,
-                filter_doc_url=filter_doc_url
-            )
-            
-            # Post-retrieval filtering by doc_id if intelligent selection was used
-            if selected_doc_ids and not filter_doc_url:
-                user_docs = [
-                    doc for doc in user_docs 
-                    if doc.metadata.get("doc_id") in selected_doc_ids
-                ]
-                print(f"[RAG] 🔍 Filtered to {len(user_docs)} chunks from selected documents")
-            
-            print(f"[RAG] ✅ Retrieved {len(user_docs)} relevant chunks")
-            
+            # Fallback: Frontend filter or Global Search
+            elif doc_url:
+                user_docs = await retrieve_relevant_documents(
+                    teacher_id=teacher_id, session_id=session_id, query=query,
+                    top_k=6, score_threshold=0.3, filter_doc_url=doc_url
+                )
+            else:
+                user_docs = await retrieve_relevant_documents(
+                    teacher_id=teacher_id, session_id=session_id, query=query,
+                    top_k=6, score_threshold=0.35, filter_doc_url=None
+                )
         except Exception as e:
             print(f"[RAG] ❌ Retrieval failed: {e}")
-    
-    # Step 5: Build context
-    context_parts = []
-    
-    if user_docs:
-        doc_texts = [f"[Chunk {i+1}]: {d.page_content}" for i, d in enumerate(user_docs)]
-        context_parts.append("=== UPLOADED DOCUMENT CONTEXT ===\n" + "\n\n".join(doc_texts))
-    elif doc_url or selected_doc_ids:
-        context_parts.append(f"=== DOCUMENT CONTEXT ===\nNo specific text matched the query in the selected document(s). Use general knowledge.")
-    
-    # Add teacher/student data
-    teacher_data = state.get("teacher_data", {})
-    if teacher_data:
-        context_parts.append("=== TEACHER INFO ===\n" + format_teacher_data(teacher_data))
-    
-    combined_context = "\n\n".join(context_parts)
-    
-    # Step 6: System prompt
-    system_prompt = f"""You are an expert AI Tutor Assistant.
-    
-CONTEXT:
-{combined_context}
 
-CONVERSATION HISTORY:
-{_format_last_turns(messages, k=3)}
+    # --- Step 5: Construct XML Context (The "Best RAG" Part) ---
     
-INSTRUCTIONS:
-- If the user asks about uploaded documents, prioritize the 'UPLOADED DOCUMENT CONTEXT'.
-- Use 'CONVERSATION HISTORY' to understand follow-up questions.
-- If the answer is not in the context, politely say so.
-- Be concise, clear, and helpful.
-- Adapt your explanation to the student's grade level if provided.
-"""
+    # 5a. Format Retrieved Documents
+    xml_documents = ""
+    if user_docs:
+        doc_entries = []
+        for i, doc in enumerate(user_docs):
+            # Extract metadata
+            meta = doc.metadata or {}
+            filename = _escape_xml(meta.get("filename", "Unknown File"))
+            file_type = _escape_xml(meta.get("file_type", "unknown"))
+            page_num = meta.get("page_number") or meta.get("page") or "N/A"
+            content = _escape_xml(doc.page_content)
+            
+            # Create a structured XML entry for each chunk
+            entry = (
+                f'    <search_result index="{i+1}">\n'
+                f'        <metadata>\n'
+                f'            <filename>{filename}</filename>\n'
+                f'            <file_type>{file_type}</file_type>\n'
+                f'            <page_number>{page_num}</page_number>\n'
+                f'        </metadata>\n'
+                f'        <excerpt>\n{content}\n</excerpt>\n'
+                f'    </search_result>'
+            )
+            doc_entries.append(entry)
+        
+        xml_documents = "<retrieved_context>\n" + "\n".join(doc_entries) + "\n</retrieved_context>"
+    else:
+        xml_documents = "<retrieved_context>\n    <status>No relevant document segments found for this specific query.</status>\n</retrieved_context>"
+
+    # 5b. Format Conversation History
+    xml_history = ""
+    if messages:
+        hist_entries = []
+        # Get last 5 messages for context
+        for m in messages[-5:]:
+            role = "user" if isinstance(m, HumanMessage) or (getattr(m, 'type', '') == 'human') else "assistant"
+            content = _escape_xml(m.content if hasattr(m, 'content') else str(m))
+            hist_entries.append(f'    <turn speaker="{role}">\n        {content}\n    </turn>')
+        xml_history = "<conversation_history>\n" + "\n".join(hist_entries) + "\n</conversation_history>"
+
+    # 5c. Format Teacher/Student Metadata
+    teacher_data = state.get("teacher_data", {})
+    xml_teacher = ""
+    if teacher_data:
+        t_info = _escape_xml(format_teacher_data(teacher_data))
+        xml_teacher = f"<teacher_profile>\n{t_info}\n</teacher_profile>"
+
+    # --- Step 6: The XML System Prompt ---
     
-    # Step 7: Call LLM
+    system_prompt = f"""You are an expert AI Tutor. Your goal is to answer the user's question accurately using ONLY the provided XML context.
+
+<input_data>
+{xml_teacher}
+
+{xml_documents}
+
+{xml_history}
+</input_data>
+
+<instructions>
+1. **Analyze the Context**: Look at the <retrieved_context>. The user has uploaded documents. The relevant chunks are provided inside <search_result> tags.
+2. **Prioritize Uploaded Data**: If the <search_result> contains information relevant to the user's question, you MUST base your answer on it. 
+3. **Multi-Document Synthesis**: If chunks come from different filenames (check <metadata>), synthesize the information. E.g., "Document A says X, while Document B says Y."
+4. **Citations**: When you use information from a document, mention the source naturally. Example: "According to the lecture notes..." or "As seen in [filename]...".
+5. **No Hallucination**: If the <retrieved_context> is empty or does not contain the answer, explicitly state that the uploaded documents do not contain that specific information, then offer general knowledge if appropriate.
+6. **Tone**: Be helpful, educational, and clear.
+</instructions>
+
+<current_user_query>
+{query}
+</current_user_query>
+
+Answer the user's query now based on the XML data above."""
+
+    # --- Step 7: Call LLM ---
     model_name = state.get("model") or "x-ai/grok-4.1-fast"
-    llm = get_llm(model_name, temperature=0.7)
+    llm = get_llm(model_name, temperature=0.5) # Lower temp for more factual adherence
+    
+    # We pass the prompt as a SystemMessage. 
+    # Since we embedded history in the XML, we can technically just pass the system prompt 
+    # and the final human message, but keeping the message chain is safer for some models.
     
     llm_messages = [SystemMessage(content=system_prompt)]
-    if messages:
-        # Append last 5 messages for context
-        for m in messages[-5:]:
-            if hasattr(m, 'content'):
-                if isinstance(m, HumanMessage) or (hasattr(m, 'type') and m.type=='human'):
-                    llm_messages.append(HumanMessage(content=m.content))
-                else:
-                    llm_messages.append(AIMessage(content=m.content))
-    else:
-        llm_messages.append(HumanMessage(content=query))
+    
+    # Note: We already embedded history in the XML for context, but LangChain stream 
+    # usually expects the message object for the current turn.
+    llm_messages.append(HumanMessage(content=query))
     
     full_response, _ = await stream_with_token_tracking(
         llm, llm_messages, chunk_callback=chunk_callback, state=state
@@ -474,7 +505,5 @@ INSTRUCTIONS:
     
     state["response"] = full_response
     state["rag_response"] = full_response
-    
-    print(f"[RAG] ✅ Response generated ({len(full_response)} chars)")
     
     return state

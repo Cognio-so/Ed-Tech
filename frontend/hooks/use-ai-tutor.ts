@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { saveConversation } from "@/app/teacher/history/action";
@@ -31,6 +31,7 @@ export interface ChatMessage {
 export interface UseAITutorOptions {
   onMessage?: (message: ChatMessage) => void;
   onError?: (error: string) => void;
+  sessionId?: string;
 }
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -40,11 +41,17 @@ export function useAITutor(options?: UseAITutorOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string | null>(options?.sessionId || null);
   const conversationIdRef = useRef<string | null>(null);
   const lastSavedMessagesRef = useRef<string>("");
   const isSavingRef = useRef(false);
   const { data: session } = authClient.useSession();
+
+  useEffect(() => {
+    if (options?.sessionId) {
+      sessionIdRef.current = options.sessionId;
+    }
+  }, [options?.sessionId]);
 
   const sendMessage = useCallback(
     async (
@@ -265,7 +272,7 @@ export function useAITutor(options?: UseAITutorOptions) {
                     conversationIdRef.current = result.conversationId;
                   }
                 })
-                .catch(() => {})
+                .catch(() => { })
                 .finally(() => {
                   isSavingRef.current = false;
                 });

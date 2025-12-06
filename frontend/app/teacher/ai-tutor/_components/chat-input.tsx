@@ -239,6 +239,9 @@ export function ChatInput({
         for (const file of Array.from(files)) {
           const formData = new FormData();
           formData.append("file", file);
+          if (sessionId) {
+            formData.append("sessionId", sessionId);
+          }
 
           const response = await fetch("/api/upload", {
             method: "POST",
@@ -269,7 +272,7 @@ export function ChatInput({
         }
       }
     },
-    [uploadedDocs.length]
+    [uploadedDocs.length, sessionId]
   );
 
   const removeDocument = useCallback((index: number) => {
@@ -411,7 +414,7 @@ export function ChatInput({
               placeholder={
                 isUploading ? "Uploading documents..." : "Ask anything..."
               }
-              disabled={isLoading || isUploading}
+              disabled={disabled || isLoading || isUploading}
               className="w-full min-h-[40px] sm:min-h-[44px] max-h-[120px] sm:max-h-[180px] resize-none outline-none text-sm sm:text-base leading-snug bg-transparent placeholder:text-muted-foreground disabled:opacity-50 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding"
               rows={2}
             />
@@ -434,7 +437,7 @@ export function ChatInput({
                 variant="outline"
                 size="icon"
                 className="h-6 w-6 sm:h-7 sm:w-7 rounded-full"
-                disabled={isLoading || isUploading}
+                disabled={disabled || isLoading || isUploading}
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach file"
               >
@@ -468,7 +471,7 @@ export function ChatInput({
             </div>
             <Button
               onClick={canSend ? handleSend : handleVoiceToggle}
-              disabled={isLoading || isUploading}
+              disabled={disabled || isLoading || isUploading}
               size="icon"
               className={cn(
                 "h-6 w-6 sm:h-7 sm:w-7 rounded-full",
@@ -478,8 +481,8 @@ export function ChatInput({
                 canSend
                   ? "Send message"
                   : voiceMode
-                  ? "Stop voice mode"
-                  : "Start voice chat"
+                    ? "Stop voice mode"
+                    : "Start voice chat"
               }
             >
               {canSend ? (
@@ -498,7 +501,7 @@ export function ChatInput({
               <Select
                 value={selectedModel}
                 onValueChange={setSelectedModel}
-                disabled={isLoading || isUploading}
+                disabled={disabled || isLoading || isUploading}
               >
                 <SelectTrigger className="h-7 px-2 rounded-md text-sm border-border bg-muted hover:bg-accent focus:ring-0 focus:ring-offset-0 min-w-[180px] lg:min-w-[200px]">
                   <div className="flex items-center gap-2">
@@ -526,7 +529,7 @@ export function ChatInput({
                 variant="outline"
                 size="icon"
                 className="h-7 w-7 rounded-full"
-                disabled={isLoading || isUploading}
+                disabled={disabled || isLoading || isUploading}
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach file"
               >
@@ -534,7 +537,7 @@ export function ChatInput({
               </Button>
               <Button
                 onClick={canSend ? handleSend : handleVoiceToggle}
-                disabled={isLoading || isUploading}
+                disabled={disabled || isLoading || isUploading}
                 size="icon"
                 className={cn(
                   "h-7 w-7 rounded-full",
@@ -544,8 +547,8 @@ export function ChatInput({
                   canSend
                     ? "Send message"
                     : voiceMode
-                    ? "Stop voice mode"
-                    : "Start voice chat"
+                      ? "Stop voice mode"
+                      : "Start voice chat"
                 }
               >
                 {canSend ? (

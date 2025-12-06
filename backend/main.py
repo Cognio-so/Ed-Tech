@@ -226,6 +226,26 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/api/teacher/{teacher_id}/sessions", tags=["Session"])
+async def create_teacher_session(
+    teacher_id: str,
+    existing_session_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create a session for a teacher or reuse an existing one if provided.
+    """
+    print(f"Creating session for teacher {teacher_id} with existing_session_id: {existing_session_id}")
+    session_id = await SessionManager.create_session(teacher_id)
+    session = await SessionManager.get_session(session_id)
+    print(f"session_id: {session_id}, session: {session}")
+    return {
+        "session_id": session_id,
+        "teacher_id": teacher_id,
+        "created_at": session.get("created_at"),
+        "content_generation": session.get("content_generation", []),
+    }
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize background tasks on application startup."""
@@ -1196,6 +1216,7 @@ async def create_teacher_session(
     """
     Create a session for a teacher or reuse an existing one if provided.
     """
+    print(f"Creating session for teacher {teacher_id} with existing_session_id: {existing_session_id}")
     session_id = await SessionManager.create_session(teacher_id, existing_session_id)
     session = await SessionManager.get_session(session_id)
     return {
@@ -1218,175 +1239,130 @@ async def get_session_details(session_id: str) -> Dict[str, Any]:
 async def add_documents_by_url(
     teacher_id: str,
     session_id: str,
-    payload: AddDocumentsRequest,
+    request: AddDocumentsRequest,
 ) -> Dict[str, Any]:
     """
-    Add documents by URL for AI Tutor.
-    Downloads documents, extracts text, chunks, and embeds into Qdrant.
+    Add documents by URL, extract content, and store in Qdrant (Session Scoped).
     """
-    # ========================== DEBUGGING LOGS START ==========================
-    print(f"\n{'='*20} INCOMING FRONTEND DATA {'='*20}")
-    print(f"DEBUG: Teacher ID: {teacher_id}")
-    print(f"DEBUG: Session ID: {session_id}")
+    # Use the centralized session creator
+    print("add_documents_by_url called with:", teacher_id, session_id)
+    session = await SessionManager.get_session(session_id)
+    # print(f"session_id: {current_session_id}, session: {session}")
+    current_session_id=session_id
+    payload = request.model_dump(mode='json')
+    documents = payload.get("documents", [])
     
-    # 1. Check how many docs came in
-    print(f"DEBUG: Number of documents received: {len(payload.documents)}")
-    
-    # 2. Iterate and print specific metadata for every document
-    for i, doc in enumerate(payload.documents):
-        print(f"--- Document #{i+1} ---")
-        print(f"DEBUG: Full Dictionary: {doc}")
-        print(f"DEBUG: Keys present: {list(doc.keys())}")
+    if not documents:
+        return {"message": "No documents provided", "documents": []}
         
-        # Check specific fields usually expected
-        print(f"   -> file_url: {doc.get('file_url')}")
-        print(f"   -> filename: {doc.get('filename')}")
-        print(f"   -> file_type: {doc.get('file_type')}")
-        print(f"   -> id: {doc.get('id')}")
-        print(f"   -> size: {doc.get('size')}")
-        
-    print(f"{'='*60}\n")
-    # ========================== DEBUGGING LOGS END ============================
+    print(f"[DOC EMBEDDING] Received {len(documents)} docs for session {current_session_id}")
 
-    current_session_id = await SessionManager.create_session(teacher_id, session_id)
-    session = await SessionManager.get_session(current_session_id)
-    
-    documents = payload.documents
     processed_docs = []
     
     async def process_single_document(doc: dict, index: int) -> Optional[dict]:
-        """Process a single document: download, extract text, chunk, and embed."""
+        """
+        Process a single document: Fetch -> Extract -> Embed (Store).
+        """
         try:
             file_url = doc.get("file_url")
             filename = doc.get("filename", "")
-            file_type = doc.get("file_type", "")
             doc_id = doc.get("id", str(uuid4()))
-            
-            if not file_url:
-                logger.warning(f"Document {index + 1} missing file_url, skipping")
-                return None
-            
-            # logger.info(f"[DOC EMBEDDING] Processing document {index + 1}/{len(documents)}: {filename}")
-            # print(f"[DOC EMBEDDING] 📄 Starting processing: {filename} from URL: {file_url}")
+            file_extension = filename.split('.')[-1].lower() if '.' in filename else ''
             
             async with httpx.AsyncClient() as client:
                 response = await client.get(file_url, timeout=30.0)
                 response.raise_for_status()
                 file_content = response.content
-                # logger.info(f"[DOC EMBEDDING] Downloaded {len(file_content)} bytes from {filename}")
-                # print(f"[DOC EMBEDDING] ✅ Downloaded {len(file_content)} bytes from {filename}")
             
-            file_extension = filename.split('.')[-1].lower() if '.' in filename else ''
-            
-            text = ""
-            # print(f"[DOC EMBEDDING] 🔍 Extracting text from {filename} (type: {file_extension})")
-            if file_extension == 'pdf' or 'pdf' in file_type.lower():
-                text = await asyncio.to_thread(extract_text_from_pdf, file_content)
-                # print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from PDF")
-            elif file_extension == 'docx' or 'wordprocessingml' in file_type.lower():
-                text = await asyncio.to_thread(extract_text_from_docx, file_content)
-                # print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from DOCX")
-            elif file_extension == 'json' or 'json' in file_type.lower():
-                text = extract_text_from_json(file_content)
-                # print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from JSON")
+            content = ""
+            if file_extension == 'pdf':
+                content = await asyncio.to_thread(extract_text_from_pdf, file_content)
+            elif file_extension == 'docx':
+                content = await asyncio.to_thread(extract_text_from_docx, file_content)
+            elif file_extension == 'txt':
+                content = extract_text_from_txt(file_content)
+            elif file_extension == 'json':
+                content = extract_text_from_json(file_content)
             else:
-                text = extract_text_from_txt(file_content)
-                # print(f"[DOC EMBEDDING] 📄 Extracted {len(text)} characters from TXT")
-            
-            if not text.strip():
-                logger.warning(f"[DOC EMBEDDING] No text content extracted from {filename}")
-                # print(f"[DOC EMBEDDING] ⚠️ WARNING: No text content extracted from {filename}")
+                content = extract_text_from_txt(file_content)
+
+            if not content.strip():
+                print(f"[DOC EMBEDDING] ⚠️ Warning: Empty content for {filename}")
                 return None
             
-            from langchain_core.documents import Document
+            # Create Document object for local processing
+            # In reference project: We store non-image docs in "processed_docs" then embed them
             
-            doc_metadata = {
-                "source": file_url,
-                "file_type": file_extension or "txt",
-                "doc_id": doc_id,
+            return {
+                "id": doc_id,
                 "filename": filename,
-            }
-            
-            document = Document(
-                page_content=text,
-                metadata=doc_metadata
-            )
-            
-            # print(f"[DOC EMBEDDING] 💾 Storing document in Qdrant for teacher_id: {teacher_id}, collection: user_docs")
-            # logger.info(f"[DOC EMBEDDING] Storing document in Qdrant for teacher_id: {teacher_id}")
-            
-            # --- Ensure you updated qdrant_utils.py as per previous instructions to handle these arguments ---
-            success = await store_documents(
-                teacher_id=teacher_id,
-                session_id=current_session_id,
-                documents=[document],
-               
-                metadata={"source_url": file_url, "file_type": file_extension, "doc_id": doc_id, "filename": filename}
-            )
-            
-            if success:
-                # print(f"[DOC EMBEDDING] ✅ Successfully embedded document {filename} in Qdrant")
-                processed_doc = {
-                    "id": doc_id,
-                    "filename": filename,
-                    "file_url": file_url,
-                    "file_type": file_extension or "txt",
-                    "size": doc.get("size", len(file_content))
+                "file_url": file_url,
+                "file_type": file_extension or "txt",
+                "size": len(file_content),
+                "content": content,
+                "metadata": {
+                    "source_url": file_url,
+                    "file_type": file_extension,
+                    "doc_id": doc_id,
+                    "filename": filename
                 }
-                # logger.info(f"Successfully processed and embedded {filename}")
-                return processed_doc
-            else:
-                # logger.error(f"[DOC EMBEDDING] Failed to store {filename} in Qdrant")
-                # print(f"[DOC EMBEDDING] ❌ ERROR: Failed to store {filename} in Qdrant")
-                return None
+            }
                 
         except Exception as e:
             logger.error(f"Error processing {doc.get('filename', 'unknown')}: {e}", exc_info=True)
             return None
     
-    # logger.info(f"[DOC EMBEDDING] Starting parallel processing of {len(documents)} documents...")
-    # print(f"[DOC EMBEDDING] 🚀 Starting parallel processing of {len(documents)} documents for teacher_id: {teacher_id}")
+    # Run processing
     doc_tasks = [process_single_document(doc, i) for i, doc in enumerate(documents)]
     results = await asyncio.gather(*doc_tasks, return_exceptions=True)
     
-    for i, result in enumerate(results):
-        if isinstance(result, Exception):
-            # logger.error(f"[DOC EMBEDDING] Document {i + 1} raised exception: {result}")
-            # print(f"[DOC EMBEDDING] ❌ Document {i + 1} raised exception: {result}")
-            pass
-        elif result is not None:
-            processed_docs.append(result)
-    
+    for res in results:
+        if isinstance(res, dict):
+            processed_docs.append(res)
+        elif isinstance(res, Exception):
+            logger.error(f"Document processing error: {res}")
+            
+    # Batch Embed
+    if processed_docs:
+        from langchain_core.documents import Document
+        lc_docs = [
+            Document(page_content=d["content"], metadata=d["metadata"]) 
+            for d in processed_docs
+        ]
+        
+        await store_documents(
+            teacher_id=teacher_id,
+            session_id=current_session_id,
+            documents=lc_docs
+        )
+
     if "uploaded_docs" not in session:
         session["uploaded_docs"] = []
     
-    session["uploaded_docs"].extend(processed_docs)
+    # Store clean version (no giant content string) in session history if preferred, 
+    # OR store full content as per reference project. Reference project stores content.
+    # We will exclude full content from metadata only if it's too large, but for now specific to RAG:
+    # Ed-Tech stores full objects usually.
     
-    # ✅ NEW: Accumulate newly uploaded docs (like old project)
-    # These will be cleared after user sends first query
-    uploaded_files = []
+    clean_docs = []
     for doc in processed_docs:
-        clean_doc = {
-            "filename": doc.get("filename"),
-            "file_url": doc.get("file_url"),
-            "file_type": doc.get("file_type", "unknown"),
-            "id": doc.get("id"),
-            "size": doc.get("size")
-        }
-        uploaded_files.append(clean_doc)
-    
-    # Append to newly_uploaded_docs (accumulates until query is sent)
-    session.setdefault("newly_uploaded_docs", []).extend(uploaded_files)
-    # print(f"[DOC EMBEDDING] 📂 Accumulated {len(session['newly_uploaded_docs'])} docs in newly_uploaded_docs")
+        clean_docs.append({
+            "id": doc["id"],
+            "filename": doc["filename"],
+            "file_url": doc["file_url"],
+            "file_type": doc["file_type"],
+            "size": doc["size"]
+            # Exclude 'content' to keep session JSON small in Redis/Memory
+        })
+        
+    session["uploaded_docs"].extend(clean_docs)
+    session.setdefault("newly_uploaded_docs", []).extend(clean_docs)
     
     await SessionManager.update_session(current_session_id, session)
     
-    # logger.info(f"[DOC EMBEDDING] Successfully processed {len(processed_docs)}/{len(documents)} documents")
-    # print(f"[DOC EMBEDDING] ✅ COMPLETE: Successfully processed {len(processed_docs)}/{len(documents)} documents")
-    
     return {
         "message": f"Added {len(processed_docs)} documents",
-        "documents": processed_docs,
+        "documents": clean_docs,
         "session_id": current_session_id
     }
 
@@ -1404,114 +1380,6 @@ async def get_documents(
         "session_id": session_id
     }
 
-
-@app.delete("/api/teacher/{teacher_id}/session/{session_id}/documents")
-async def delete_teacher_session_documents(teacher_id: str, session_id: str) -> Dict[str, Any]:
-    """Clear all embeddings and metadata for a teacher session."""
-    await clear_session_documents(teacher_id, session_id)
-    try:
-        session = await SessionManager.get_session(session_id)
-        session["uploaded_docs"] = []
-        await SessionManager.update_session(session_id, session)
-    except HTTPException:
-        pass
-    return {"message": "Session documents cleared", "session_id": session_id}
-
-
-async def process_document_from_url(
-    url: str, teacher_id: str, session_id: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Process a single teacher document from a URL:
-    - downloads the file
-    - extracts text
-    - embeds & stores in Qdrant (user_docs collection)
-
-    Returns a dict with embedding status and metadata (url, filename, file_type, doc_id, size, content).
-    """
-    try:
-        # logger.info(f"[DOC EMBEDDING] Processing single document from URL: {url}")
-
-        # Basic file info
-        filename = url.split("/")[-1].split("?")[0] or "document"
-        file_extension = filename.split(".")[-1].lower() if "." in filename else "txt"
-        doc_id = str(uuid4())
-
-        # Download file
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=30.0)
-            response.raise_for_status()
-            file_content = response.content
-
-        # logger.info(f"[DOC EMBEDDING] Downloaded {len(file_content)} bytes from {filename}")
-
-        # Extract text based on extension
-        text = ""
-        if file_extension == "pdf":
-            text = await asyncio.to_thread(extract_text_from_pdf, file_content)
-        elif file_extension == "docx":
-            text = await asyncio.to_thread(extract_text_from_docx, file_content)
-        elif file_extension == "json":
-            text = extract_text_from_json(file_content)
-        else:
-            text = extract_text_from_txt(file_content)
-
-        if not text.strip():
-            logger.warning(f"[DOC EMBEDDING] No text extracted from {filename}")
-            return {
-                "success": False,
-                "url": url,
-                "filename": filename,
-                "file_type": file_extension,
-                "doc_id": doc_id,
-                "size": len(file_content),
-                "content": "",
-            }
-
-        from langchain_core.documents import Document
-
-        base_metadata = {
-            "source": url,
-            "file_type": file_extension,
-            "doc_id": doc_id,
-            "filename": filename,
-        }
-
-        document = Document(page_content=text, metadata=base_metadata)
-
-        # logger.info(f"[DOC EMBEDDING] Storing single document in Qdrant for teacher_id={teacher_id}")
-        success = await store_documents(
-            teacher_id=teacher_id,
-            session_id=session_id,
-            documents=[document],
-            clear_existing=False,
-            metadata={
-                "source_url": url,
-                "file_type": file_extension,
-                "doc_id": doc_id,
-                "filename": filename,
-            },
-        )
-
-        return {
-            "success": bool(success),
-            "url": url,
-            "filename": filename,
-            "file_type": file_extension,
-            "doc_id": doc_id,
-            "size": len(file_content),
-            "content": text,
-        }
-
-    except Exception as e:
-        logger.error(f"[DOC EMBEDDING] Error processing document from URL {url}: {e}", exc_info=True)
-        return {
-            "success": False,
-            "url": url,
-            "content": "",
-        }
-
-
 @app.post(
     "/api/teacher/{teacher_id}/session/{session_id}/stream-chat"
 )
@@ -1526,73 +1394,16 @@ async def ai_tutor_stream_chat(
     Accepts teacher data, student data, topic, and user message.
     Streams the AI Tutor response using Server-Sent Events.
     """
-    current_session_id = await SessionManager.create_session(teacher_id, session_id)
-    session = await SessionManager.get_session(current_session_id)
+    session = await SessionManager.get_session(session_id)
     session["teacher_payload"] = payload
     print("teacher_payload:-----------------------", session["teacher_payload"])
     print(f"hiii", payload)
-    if payload.doc_url:
-        print(f"[CHAT ENDPOINT] 🔗 Document URL provided: {payload.doc_url}")
-        if "uploaded_docs" not in session:
-            session["uploaded_docs"] = []
-        
-        doc_already_processed = any(
-            (doc.get("url") == payload.doc_url or doc.get("file_url") == payload.doc_url) 
-            and doc.get("id") is not None
-            for doc in session["uploaded_docs"]
-        )
-        
-        if not doc_already_processed:
-            print(f"[CHAT ENDPOINT] ⚡ Document not yet processed. Auto-processing and embedding...")
-            try:
-                result = await process_document_from_url(
-                    payload.doc_url, teacher_id, current_session_id
-                )
-
-                if result.get("success"):
-                    print(f"[CHAT ENDPOINT] ✅ Successfully embedded document in Qdrant")
-                    session["uploaded_docs"].append(
-                        {
-                            "url": result.get("url"),
-                            "file_url": result.get("url"),
-                            "file_type": result.get("file_type"),
-                            "id": result.get("doc_id"),
-                            "filename": result.get("filename"),
-                            "processed": True,
-                            "size": result.get("size"),
-                        }
-                    )
-                else:
-                    print(f"[CHAT ENDPOINT] ❌ Failed to embed document in Qdrant")
-                    session["uploaded_docs"].append(
-                        {
-                            "url": payload.doc_url,
-                            "file_url": payload.doc_url,
-                            "file_type": (payload.doc_url.split(".")[-1].lower() if "." in payload.doc_url else "txt"),
-                            "id": result.get("doc_id"),
-                            "filename": result.get("filename") or payload.doc_url.split("/")[-1].split("?")[0],
-                            "processed": False,
-                        }
-                    )
-
-                await SessionManager.update_session(current_session_id, session)
-            except Exception as e:
-                logger.error(f"[CHAT ENDPOINT] Error auto-processing document: {e}", exc_info=True)
-                print(f"[CHAT ENDPOINT] ❌ ERROR auto-processing document: {e}")
-                session["uploaded_docs"].append({
-                    "url": payload.doc_url,
-                    "file_type": payload.doc_url.split('.')[-1].lower() if '.' in payload.doc_url else 'txt',
-                    "processed": False
-                })
-                await SessionManager.update_session(current_session_id, session)
-        else:
-            print(f"[CHAT ENDPOINT] ✅ Document already processed and embedded")
-    else:
-        print(f"[CHAT ENDPOINT] ℹ️ No document URL provided in request")
     
+    current_session_id = session_id
+    print(f"[CHAT ENDPOINT] 🚀 Starting AI Tutor chat for teacher_id: {teacher_id}, session_id: {current_session_id}")
     queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
     full_response = ""
-    
+    print(f"newly_uploaded_docs before chat: {session.get('newly_uploaded_docs', [])}")
     async def chunk_callback(chunk: str):
         nonlocal full_response
         full_response += chunk

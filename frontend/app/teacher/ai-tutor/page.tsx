@@ -47,7 +47,7 @@ export default function AITutorPage() {
     sendMessage,
     clearMessages,
     addVoiceMessage,
-  } = useAITutor();
+  } = useAITutor({ sessionId });
 
   const hasMessages = messages.length > 0;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -59,8 +59,24 @@ export default function AITutorPage() {
         // Get current user session
         const sessionData = await authClient.getSession();
         if (sessionData?.data?.user?.id) {
-          setTeacherId(sessionData.data.user.id);
-          setSessionId(`session-${Date.now()}`);
+          const tId = sessionData.data.user.id;
+          setTeacherId(tId);
+
+          try {
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+            const sessRes = await fetch(`${backendUrl}/api/teacher/${tId}/sessions`, {
+              method: "POST"
+            });
+            if (sessRes.ok) {
+              const sessData = await sessRes.json();
+              setSessionId(sessData.session_id);
+            } else {
+              setSessionId(`session_${tId}_${Date.now()}`);
+            }
+          } catch (e) {
+            console.error("Error creating session:", e);
+            setSessionId(`session_${tId}_${Date.now()}`);
+          }
         }
 
         const response = await fetch("/api/teacher/stats");
@@ -142,32 +158,32 @@ export default function AITutorPage() {
     ) => {
       const teacherData = teacherStats
         ? {
-            name: teacherStats.name,
-            grades:
-              selectedGrades.length > 0 ? selectedGrades : teacherStats.grades,
-            subjects: teacherStats.subjects,
-            total_content: teacherStats.totalContent,
-            total_assessments: teacherStats.totalAssessments,
-            total_students: teacherStats.totalStudents,
-            students: teacherStats.students.map((student) => ({
-              name: student.name,
-              grade: student.grade,
-              performance: student.performance,
-              achievements: student.achievements,
-              feedback: student.feedback,
-              issues: student.issues,
-            })),
-          }
+          name: teacherStats.name,
+          grades:
+            selectedGrades.length > 0 ? selectedGrades : teacherStats.grades,
+          subjects: teacherStats.subjects,
+          total_content: teacherStats.totalContent,
+          total_assessments: teacherStats.totalAssessments,
+          total_students: teacherStats.totalStudents,
+          students: teacherStats.students.map((student) => ({
+            name: student.name,
+            grade: student.grade,
+            performance: student.performance,
+            achievements: student.achievements,
+            feedback: student.feedback,
+            issues: student.issues,
+          })),
+        }
         : undefined;
 
       const finalSubject =
         selectedSubject &&
-        selectedSubject !== "all" &&
-        selectedSubject.trim() !== ""
+          selectedSubject !== "all" &&
+          selectedSubject.trim() !== ""
           ? selectedSubject
           : subject && subject !== "all" && subject.trim() !== ""
-          ? subject
-          : undefined;
+            ? subject
+            : undefined;
 
       await sendMessage(message, {
         teacherData,
@@ -264,7 +280,7 @@ export default function AITutorPage() {
         <ChatInput
           onSend={handleSend}
           isLoading={isLoading}
-          disabled={false}
+          disabled={!sessionId}
           hasMessages={hasMessages}
           teacherId={teacherId}
           sessionId={sessionId}

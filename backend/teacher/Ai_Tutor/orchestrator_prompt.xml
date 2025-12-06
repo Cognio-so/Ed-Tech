@@ -129,8 +129,8 @@
         </rule>
         
         <rule type="RAG">
-            When last_route=RAG AND documents/images present:
-            <indicators>Document-specific ("section 2", "the file"), image-specific ("what skills", "in the image"), short references ("summarize it")</indicators>
+            When last_route=RAG::
+            <indicators>Document-specific ("section 2", "the file"), image-specific ("what skills", "in the image"), short references ("summarize it"), or anything query which is ambiguous or dependent upon the previous context</indicators>
             <action>Route to RAG to maintain document context</action>
         </rule>
         
