@@ -188,7 +188,7 @@ async def generate_quizz(
 </quiz_request>
 """
 
-    llm = get_llm("x-ai/grok-4.1-fast", 0.6)
+    llm = get_llm("google/gemini-2.5-flash-lite", 0.6)
 
     messages = [
         SystemMessage(

@@ -192,7 +192,7 @@ async def generate_worksheet(
 </worksheet_request>
 """
 
-    llm = get_llm("x-ai/grok-4.1-fast", 0.45)
+    llm = get_llm("google/gemini-2.5-flash-lite", 0.45)
     messages = [
         SystemMessage(
             content="You craft detailed, student-friendly worksheets. Output strictly valid Markdown."

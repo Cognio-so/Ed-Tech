@@ -192,7 +192,7 @@ async def generate_presentation(
 </presentation_request>
 """
 
-    llm = get_llm("x-ai/grok-4.1-fast", 0.55)
+    llm = get_llm("google/gemini-2.5-flash-lite", 0.55)
     messages = [
         SystemMessage(
             content="You design detailed instructional slide decks. Output strictly valid Markdown."

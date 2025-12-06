@@ -206,7 +206,7 @@ async def generate_lesson_plan(
     </instructions>
 </lesson_plan_request>
 """
-    llm = get_llm("x-ai/grok-4.1-fast", 0.6)
+    llm = get_llm("google/gemini-2.5-flash-lite", 0.6)
     
     messages = [
         SystemMessage(content="You are an expert curriculum designer. Output strictly valid XML."),
