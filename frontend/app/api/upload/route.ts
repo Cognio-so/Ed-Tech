@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get("file") as File;
+    const sessionId = formData.get("sessionId") as string | null;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -80,8 +81,8 @@ export async function POST(request: NextRequest) {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
     if (backendUrl) {
       try {
-        // Use a dedicated upload session id (doesn't need to match chat session)
-        const uploadSessionId = `upload_${session.user.id}_${timestamp}`;
+        // Use the provided sessionId to link uploads to the chat session
+        const uploadSessionId = sessionId || `upload_${session.user.id}_${timestamp}`;
 
         await fetch(
           `${backendUrl}/api/teacher/${session.user.id}/session/${uploadSessionId}/add-documents`,
