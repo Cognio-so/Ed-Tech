@@ -49,14 +49,14 @@ def tokenize(text: str):
     tokens = re.findall(r"\w+", text.lower())
     return [t for t in tokens if t not in ENGLISH_STOP_WORDS]
 
-def get_collection_name(teacher_id: str, session_id: str) -> str:
+def get_collection_name(student_id: str, session_id: str) -> str:
     """
-    Generate collection name strictly scoped to Teacher AND Session.
-    Format: teacher_{teacher_id}_{session_id}
+    Generate collection name strictly scoped to Student AND Session.
+    Format: student_{student_id}_{session_id}
     """
-    safe_teacher = re.sub(r'[^a-zA-Z0-9_-]', '_', str(teacher_id))
+    safe_student = re.sub(r'[^a-zA-Z0-9_-]', '_', str(student_id))
     safe_session = re.sub(r'[^a-zA-Z0-9_-]', '_', str(session_id))
-    return f"teacher_{safe_teacher}_{safe_session}"
+    return f"student_{safe_student}_{safe_session}"
 
 async def ensure_collection(collection_name: str):
     """
@@ -96,8 +96,8 @@ async def ensure_collection(collection_name: str):
     except Exception as e:
         print(f"[Qdrant] ⚠️ Error ensuring collection (might already exist): {e}")
 
-async def store_documents(
-    teacher_id: str,
+async def store_student_documents(
+    student_id: str,
     session_id: str,
     documents: List[Document],
     # Restored arguments to match main.py calls:
@@ -109,14 +109,14 @@ async def store_documents(
     metadata: Optional[Dict[str, Any]] = None
 ) -> bool:
     """
-    Store documents in the session-specific collection.
+    Store documents in the session-specific collection for students.
     Accepts legacy arguments (collection_type, is_hybrid, clear_existing) for compatibility.
     """
     if not documents or not session_id:
         return False
     
     try:
-        collection_name = get_collection_name(teacher_id, session_id)
+        collection_name = get_collection_name(student_id, session_id)
         
         if clear_existing:
              # Optional: Clear existing collection if requested
@@ -201,8 +201,33 @@ async def store_documents(
         traceback.print_exc()
         return False
 
+# Alias for backward compatibility
+async def store_documents(
+    student_id: str,
+    session_id: str,
+    documents: List[Document],
+    collection_type: str = "user_docs", 
+    is_hybrid: bool = False,
+    clear_existing: bool = False,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+    metadata: Optional[Dict[str, Any]] = None
+) -> bool:
+    """Alias for store_student_documents for backward compatibility."""
+    return await store_student_documents(
+        student_id=student_id,
+        session_id=session_id,
+        documents=documents,
+        collection_type=collection_type,
+        is_hybrid=is_hybrid,
+        clear_existing=clear_existing,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        metadata=metadata
+    )
+
 async def retrieve_relevant_documents(
-    teacher_id: str,
+    student_id: str,
     session_id: str,
     query: str,
     # Restored arguments for compatibility:
@@ -217,7 +242,7 @@ async def retrieve_relevant_documents(
     Includes fallback for HTTP if client version is old.
     """
     try:
-        collection_name = get_collection_name(teacher_id, session_id)
+        collection_name = get_collection_name(student_id, session_id)
         
         # 1. Check existence
         try:
@@ -327,15 +352,15 @@ async def _http_search_fallback(collection_name, vector, query_filter, limit, sc
             ) for r in result_json.get('result', [])
         ]
 
-async def delete_teacher_session_collection(teacher_id: str, session_id: str):
-    """Deletes the entire collection for a specific session."""
+async def delete_student_session_collection(student_id: str, session_id: str):
+    """Deletes the entire collection for a specific student session."""
     try:
-        collection_name = get_collection_name(teacher_id, session_id)
+        collection_name = get_collection_name(student_id, session_id)
         await asyncio.to_thread(QDRANT_CLIENT.delete_collection, collection_name=collection_name)
         print(f"[Qdrant] 🗑️ Deleted expired collection: {collection_name}")
     except Exception as e:
         print(f"[Qdrant] Error deleting collection: {e}")
 
-async def clear_session_documents(teacher_id: str, session_id: str):
+async def clear_session_documents(student_id: str, session_id: str):
     """Alias for consistency"""
-    await delete_teacher_session_collection(teacher_id, session_id)
+    await delete_student_session_collection(student_id, session_id)

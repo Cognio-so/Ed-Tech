@@ -52,6 +52,7 @@ import httpx
 from teacher.voice_agent.voice_agent_webrtc import VoiceAgentBridge
 from Student.Ai_tutor.graph import create_student_ai_tutor_graph
 from Student.Ai_tutor.graph_type import StudentGraphState
+from Student.Ai_tutor.qdrant_utils import store_student_documents
 from teacher.Ai_Tutor.qdrant_utils import delete_teacher_session_collection
 from Student.student_voice_agent.student_voice_agent import StudyBuddyBridge
 
@@ -1381,6 +1382,141 @@ async def get_documents(
         "session_id": session_id
     }
 
+
+@app.post("/api/student/{student_id}/session/{session_id}/add-documents")
+async def add_student_documents_by_url(
+    student_id: str,
+    session_id: str,
+    request: AddDocumentsRequest,
+) -> Dict[str, Any]:
+    """
+    Add documents by URL for students, extract content, and store in Qdrant (Session Scoped).
+    """
+    print("add_student_documents_by_url called with:", student_id, session_id)
+    session = await StudentSessionManager.get_session(session_id)
+    current_session_id = session_id
+    payload = request.model_dump(mode='json')
+    documents = payload.get("documents", [])
+    
+    if not documents:
+        return {"message": "No documents provided", "documents": []}
+        
+    print(f"[STUDENT DOC EMBEDDING] Received {len(documents)} docs for session {current_session_id}")
+
+    processed_docs = []
+    
+    async def process_single_document(doc: dict, index: int) -> Optional[dict]:
+        """
+        Process a single document: Fetch -> Extract -> Embed (Store).
+        """
+        try:
+            file_url = doc.get("file_url")
+            filename = doc.get("filename", "")
+            doc_id = doc.get("id", str(uuid4()))
+            file_extension = filename.split('.')[-1].lower() if '.' in filename else ''
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.get(file_url, timeout=30.0)
+                response.raise_for_status()
+                file_content = response.content
+            
+            content = ""
+            if file_extension == 'pdf':
+                content = await asyncio.to_thread(extract_text_from_pdf, file_content)
+            elif file_extension == 'docx':
+                content = await asyncio.to_thread(extract_text_from_docx, file_content)
+            elif file_extension == 'txt':
+                content = extract_text_from_txt(file_content)
+            elif file_extension == 'json':
+                content = extract_text_from_json(file_content)
+            else:
+                content = extract_text_from_txt(file_content)
+
+            if not content.strip():
+                print(f"[STUDENT DOC EMBEDDING] ⚠️ Warning: Empty content for {filename}")
+                return None
+            
+            return {
+                "id": doc_id,
+                "filename": filename,
+                "file_url": file_url,
+                "file_type": file_extension or "txt",
+                "size": len(file_content),
+                "content": content,
+                "metadata": {
+                    "source_url": file_url,
+                    "file_type": file_extension,
+                    "doc_id": doc_id,
+                    "filename": filename
+                }
+            }
+                
+        except Exception as e:
+            logger.error(f"Error processing {doc.get('filename', 'unknown')}: {e}", exc_info=True)
+            return None
+    
+    # Run processing
+    doc_tasks = [process_single_document(doc, i) for i, doc in enumerate(documents)]
+    results = await asyncio.gather(*doc_tasks, return_exceptions=True)
+    
+    for res in results:
+        if isinstance(res, dict):
+            processed_docs.append(res)
+        elif isinstance(res, Exception):
+            logger.error(f"Document processing error: {res}")
+            
+    # Batch Embed
+    if processed_docs:
+        from langchain_core.documents import Document
+        lc_docs = [
+            Document(page_content=d["content"], metadata=d["metadata"]) 
+            for d in processed_docs
+        ]
+        
+        await store_student_documents(
+            student_id=student_id,
+            session_id=current_session_id,
+            documents=lc_docs
+        )
+
+    if "uploaded_docs" not in session:
+        session["uploaded_docs"] = []
+    
+    clean_docs = []
+    for doc in processed_docs:
+        clean_docs.append({
+            "id": doc["id"],
+            "filename": doc["filename"],
+            "file_url": doc["file_url"],
+            "file_type": doc["file_type"],
+            "size": doc["size"]
+        })
+        
+    session["uploaded_docs"].extend(clean_docs)
+    session.setdefault("newly_uploaded_docs", []).extend(clean_docs)
+    
+    await StudentSessionManager.update_session(current_session_id, session)
+    
+    return {
+        "message": f"Added {len(processed_docs)} documents",
+        "documents": clean_docs,
+        "session_id": current_session_id
+    }
+
+
+@app.get("/api/student/{student_id}/session/{session_id}/documents")
+async def get_student_documents(
+    student_id: str,
+    session_id: str,
+) -> Dict[str, Any]:
+    """Get all documents for a student session"""
+    session = await StudentSessionManager.get_session(session_id)
+    
+    return {
+        "uploaded_docs": session.get("uploaded_docs", []),
+        "session_id": session_id
+    }
+
 @app.post(
     "/api/teacher/{teacher_id}/session/{session_id}/stream-chat"
 )
@@ -1627,98 +1763,9 @@ async def student_ai_tutor_stream_chat(
     """
     Student AI Tutor streaming chat endpoint.
     """
-    current_session_id = await StudentSessionManager.create_session(student_id, session_id)
+    current_session_id = session_id
     session = await StudentSessionManager.get_session(current_session_id)
 
-    print(f"[STUDENT CHAT] 📥 Request received - student_id: {student_id}, session_id: {current_session_id}")
-    print(f"[STUDENT CHAT] 📝 Message: {payload.message[:100]}...")
-    print(f"[STUDENT CHAT] 📎 doc_url: {payload.doc_url}")
-
-    if payload.doc_url:
-        session.setdefault("uploaded_docs", [])
-        doc_already_processed = any(
-            (doc.get("url") == payload.doc_url or doc.get("file_url") == payload.doc_url)
-            and doc.get("id") is not None
-            for doc in session["uploaded_docs"]
-        )
-
-        if not doc_already_processed:
-            print(f"[STUDENT CHAT] ⚡ Processing provided document for embedding...")
-            try:
-                filename = payload.doc_url.split("/")[-1].split("?")[0]
-                file_extension = filename.split(".")[-1].lower() if "." in filename else "txt"
-                doc_id = str(uuid4())
-
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(payload.doc_url, timeout=30.0)
-                    response.raise_for_status()
-                    file_content = response.content
-
-                if file_extension == "pdf":
-                    text = await asyncio.to_thread(extract_text_from_pdf, file_content)
-                elif file_extension == "docx":
-                    text = await asyncio.to_thread(extract_text_from_docx, file_content)
-                elif file_extension == "json":
-                    text = extract_text_from_json(file_content)
-                else:
-                    text = extract_text_from_txt(file_content)
-
-                if text.strip():
-                    from langchain_core.documents import Document
-
-                    document = Document(
-                        page_content=text,
-                        metadata={
-                            "source": payload.doc_url,
-                            "file_type": file_extension,
-                            "doc_id": doc_id,
-                            "filename": filename,
-                        },
-                    )
-
-                    success = await store_student_documents(
-                        student_id=student_id,
-                        session_id=current_session_id,
-                        documents=[document],
-                        collection_type="user_docs",
-                        is_hybrid=False,
-                        clear_existing=False,
-                        metadata={
-                            "source_url": payload.doc_url,
-                            "file_type": file_extension,
-                            "doc_id": doc_id,
-                            "filename": filename,
-                        },
-                    )
-
-                    session["uploaded_docs"].append(
-                        {
-                            "url": payload.doc_url,
-                            "file_url": payload.doc_url,
-                            "file_type": file_extension,
-                            "id": doc_id if success else None,
-                            "filename": filename,
-                            "processed": success,
-                            "size": len(file_content),
-                        }
-                    )
-                    await StudentSessionManager.update_session(current_session_id, session)
-                else:
-                    print(f"[STUDENT CHAT] ⚠️ No text extracted from {filename}")
-            except Exception as exc:
-                logger.error(f"[STUDENT CHAT] Error auto-processing document: {exc}", exc_info=True)
-                session["uploaded_docs"].append(
-                    {
-                        "url": payload.doc_url,
-                        "file_type": payload.doc_url.split(".")[-1].lower() if "." in payload.doc_url else "txt",
-                        "processed": False,
-                    }
-                )
-                await StudentSessionManager.update_session(current_session_id, session)
-        else:
-            print(f"[STUDENT CHAT] ✅ Document already processed.")
-    else:
-        print(f"[STUDENT CHAT] ℹ️ No document URL provided.")
 
     queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
     full_response = ""
@@ -1748,6 +1795,16 @@ async def student_ai_tutor_stream_chat(
         elif msg.get("role") == "assistant":
             langchain_messages.append(AIMessage(content=msg.get("content", "")))
 
+    print(f"[STUDENT CHAT ENDPOINT] 📜 Loading conversation history: {len(session_messages)} previous messages")
+    newly_uploaded_docs = session.get("newly_uploaded_docs", [])
+    uploaded_doc_flag = bool(newly_uploaded_docs)
+    
+    if newly_uploaded_docs:
+        print(f"[STUDENT CHAT ENDPOINT] 📂 Found {len(newly_uploaded_docs)} newly uploaded docs")
+        print(f"[STUDENT CHAT ENDPOINT] 📋 Doc types: {[doc.get('file_type') for doc in newly_uploaded_docs]}")
+    else:
+        print(f"[STUDENT CHAT ENDPOINT] ℹ️ No newly uploaded docs")
+    
     state: StudentGraphState = {
         "messages": langchain_messages,
         "user_query": payload.message,
@@ -1770,6 +1827,13 @@ async def student_ai_tutor_stream_chat(
         "should_continue": True,
         "chunk_callback": chunk_callback,
         "token_usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        # Enhanced orchestrator fields
+        "uploaded_doc": uploaded_doc_flag,
+        "new_uploaded_docs": newly_uploaded_docs,
+        "active_docs": session.get("uploaded_docs", []),
+        "is_image": False,
+        "edit_img_urls": [],
+        "img_urls": session.get("img_urls", []),
     }
 
     async def generate_stream():
@@ -1856,7 +1920,9 @@ async def student_ai_tutor_stream_chat(
                     "is_complete": True,
                     "full_response": response or full_response,
                     "image_result": state.get("image_result"),
+                    "img_urls": state.get("img_urls", []),
                     "token_usage": token_usage,
+                    "route_taken": state.get("tasks", []),
                     "error_message": stream_error_message,
                 },
             }
@@ -1866,10 +1932,20 @@ async def student_ai_tutor_stream_chat(
                 session_messages.append({"role": "assistant", "content": response or full_response})
             if state.get("context", {}).get("session", {}).get("summary"):
                 session["summary"] = state["context"]["session"]["summary"]
-            if state.get("context", {}).get("session", {}).get("last_route"):
-                session["last_route"] = state["context"]["session"]["last_route"]
-            if state.get("route"):
+            
+            # Update last_route from executed tasks, ignoring "end"
+            tasks = state.get("tasks", [])
+            if tasks:
+                session["last_route"] = tasks[-1]
+            elif state.get("route") and state.get("route") != "end":
                 session["last_route"] = state["route"]
+            
+            if state.get("image_result"):
+                session["last_image_result"] = state.get("image_result")
+            if session.get("newly_uploaded_docs"):
+                session["newly_uploaded_docs"] = []
+            if state.get("img_urls"):
+                session["img_urls"] = state.get("img_urls", [])
 
             await StudentSessionManager.update_session(current_session_id, session)
 

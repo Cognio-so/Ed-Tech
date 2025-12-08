@@ -10,7 +10,7 @@ if str(backend_path) not in sys.path:
 
 import json
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -79,19 +79,48 @@ async def analyze_query(
     last_route: Optional[str],
     doc_url: Optional[str],
     has_assignments: bool,
+    is_image: bool = False,
+    uploaded_images: List[str] = None,
+    new_uploaded_docs: List[dict] = None,
+    is_websearch: bool = False,
 ) -> Dict[str, Any]:
+    # Build uploaded images context
+    uploaded_images_text = ""
+    if uploaded_images and len(uploaded_images) > 0:
+        uploaded_images_text = f"\nUploaded Images: {len(uploaded_images)} image URL(s) available in session"
+    
+    # Build document context from new_uploaded_docs
+    doc_context_text = ""
+    if new_uploaded_docs and len(new_uploaded_docs) > 0:
+        doc_types = {}
+        for doc in new_uploaded_docs:
+            if isinstance(doc, dict):
+                file_type = doc.get("file_type", "unknown")
+                doc_types[file_type] = doc_types.get(file_type, 0) + 1
+        
+        doc_summary = []
+        for doc_type, count in doc_types.items():
+            doc_summary.append(f"{count} {doc_type}(s)")
+        
+        doc_context_text = f"\nNewly Uploaded Documents: {', '.join(doc_summary)}"
+    
     dynamic_context = f"""<context>
 <student_message>{user_message}</student_message>
 <conversation_history>{conversation_history[:2000]}</conversation_history>
 <session_summary>{session_summary[:500] or '(none)'}</session_summary>
 <last_route>{last_route or 'None'}</last_route>
+<system_state>
 <document_available>{bool(doc_url)}</document_available>
+<websearch_enabled>{is_websearch}</websearch_enabled>{uploaded_images_text}{doc_context_text}
+</system_state>
 <assignments_available>{has_assignments}</assignments_available>
 </context>
 
 <task>
 Return JSON with execution_order (list) and reasoning (≤2 sentences).
 Nodes: SimpleLLM, RAG, WebSearch, Image, END.
+Route to Image node when user explicitly requests image generation/editing with action verbs (generate, create, make, edit, modify, etc.).
+Consider the conversation context and uploaded documents when making routing decisions.
 </task>"""
 
     messages = [SystemMessage(content=STATIC_SYS), HumanMessage(content=dynamic_context)]
@@ -105,9 +134,9 @@ Nodes: SimpleLLM, RAG, WebSearch, Image, END.
         return json.loads(content)
     except Exception as exc:
         print(f"[Student Orchestrator] analyze_query error: {exc}")
-        if doc_url:
-            return {"execution_order": ["RAG"], "reasoning": "Document referenced, defaulting to RAG."}
-        return {"execution_order": ["SimpleLLM"], "reasoning": "Fallback to SimpleLLM."}
+        if doc_url or new_uploaded_docs:
+            return {"execution_order": ["RAG"], "reasoning": "Document available, using RAG"}
+        return {"execution_order": ["SimpleLLM"], "reasoning": "Default to SimpleLLM"}
 
 
 async def rewrite_query(state: StudentGraphState) -> str:
@@ -152,6 +181,12 @@ async def orchestrator_node(state: StudentGraphState) -> StudentGraphState:
     user_query = state.get("user_query") or ""
     student_id = state.get("student_id", "")
     doc_url = state.get("doc_url")
+    
+    # Enhanced state fields
+    uploaded_doc = state.get("uploaded_doc", False)
+    new_uploaded_docs = state.get("new_uploaded_docs", [])
+    print(f"[Student Orchestrator] 📂 new_uploaded_docs: {len(new_uploaded_docs) if new_uploaded_docs else 0} files")
+    is_image = state.get("is_image", False)
 
     print(f"[Student Orchestrator] handling student_id={student_id}")
 
@@ -163,12 +198,36 @@ async def orchestrator_node(state: StudentGraphState) -> StudentGraphState:
     if not state.get("context"):
         state["context"] = {"session": {}}
 
+    # Initialize active_docs if not present
+    if not state.get("active_docs"):
+        state["active_docs"] = None
+        print("[Student Orchestrator] Initialized active_docs as None.")
+    
+    # Update active_docs with new uploads
+    if new_uploaded_docs:
+        state["active_docs"] = new_uploaded_docs
+        print(f"[Student Orchestrator] Updated active_docs with {len(new_uploaded_docs)} new documents")
+
     session_ctx = state["context"].get("session", {})
     last_route = session_ctx.get("last_route")
     has_assignments = bool(state.get("pending_assignments"))
+    
+    # Extract image URLs from new_uploaded_docs
+    edit_img_urls = []
+    if new_uploaded_docs:
+        for doc in new_uploaded_docs:
+            if isinstance(doc, dict):
+                file_type = doc.get("file_type", "")
+                file_url = doc.get("file_url") or doc.get("url")
+                if file_type == "image" and file_url:
+                    edit_img_urls.append(file_url)
+    
+    if edit_img_urls:
+        state["edit_img_urls"] = edit_img_urls
+        print(f"[Student Orchestrator] Extracted {len(edit_img_urls)} image URL(s): {edit_img_urls}")
 
     if not state.get("tasks"):
-        conversation_history = _format_history(messages, max_turns=4)
+        conversation_history = _format_history(messages, max_turns=6)
         session_summary = session_ctx.get("summary", "")
 
         routing = await analyze_query(
@@ -178,23 +237,47 @@ async def orchestrator_node(state: StudentGraphState) -> StudentGraphState:
             last_route=last_route,
             doc_url=doc_url,
             has_assignments=has_assignments,
+            is_image=is_image,
+            uploaded_images=edit_img_urls,
+            new_uploaded_docs=new_uploaded_docs,
+            is_websearch=True,
         )
 
         plan = routing.get("execution_order") or ["SimpleLLM"]
         plan = [normalize_route(step) for step in plan if step]
         if not plan:
             plan = ["simple_llm"]
+        
+        # Check for image node in plan
+        has_image_in_plan = any(task.lower() in ["image", "img"] for task in plan)
+        if not has_image_in_plan:
+            print(f"[Student Orchestrator] No image node in plan, clearing img_urls")
+            state["img_urls"] = []
+        
+        # Handle image editing scenario
+        if len(edit_img_urls) == len(new_uploaded_docs) and plan[0].lower() == "image":
+            state["img_urls"] = edit_img_urls
+            print(f"[Student Orchestrator] Image editing scenario detected")
+        elif uploaded_doc:
+            state["img_urls"] = []
+            print(f"[Student Orchestrator] Document uploaded scenario")
+            
+            # Force RAG routing for new document uploads
+            if len(plan) == 1 and plan[0].lower() == "rag":
+                pass  # Already routing to RAG
+            elif len(plan) == 1 and plan[0].lower() != "rag":
+                plan = ["rag"]
+            elif len(plan) == 0:
+                plan = ["rag"]
+            
+            print(f"[Student Orchestrator] New doc uploaded → updated plan = {plan}")
 
         state["tasks"] = plan
         state["task_index"] = 0
         state["current_task"] = plan[0]
         state["route"] = plan[0]
         state["next_node"] = plan[0]
-
-        if plan[0] == "rag":
-            state["resolved_query"] = user_query
-        else:
-            state["resolved_query"] = await rewrite_query(state)
+        state["resolved_query"] = user_query
 
         session_ctx["last_route"] = plan[0]
         state["context"]["session"] = session_ctx
@@ -214,7 +297,7 @@ async def orchestrator_node(state: StudentGraphState) -> StudentGraphState:
             state["current_task"] = next_task
             state["route"] = normalize_route(next_task)
             state["next_node"] = state["route"]
-            state["resolved_query"] = await rewrite_query(state)
+            state["resolved_query"] = user_query
         else:
             if state.get("intermediate_results"):
                 combined = []
