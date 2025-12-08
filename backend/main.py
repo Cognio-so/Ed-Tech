@@ -30,6 +30,8 @@ from models import (
     AITutorRequest,
     StudentVoiceSchema,
     AddDocumentsRequest,
+    parse_enhanced_story_panels,
+    generate_video_background
 )
 
 from teacher.media_toolkit.websearch_schema import run_search_agent
@@ -87,57 +89,6 @@ try:
     cloudinary_storage_manager = CloudinaryStorage()
 except Exception as e:
     logger.error(f"Failed to initialize Cloudinary Storage: {e}")
-
-
-
-
-
-
-
-
-def _parse_enhanced_story_panels(story_text: str) -> List[Dict[str, str]]:
-    """
-    Helper to parse the story text into structured panels.
-    Adapts logic from comic_generation.py to match the endpoint's expected keys.
-    """
-    panels = []
-    current_panel = {}
-    
-    lines = story_text.strip().split('\n')
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        
-        # Detect new panel start (usually numbered list)
-        if line.split('.')[0].isdigit() and 'Panel_Prompt:' in line:
-            if current_panel and 'prompt' in current_panel:
-                # Ensure footer exists even if empty
-                if 'footer_text' not in current_panel:
-                    current_panel['footer_text'] = ""
-                panels.append(current_panel)
-            current_panel = {}
-
-        if 'Panel_Prompt:' in line:
-            parts = line.split('Panel_Prompt:', 1)
-            if len(parts) > 1:
-                current_panel['prompt'] = parts[1].strip()
-        elif 'Footer_Text:' in line:
-            parts = line.split('Footer_Text:', 1)
-            if len(parts) > 1:
-                current_panel['footer_text'] = parts[1].strip()
-
-    # Add the last panel
-    if current_panel and 'prompt' in current_panel:
-        if 'footer_text' not in current_panel:
-            current_panel['footer_text'] = ""
-        panels.append(current_panel)
-        
-    return panels
-
-
-
-
 
 
 sessions: Dict[str, Dict[str, Any]] = {}
@@ -273,91 +224,6 @@ async def startup_event():
     # Start the document cleanup scheduler (runs every hour)
     asyncio.create_task(start_cleanup_scheduler())
     logger.info("🚀 Document cleanup scheduler started (24-hour TTL)")
-
-
-
-async def generate_video_background(
-    task_id: str, 
-    pptx_bytes: bytes, 
-    original_filename: str, 
-    voice_id: str, 
-    avatar_id: str, 
-    title: str, 
-    language: str
-):
-    """
-    Background task to handle the synchronous video generation process.
-    """
-    temp_file_path = None
-    try:
-        logger.info(f"Starting background video generation for task: {task_id}")
-        video_generation_tasks[task_id]["status"] = "uploading"
-
-        # 1. Write bytes to a temporary local file 
-        # (CloudinaryStorage.upload_file expects a file path)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as temp_file:
-            temp_file.write(pptx_bytes)
-            temp_file_path = temp_file.name
-
-        # 2. Upload to Cloudinary
-        # We use a unique public_id to prevent collisions
-        public_id = f"video_presentations/{task_id}_{original_filename}"
-        
-        # Run sync upload in threadpool
-        success, result_id_or_error = await run_in_threadpool(
-            cloudinary_storage_manager.upload_file,
-            file_path=temp_file_path,
-            public_id=public_id
-        )
-
-        if not success:
-            raise Exception(f"Cloudinary upload failed: {result_id_or_error}")
-
-        pptx_public_id = result_id_or_error
-        logger.info(f"Uploaded to Cloudinary: {pptx_public_id}")
-        
-        video_generation_tasks[task_id]["status"] = "generating"
-
-        # 3. Initialize Converter
-        converter = PPTXToHeyGenVideo(
-            storage_manager=cloudinary_storage_manager,
-            pptx_avatar_id=avatar_id,
-            pptx_voice_id=voice_id,
-            language=language
-        )
-
-        # 4. Run Conversion (Heavy processing: Aspose -> OpenAI -> HeyGen)
-        result = await run_in_threadpool(
-            converter.convert,
-            pptx_public_id=pptx_public_id,
-            title=title
-        )
-
-        # 5. Update Status
-        video_generation_tasks[task_id].update({
-            "status": "completed",
-            "video_id": result.get("video_id"),
-            "video_url": result.get("video_url"),
-            "slides_processed": result.get("slides_processed"),
-            "completed_at": datetime.now().isoformat()
-        })
-        logger.info(f"Video generation task {task_id} completed successfully.")
-
-    except Exception as e:
-        logger.error(f"Error in video background task {task_id}: {e}", exc_info=True)
-        video_generation_tasks[task_id].update({
-            "status": "failed",
-            "error": str(e),
-            "failed_at": datetime.now().isoformat()
-        })
-    finally:
-        # Cleanup local temp file
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except OSError:
-                pass
-
 
 @app.post("/api/teacher/{teacher_id}/session/{session_id}/video_generation/generate")
 async def generate_video_presentation(
@@ -1104,7 +970,7 @@ async def comics_stream_endpoint(
                 yield chunk
 
             # 2) Parse enhanced story prompts to get panel/footer pairs
-            panels = _parse_enhanced_story_panels(story_prompts)
+            panels = parse_enhanced_story_panels(story_prompts)
             if not panels:
                 error_msg = "No panel prompts could be parsed from the generated story"
                 logger.error(error_msg)
