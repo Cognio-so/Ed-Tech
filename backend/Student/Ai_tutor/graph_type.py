@@ -30,4 +30,11 @@ class StudentGraphState(TypedDict, total=False):
     current_task: Optional[str]
     resolved_query: Optional[str]
     intermediate_results: Optional[List[Dict[str, Any]]]
+    uploaded_doc: Optional[bool]  
+    new_uploaded_docs: Optional[List[Dict[str, Any]]]   
+    active_docs: Optional[List[Dict[str, Any]]]  
+    is_image: Optional[bool]  
+    edit_img_urls: Optional[List[str]]
+    img_urls: Optional[List[str]] 
+    next_node: Optional[str]
 
