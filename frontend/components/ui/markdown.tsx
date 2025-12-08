@@ -27,6 +27,11 @@ interface MarkdownProps {
 
 // Utility function to detect image URLs
 const isImageUrl = (url: string): boolean => {
+  // Check for base64 data URLs
+  if (url.startsWith("data:image/")) {
+    return true;
+  }
+  
   const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|bmp|tiff)(\?.*)?$/i;
   const imageHosts = [
     'replicate.delivery',
@@ -36,7 +41,8 @@ const isImageUrl = (url: string): boolean => {
     'media.discordapp.net',
     'images.unsplash.com',
     'picsum.photos',
-    'via.placeholder.com'
+    'via.placeholder.com',
+    'cloudinary.com'
   ];
   
   const hasImageExtension = imageExtensions.test(url);
@@ -47,7 +53,9 @@ const isImageUrl = (url: string): boolean => {
 
 // Utility function to get image source type
 const getImageSourceType = (url: string): string => {
+  if (url.startsWith('data:image/')) return 'Base64';
   if (url.includes('replicate.delivery')) return 'Replicate';
+  if (url.includes('cloudinary.com')) return 'Cloudinary';
   if (url.includes('imgur.com')) return 'Imgur';
   if (url.includes('discordapp.com')) return 'Discord';
   if (url.includes('unsplash.com')) return 'Unsplash';

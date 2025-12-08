@@ -16,9 +16,10 @@ interface VideoPreviewProps {
   title: string
   onSave: () => void
   onClose: () => void
+  buttonText?: string; // Custom button text (default: "Save")
 }
 
-export function VideoPreview({ content, title, onSave, onClose }: VideoPreviewProps) {
+export function VideoPreview({ content, title, onSave, onClose, buttonText = "Save" }: VideoPreviewProps) {
   const handleDownload = () => {
     if (content.video_url) {
       window.open(content.video_url, "_blank")
@@ -69,7 +70,7 @@ export function VideoPreview({ content, title, onSave, onClose }: VideoPreviewPr
                 onClick={onSave}
               >
                 <Save className="mr-2 h-4 w-4" />
-                Save
+                {buttonText}
               </Button>
             </div>
           </DialogTitle>

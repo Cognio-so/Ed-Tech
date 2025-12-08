@@ -76,11 +76,20 @@ export async function getStudentContent(): Promise<StudentContent[]> {
       return [];
     }
 
+    // Fetch lesson items that match the student's grades
+    // Also include items where grade is null (for content like images that might not have a grade)
     const lessonItems = await prisma.lessonItem.findMany({
       where: {
-        grade: {
-          in: gradeNames,
-        },
+        OR: [
+          {
+            grade: {
+              in: gradeNames,
+            },
+          },
+          {
+            grade: null,
+          },
+        ],
       },
       orderBy: {
         createdAt: "desc",

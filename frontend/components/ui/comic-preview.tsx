@@ -22,6 +22,7 @@ interface ComicPreviewProps {
   topic: string
   onSave: (updatedContent: { story?: string; panels?: ComicPanel[] }) => void | Promise<void>
   onClose: () => void
+  buttonText?: string; // Custom button text (default: "Save")
 }
 
 export function ComicPreview({
@@ -29,6 +30,7 @@ export function ComicPreview({
   topic,
   onSave,
   onClose,
+  buttonText = "Save",
 }: ComicPreviewProps) {
   const [isUploading, setIsUploading] = React.useState(false);
 
@@ -186,7 +188,7 @@ export function ComicPreview({
                 ) : (
                   <>
                     <Save className="mr-2 h-4 w-4" />
-                    Save
+                    {buttonText}
                   </>
                 )}
               </Button>

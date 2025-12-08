@@ -7,6 +7,10 @@ import { parseAssessment, Question } from "./_components/assessment-parser";
 import { generateText } from "ai";
 import { getAIProvider } from "@/lib/ai";
 import { getLessonItemById } from "@/data/get-lesson-item";
+import {
+  getTierByScore,
+  calculateScoreCredit,
+} from "@/data/achievement-types";
 
 interface QuestionResult {
   questionId: string;
@@ -406,6 +410,8 @@ Respond with ONLY a JSON object in this exact format:
       },
     });
 
+    await updateAchievements(session.user.id, finalScore);
+
     return {
       score: finalScore,
       totalQuestions: questions.length,
@@ -421,7 +427,9 @@ Respond with ONLY a JSON object in this exact format:
 
 /**
  * Submit non-assessment content (lesson_plan, worksheet, quiz, presentation, etc.)
- * This gives a 100% score for viewing/completing the content
+ * This gives a score for viewing/completing the content
+ * Image, lesson_plan, video, comic, and presentation get 10 points
+ * Other content types get 100 points
  */
 export async function submitContentCompletion(
   contentId: string,
@@ -437,22 +445,75 @@ export async function submitContentCompletion(
   }
 
   try {
-    // Save submission with 100% score
+    // Content types that get 10 points instead of 100
+    const lowScoreContentTypes = ["image", "lesson_plan", "video", "comic", "presentation"];
+    const score = lowScoreContentTypes.includes(contentType) ? 10 : 100;
+
+    // Save submission with appropriate score
     await (prisma as any).studentSubmission.create({
       data: {
         userId: session.user.id,
         contentId: contentId,
         contentType: contentType,
         responses: JSON.stringify({ completed: true }),
-        score: 100,
+        score: score,
         timeSpent: timeSpent,
       },
     });
 
-    return { success: true, score: 100 };
+    await updateAchievements(session.user.id, score);
+
+    return { success: true, score: score };
   } catch (error) {
     console.error("Error submitting content completion:", error);
     throw new Error("Failed to submit content completion");
+  }
+}
+
+async function updateAchievements(userId: string, score: number) {
+  try {
+    // Get all submissions to calculate total score
+    const submissions = await (prisma as any).studentSubmission.findMany({
+      where: { userId },
+      select: { score: true },
+    });
+
+    // Calculate total score by summing all submission scores
+    const totalScore = submissions.reduce((sum: number, s: any) => sum + Number(s.score), 0);
+
+    let achievement = await prisma.studentAchievement.findUnique({
+      where: { userId },
+    });
+
+    const newTier = getTierByScore(totalScore);
+
+    if (!achievement) {
+      await prisma.studentAchievement.create({
+        data: {
+          userId,
+          totalScore: totalScore,
+          currentTier: newTier.name,
+          unlockedTiers: JSON.stringify([newTier.name]),
+        },
+      });
+    } else {
+      const unlockedTiers = JSON.parse(achievement.unlockedTiers || "[]");
+
+      if (!unlockedTiers.includes(newTier.name)) {
+        unlockedTiers.push(newTier.name);
+      }
+
+      await prisma.studentAchievement.update({
+        where: { userId },
+        data: {
+          totalScore: totalScore,
+          currentTier: newTier.name,
+          unlockedTiers: JSON.stringify(unlockedTiers),
+        },
+      });
+    }
+  } catch (error) {
+    console.error("Error updating achievements:", error);
   }
 }
 
