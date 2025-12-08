@@ -1,18 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/cjs/styles/prism";
-
-/* eslint-disable @typescript-eslint/no-var-requires */
-// @ts-ignore - react-katex lacks types
 import { InlineMath, BlockMath } from "react-katex";
 import "katex/dist/katex.min.css";
-/* eslint-enable @typescript-eslint/no-var-requires */
 
 import { cn } from "@/lib/utils";
 import {
@@ -45,8 +41,6 @@ const isImageUrl = (url: string): boolean => {
   
   const hasImageExtension = imageExtensions.test(url);
   const hasImageHost = imageHosts.some(host => url.includes(host));
-  
-  console.log('Image URL detection:', { url, hasImageExtension, hasImageHost, result: hasImageExtension || hasImageHost });
   
   return hasImageExtension || hasImageHost;
 };
@@ -115,69 +109,66 @@ const getVideoEmbedUrl = (url: string): string | null => {
 };
 
 const Markdown: React.FC<MarkdownProps> = ({ content, className, sources = [] }) => {
-  // Debug logging to see what content we're receiving
-  console.log('Markdown component received content:', content);
-  
-  let cleanContent = content;
+  // Memoize content processing to prevent unnecessary re-renders
+  const cleanContent = useMemo(() => {
+    let processedContent = content;
 
-  // Process content to convert URL: lines to proper markdown links
-  cleanContent = cleanContent.replace(/\* URL: (https?:\/\/[^\s]+)/g, '* [$1]($1)');
+    // Process content to convert URL: lines to proper markdown links
+    processedContent = processedContent.replace(/\* URL: (https?:\/\/[^\s]+)/g, '* [$1]($1)');
 
-  // Process standalone URLs (not already in markdown format) - detect and convert to markdown images or links
-  // This will automatically detect and convert various image URLs to markdown images
-  // Video URLs will be converted to markdown links and handled by the link component
-  const urlRegex = /(https?:\/\/[^\s\)]+)/g;
-  let lastIndex = 0;
-  const processedParts: string[] = [];
-  
-  let match;
-  while ((match = urlRegex.exec(cleanContent)) !== null) {
-    const url = match[0];
-    const matchIndex = match.index;
+    // Process standalone URLs (not already in markdown format) - detect and convert to markdown images or links
+    // This will automatically detect and convert various image URLs to markdown images
+    // Video URLs will be converted to markdown links and handled by the link component
+    const urlRegex = /(https?:\/\/[^\s\)]+)/g;
+    let lastIndex = 0;
+    const processedParts: string[] = [];
     
-    // Add text before the URL
-    if (matchIndex > lastIndex) {
-      processedParts.push(cleanContent.substring(lastIndex, matchIndex));
-    }
-    
-    // Check if URL is already part of a markdown link or image
-    const beforeUrl = cleanContent.substring(Math.max(0, matchIndex - 50), matchIndex);
-    const isInMarkdown = beforeUrl.includes('](') || beforeUrl.includes('![');
-    
-    if (!isInMarkdown) {
-      if (isImageUrl(url)) {
-        const sourceType = getImageSourceType(url);
-        const altText = sourceType === 'Replicate' ? 'Generated Image' : 'Image';
-        console.log('Converting to image markdown:', `![${altText}](${url})`);
-        processedParts.push(`![${altText}](${url})`);
-      } else if (isVideoUrl(url)) {
-        console.log('Detected video URL:', url);
-        processedParts.push(`[${url}](${url})`);
+    let match;
+    while ((match = urlRegex.exec(processedContent)) !== null) {
+      const url = match[0];
+      const matchIndex = match.index;
+      
+      // Add text before the URL
+      if (matchIndex > lastIndex) {
+        processedParts.push(processedContent.substring(lastIndex, matchIndex));
+      }
+      
+      // Check if URL is already part of a markdown link or image
+      const beforeUrl = processedContent.substring(Math.max(0, matchIndex - 50), matchIndex);
+      const isInMarkdown = beforeUrl.includes('](') || beforeUrl.includes('![');
+      
+      if (!isInMarkdown) {
+        if (isImageUrl(url)) {
+          const sourceType = getImageSourceType(url);
+          const altText = sourceType === 'Replicate' ? 'Generated Image' : 'Image';
+          processedParts.push(`![${altText}](${url})`);
+        } else if (isVideoUrl(url)) {
+          processedParts.push(`[${url}](${url})`);
+        } else {
+          processedParts.push(url);
+        }
       } else {
         processedParts.push(url);
       }
-    } else {
-      processedParts.push(url);
+      
+      lastIndex = matchIndex + url.length;
     }
     
-    lastIndex = matchIndex + url.length;
-  }
-  
-  // Add remaining text
-  if (lastIndex < cleanContent.length) {
-    processedParts.push(cleanContent.substring(lastIndex));
-  }
-  
-  cleanContent = processedParts.join('');
+    // Add remaining text
+    if (lastIndex < processedContent.length) {
+      processedParts.push(processedContent.substring(lastIndex));
+    }
+    
+    processedContent = processedParts.join('');
 
-  // Remove standalone double asterisks
-  cleanContent = cleanContent.replace(/^\*\*$/gm, '');
+    // Remove standalone double asterisks
+    processedContent = processedContent.replace(/^\*\*$/gm, '');
 
-  // Remove empty lines that might be left after removing **
-  cleanContent = cleanContent.replace(/\n\s*\n\s*\n/g, '\n\n');
+    // Remove empty lines that might be left after removing **
+    processedContent = processedContent.replace(/\n\s*\n\s*\n/g, '\n\n');
 
-  // Debug logging to see processed content
-  console.log('Markdown processed content:', cleanContent);
+    return processedContent;
+  }, [content]);
 
   return (
     <div className={cn("prose prose-sm dark:prose-invert max-w-none break-words", className)}>

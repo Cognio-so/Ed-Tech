@@ -95,9 +95,9 @@ export async function getLibraryContent(): Promise<LibraryContent[]> {
     const transformedImages = images.map((item) => ({
       id: item.id,
       type: "media-toolkit" as const,
-      contentType: "image",
+      contentType: (item as any).contentType || "image",
       title: item.title,
-      content: item.content,
+      content: (item as any).url || item.content, // Use url field if available, fallback to content
       grade: null,
       subject: null,
       topic: null,

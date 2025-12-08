@@ -57,6 +57,21 @@ export function ComicForm({ initialGrades, initialSubjects }: ComicFormProps) {
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [showPreview, setShowPreview] = React.useState(false);
 
+  // Debug: Log content changes
+  React.useEffect(() => {
+    if (generatedContent) {
+      console.log("Generated content updated:", {
+        hasStory: !!generatedContent.story,
+        panelsCount: generatedContent.panels?.length || 0,
+        panels: generatedContent.panels?.map(p => ({
+          index: p.index,
+          hasUrl: !!p.url,
+          urlLength: p.url?.length || 0,
+        })) || []
+      });
+    }
+  }, [generatedContent]);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -129,7 +144,7 @@ export function ComicForm({ initialGrades, initialSubjects }: ComicFormProps) {
                 }
               }
             } catch (e) {
-              console.error("Error parsing final buffer:", e);
+              console.error("Error parsing final buffer:", e, buffer.substring(0, 200));
             }
           }
           break;
@@ -147,7 +162,8 @@ export function ComicForm({ initialGrades, initialSubjects }: ComicFormProps) {
               console.log(
                 "Parsed comic chunk:",
                 parsed.type,
-                parsed.index || parsed.panel_index
+                parsed.index || parsed.panel_index,
+                parsed.url ? `URL length: ${parsed.url.length}` : "No URL"
               );
 
               if (parsed.type === "story_prompts") {
@@ -160,13 +176,15 @@ export function ComicForm({ initialGrades, initialSubjects }: ComicFormProps) {
                 const footerText = parsed.footer_text || parsed.footer || "";
                 const prompt = parsed.prompt_used || parsed.prompt || "";
 
+                console.log("Panel image data:", {
+                  panelIndex,
+                  hasImageUrl: !!imageUrl,
+                  imageUrlType: imageUrl ? (imageUrl.startsWith("data:") ? "base64" : "url") : "none",
+                  imageUrlLength: imageUrl?.length || 0,
+                  footerText,
+                });
+
                 if (imageUrl && panelIndex !== undefined) {
-                  console.log(
-                    "Adding panel:",
-                    panelIndex,
-                    "URL length:",
-                    imageUrl.length
-                  );
                   const existingIndex = panels.findIndex(
                     (p) => p.index === panelIndex
                   );
@@ -184,20 +202,28 @@ export function ComicForm({ initialGrades, initialSubjects }: ComicFormProps) {
                   }
 
                   panels.sort((a, b) => a.index - b.index);
+                  console.log("Updated panels:", panels.map(p => ({ index: p.index, hasUrl: !!p.url })));
                   setGeneratedContent({ story, panels: [...panels] });
                 } else {
                   console.warn("Missing image URL or index:", {
                     panelIndex,
                     imageUrl: !!imageUrl,
+                    parsedKeys: Object.keys(parsed),
                   });
                 }
+              } else if (parsed.type === "error" || parsed.type === "panel_error") {
+                console.error("Comic generation error:", parsed.message || parsed);
+                toast.error(parsed.message || "Error generating comic panel");
               }
             } catch (e) {
-              console.error(
-                "Error parsing comic stream line:",
-                e,
-                trimmedLine.substring(0, 100)
-              );
+              // Only log if it's not an empty line or SSE prefix
+              if (trimmedLine && !trimmedLine.startsWith("data:") && trimmedLine.length > 10) {
+                console.error(
+                  "Error parsing comic stream line:",
+                  e,
+                  trimmedLine.substring(0, 200)
+                );
+              }
             }
           }
         }
@@ -206,9 +232,21 @@ export function ComicForm({ initialGrades, initialSubjects }: ComicFormProps) {
       console.log("Final comic content:", {
         storyLength: story.length,
         panelsCount: panels.length,
+        panels: panels.map(p => ({
+          index: p.index,
+          hasUrl: !!p.url,
+          urlLength: p.url?.length || 0,
+          urlPreview: p.url?.substring(0, 50) || "no url"
+        }))
       });
-      setGeneratedContent({ story, panels });
-      setShowPreview(true);
+      
+      // Ensure we have panels before showing preview
+      if (panels.length > 0 || story) {
+        setGeneratedContent({ story, panels });
+        setShowPreview(true);
+      } else {
+        toast.error("No comic content generated. Please try again.");
+      }
     } catch (error) {
       console.error("Error generating comic:", error);
       toast.error(
@@ -219,8 +257,11 @@ export function ComicForm({ initialGrades, initialSubjects }: ComicFormProps) {
     }
   };
 
-  const handleSave = async () => {
-    if (!generatedContent) {
+  const handleSave = async (updatedContent: {
+    story?: string;
+    panels?: ComicPanel[];
+  }) => {
+    if (!updatedContent) {
       toast.error("No content to save");
       return;
     }
@@ -229,12 +270,11 @@ export function ComicForm({ initialGrades, initialSubjects }: ComicFormProps) {
     const formData = new FormData();
     formData.append("contentType", "comic");
     formData.append("title", `Comic - ${values.instructions.substring(0, 50)}`);
-    formData.append("content", JSON.stringify(generatedContent));
+    formData.append("content", JSON.stringify(updatedContent));
     formData.append("metadata", JSON.stringify(values));
 
     try {
       await saveMediaContent(formData);
-      toast.success("Comic saved successfully");
       setShowPreview(false);
       setGeneratedContent(null);
       form.reset();

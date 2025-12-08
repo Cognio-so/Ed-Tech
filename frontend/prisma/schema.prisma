@@ -14,18 +14,18 @@ datasource db {
 }
 
 model User {
-  id            String    @id
+  id            String                @id
   name          String
   email         String
-  role          String    @default("student")
-  emailVerified Boolean   @default(false)
+  role          String                @default("student")
+  emailVerified Boolean               @default(false)
   image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
   sessions      Session[]
   accounts      Account[]
   gradeId       String?
-  grade         Grade?    @relation("UserPrimaryGrade", fields: [gradeId], references: [id], onDelete: SetNull)
+  grade         Grade?                @relation("UserPrimaryGrade", fields: [gradeId], references: [id], onDelete: SetNull)
   userSubjects  UserSubject[]
   userGrades    UserGrade[]
   contents      Content[]
@@ -36,29 +36,30 @@ model User {
   videos        Video[]
   conversations TeacherConversation[]
   lessons       Lesson[]
+  submissions   StudentSubmission[]
 
   @@unique([email])
   @@map("user")
 }
 
 model Grade {
-  id          String   @id @default(cuid())
-  name        String   @unique
+  id          String      @id @default(cuid())
+  name        String      @unique
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  users       User[]   @relation("UserPrimaryGrade")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  users       User[]      @relation("UserPrimaryGrade")
   userGrades  UserGrade[]
 
   @@map("grade")
 }
 
 model Subject {
-  id          String       @id @default(cuid())
-  name        String       @unique
-  description String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id           String        @id @default(cuid())
+  name         String        @unique
+  description  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   userSubjects UserSubject[]
 
   @@map("subject")
@@ -155,27 +156,27 @@ model Invitation {
 }
 
 model Content {
-  id                    String   @id @default(cuid())
-  userId                String
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  contentType           String   // lesson_plan, presentation, quiz, worksheet
-  title                 String
-  content               String   @db.Text
-  grade                 String?
-  subject               String?
-  topic                 String?
-  language              String?
-  learningObjective     String?  @map("learning_objective")
-  emotionalConsideration Int?    @map("emotional_consideration")
-  adaptiveLearning      Boolean  @default(false) @map("adaptive_learning")
-  includeAssessment     Boolean  @default(false) @map("include_assessment")
-  multimediaSuggestion  Boolean  @default(false) @map("multimedia_suggestion")
-  instructionDepth      String?  @map("instruction_depth")
-  numberOfSessions      String?  @map("number_of_sessions")
-  durationOfSession     String?  @map("duration_of_session")
-  metadata              String?  @db.Text
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentType            String // lesson_plan, presentation, quiz, worksheet
+  title                  String
+  content                String   @db.Text
+  grade                  String?
+  subject                String?
+  topic                  String?
+  language               String?
+  learningObjective      String?  @map("learning_objective")
+  emotionalConsideration Int?     @map("emotional_consideration")
+  adaptiveLearning       Boolean  @default(false) @map("adaptive_learning")
+  includeAssessment      Boolean  @default(false) @map("include_assessment")
+  multimediaSuggestion   Boolean  @default(false) @map("multimedia_suggestion")
+  instructionDepth       String?  @map("instruction_depth")
+  numberOfSessions       String?  @map("number_of_sessions")
+  durationOfSession      String?  @map("duration_of_session")
+  metadata               String?  @db.Text
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   @@index([userId])
   @@index([contentType])
@@ -183,14 +184,14 @@ model Content {
 }
 
 model Slide {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String
-  content     String   @db.Text
-  metadata    String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  content   String   @db.Text
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@map("slide")
@@ -200,67 +201,70 @@ model Image {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentType String   @default("image") @map("content_type")
   title       String
   content     String   @db.Text
+  url         String? // Cloudinary URL for the image
   metadata    String?  @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([userId])
+  @@index([contentType])
   @@map("image")
 }
 
 model WebSearch {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String
-  content     String   @db.Text
-  metadata    String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  content   String   @db.Text
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@map("web_search")
 }
 
 model Comic {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String
-  content     String   @db.Text
-  metadata    String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  content   String   @db.Text
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@map("comic")
 }
 
 model Video {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String
-  content     String   @db.Text
-  metadata    String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  content   String   @db.Text
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@map("video")
 }
 
 model TeacherConversation {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String
-  messages    String   @db.Text
-  metadata    String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  messages  String   @db.Text
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([createdAt])
@@ -268,16 +272,16 @@ model TeacherConversation {
 }
 
 model Lesson {
-  id                String   @id @default(cuid())
+  id                String       @id @default(cuid())
   userId            String
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   lessonName        String
-  lessonDescription String?  @db.Text
+  lessonDescription String?      @db.Text
   grade             String?
   subject           String?
   topic             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
   lessonItems       LessonItem[]
 
   @@index([userId])
@@ -289,8 +293,8 @@ model LessonItem {
   id                String   @id @default(cuid())
   lessonId          String
   lesson            Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  contentType       String   
-  contentId         String   
+  contentType       String
+  contentId         String
   title             String
   content           String   @db.Text
   grade             String?
@@ -301,8 +305,8 @@ model LessonItem {
   difficultyLevel   String?  @map("difficulty_level")
   duration          String?
   confidenceLevel   Int?     @map("confidence_level")
-  correctAnswers    String?  @db.Text @map("correct_answers") 
-  solutions         String?  @db.Text 
+  correctAnswers    String?  @map("correct_answers") @db.Text
+  solutions         String?  @db.Text
   imageUrl          String?  @map("image_url")
   videoUrl          String?  @map("video_url")
   presentationUrl   String?  @map("presentation_url")
@@ -310,7 +314,7 @@ model LessonItem {
   numberOfSessions  String?  @map("number_of_sessions")
   durationOfSession String?  @map("duration_of_session")
   metadata          String?  @db.Text
-  order             Int      @default(0) 
+  order             Int      @default(0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -318,4 +322,22 @@ model LessonItem {
   @@index([contentType])
   @@index([contentId])
   @@map("lesson_item")
+}
+
+model StudentSubmission {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentId   String
+  contentType String
+  responses   String   @db.Text // JSON string of student responses
+  score       Float // Percentage score (0-100)
+  timeSpent   Int // Time spent in seconds
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([contentId])
+  @@map("student_submission")
 }
