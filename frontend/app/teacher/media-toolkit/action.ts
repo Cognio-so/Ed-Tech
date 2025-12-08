@@ -44,15 +44,36 @@ export async function saveMediaContent(formData: FormData) {
         await prisma.image.create({ data });
         break;
       }
-      case "web":
+      case "web": {
+        const data = {
+          userId: session.user.id,
+          title,
+          content,
+          metadata: metadata || null,
+        };
         await prisma.webSearch.create({ data });
         break;
-      case "comic":
+      }
+      case "comic": {
+        const data = {
+          userId: session.user.id,
+          title,
+          content,
+          metadata: metadata || null,
+        };
         await prisma.comic.create({ data });
         break;
-      case "video":
+      }
+      case "video": {
+        const data = {
+          userId: session.user.id,
+          title,
+          content,
+          metadata: metadata || null,
+        };
         await prisma.video.create({ data });
         break;
+      }
       default:
         throw new Error(`Invalid content type: ${contentType}`);
     }
