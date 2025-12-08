@@ -31,8 +31,7 @@ except ImportError:
     from teacher.Ai_Tutor.qdrant_utils import retrieve_relevant_documents, get_collection_name, QDRANT_CLIENT
     from teacher.Ai_Tutor.simple_llm import format_teacher_data, format_student_data
 
-USER_DOC_TTL_SECONDS = int(24 * 60 * 60)  # 24 hours
-
+USER_DOC_TTL_SECONDS = int(24 * 60 * 60)  
 def _format_last_turns(messages, k=3):
     """Format last k messages for context."""
     if not messages:
@@ -67,7 +66,6 @@ async def cleanup_expired_documents(teacher_id: str, session_id: str) -> bool:
         if not exists:
             return False
         
-        # Get all points to check timestamps
         scroll_result = await asyncio.to_thread(
             QDRANT_CLIENT.scroll,
             collection_name=collection_name,
@@ -80,7 +78,6 @@ async def cleanup_expired_documents(teacher_id: str, session_id: str) -> bool:
         if not points:
             return False
         
-        # Check if any document has expired
         current_time = int(time.time())
         oldest_timestamp = min(
             point.payload.get("timestamp", current_time) 
@@ -88,7 +85,6 @@ async def cleanup_expired_documents(teacher_id: str, session_id: str) -> bool:
             if point.payload
         )
         
-        # If oldest document is older than TTL, delete the entire collection
         if current_time - oldest_timestamp > USER_DOC_TTL_SECONDS:
             await asyncio.to_thread(QDRANT_CLIENT.delete_collection, collection_name=collection_name)
             print(f"[RAG] 🗑️ Deleted expired collection: {collection_name} (age: {(current_time - oldest_timestamp) / 3600:.1f} hours)")
@@ -109,12 +105,10 @@ async def get_all_session_documents(teacher_id: str, session_id: str) -> List[Di
     try:
         collection_name = get_collection_name(teacher_id, session_id)
         
-        # Check if collection exists
         exists = await asyncio.to_thread(QDRANT_CLIENT.collection_exists, collection_name=collection_name)
         if not exists:
             return []
         
-        # Scroll through all points to get unique documents
         scroll_result = await asyncio.to_thread(
             QDRANT_CLIENT.scroll,
             collection_name=collection_name,
@@ -125,7 +119,6 @@ async def get_all_session_documents(teacher_id: str, session_id: str) -> List[Di
         
         points, _ = scroll_result
         
-        # Extract unique documents by doc_id
         seen_doc_ids = set()
         all_docs = []
         
@@ -143,7 +136,6 @@ async def get_all_session_documents(teacher_id: str, session_id: str) -> List[Di
                     "timestamp": payload.get("timestamp", 0)
                 })
         
-        # Sort by timestamp (oldest first)
         all_docs.sort(key=lambda x: x.get("timestamp", 0))
         
         return all_docs
@@ -179,8 +171,6 @@ async def intelligent_document_selection(
     new_doc_ids = [doc.get("id") for doc in new_docs if doc.get("id")]
     
     is_followup = not new_docs and bool(all_available_docs)
-    
-    # Build conversation context
     conversation_context = ""
     if conversation_history:
         last_turn = []
@@ -200,8 +190,6 @@ async def intelligent_document_selection(
         
         if last_turn:
             conversation_context = "\n".join(last_turn)
-    
-    # Build all docs context
     all_docs_context = ""
     if all_available_docs:
         all_docs_context = "\n".join([
@@ -209,8 +197,6 @@ async def intelligent_document_selection(
             + (" [NEWLY UPLOADED]" if doc.get("id") in new_doc_ids else "")
             for i, doc in enumerate(all_available_docs)
         ])
-    
-    # Build new docs context
     new_docs_context = ""
     if new_docs:
         new_docs_context = "\n".join([
@@ -265,15 +251,12 @@ async def intelligent_document_selection(
         response = await llm.ainvoke([HumanMessage(content=classification_prompt)])
         
         content = response.content.strip()
-        # Clean JSON markers
         if content.startswith('```json'):
             content = re.sub(r'^```json\s*', '', content)
         if content.endswith('```'):
             content = re.sub(r'\s*```$', '', content)
         
         result = json.loads(content)
-        
-        # Validate selected IDs exist
         available_ids = {doc.get("id") for doc in all_available_docs if doc.get("id")}
         
         if result.get("selected_doc_ids"):
@@ -281,8 +264,6 @@ async def intelligent_document_selection(
                 doc_id for doc_id in result["selected_doc_ids"] 
                 if doc_id in available_ids
             ]
-        
-        # Map indices to IDs if needed
         if not result.get("selected_doc_ids") and result.get("selected_doc_indices"):
             index_to_id = {i + 1: doc.get("id") for i, doc in enumerate(all_available_docs) if doc.get("id")}
             result["selected_doc_ids"] = [
@@ -295,7 +276,6 @@ async def intelligent_document_selection(
         
     except Exception as e:
         print(f"[DOC-SELECTION] Error: {e}, using fallback")
-        # Fallback: use all new docs if available, otherwise all docs
         if new_doc_ids:
             return {
                 "use_new_docs_only": True,
@@ -333,25 +313,17 @@ async def rag_node(state: GraphState) -> GraphState:
     teacher_id = state.get("teacher_id", "")
     session_id = state.get("session_id")
     chunk_callback = state.get("chunk_callback")
-    
-    # Get query
     query = state.get("resolved_query") or state.get("user_query", "")
     if not query and messages:
         last_msg = messages[-1]
         query = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
-    
-    # Get filters
     doc_url = state.get("doc_url")
     newly_uploaded_docs = state.get("new_uploaded_docs", [])
-    
-    # --- Step 1 & 2: Cleanup and Get Session Docs ---
     if teacher_id and session_id:
         await cleanup_expired_documents(teacher_id, session_id)
         all_available_docs = await get_all_session_documents(teacher_id, session_id)
     else:
         all_available_docs = []
-
-    # --- Step 3: Intelligent Document Selection ---
     selected_doc_ids = None
     selection_reasoning = ""
     
@@ -367,14 +339,11 @@ async def rag_node(state: GraphState) -> GraphState:
             selected_doc_ids = selection_result.get("selected_doc_ids", [])
             selection_reasoning = selection_result.get("reasoning", "")
         except Exception:
-            # Fallback handled in selection function usually, or continue
             pass
 
-    # --- Step 4: Retrieval ---
     user_docs = []
     if teacher_id and session_id:
         try:
-            # Logic: If intelligent selection picked specific docs, restrict search to those.
             if selected_doc_ids:
                 doc_map = {d["id"]: d for d in all_available_docs if d.get("id")}
                 tasks = []
@@ -386,7 +355,7 @@ async def rag_node(state: GraphState) -> GraphState:
                             teacher_id=teacher_id,
                             session_id=session_id,
                             query=query,
-                            top_k=4, # Slightly higher per doc for better context
+                            top_k=4,
                             score_threshold=0.3,
                             filter_doc_url=target_url
                         ))
@@ -394,8 +363,6 @@ async def rag_node(state: GraphState) -> GraphState:
                     results = await asyncio.gather(*tasks)
                     for res in results:
                         user_docs.extend(res)
-            
-            # Fallback: Frontend filter or Global Search
             elif doc_url:
                 user_docs = await retrieve_relevant_documents(
                     teacher_id=teacher_id, session_id=session_id, query=query,
@@ -408,22 +375,15 @@ async def rag_node(state: GraphState) -> GraphState:
                 )
         except Exception as e:
             print(f"[RAG] ❌ Retrieval failed: {e}")
-
-    # --- Step 5: Construct XML Context (The "Best RAG" Part) ---
-    
-    # 5a. Format Retrieved Documents
     xml_documents = ""
     if user_docs:
         doc_entries = []
         for i, doc in enumerate(user_docs):
-            # Extract metadata
             meta = doc.metadata or {}
             filename = _escape_xml(meta.get("filename", "Unknown File"))
             file_type = _escape_xml(meta.get("file_type", "unknown"))
             page_num = meta.get("page_number") or meta.get("page") or "N/A"
             content = _escape_xml(doc.page_content)
-            
-            # Create a structured XML entry for each chunk
             entry = (
                 f'    <search_result index="{i+1}">\n'
                 f'        <metadata>\n'
@@ -440,26 +400,20 @@ async def rag_node(state: GraphState) -> GraphState:
     else:
         xml_documents = "<retrieved_context>\n    <status>No relevant document segments found for this specific query.</status>\n</retrieved_context>"
 
-    # 5b. Format Conversation History
     xml_history = ""
     if messages:
         hist_entries = []
-        # Get last 5 messages for context
         for m in messages[-5:]:
             role = "user" if isinstance(m, HumanMessage) or (getattr(m, 'type', '') == 'human') else "assistant"
             content = _escape_xml(m.content if hasattr(m, 'content') else str(m))
             hist_entries.append(f'    <turn speaker="{role}">\n        {content}\n    </turn>')
         xml_history = "<conversation_history>\n" + "\n".join(hist_entries) + "\n</conversation_history>"
-
-    # 5c. Format Teacher/Student Metadata
     teacher_data = state.get("teacher_data", {})
     xml_teacher = ""
     if teacher_data:
         t_info = _escape_xml(format_teacher_data(teacher_data))
         xml_teacher = f"<teacher_profile>\n{t_info}\n</teacher_profile>"
 
-    # --- Step 6: The XML System Prompt ---
-    
     system_prompt = f"""You are an expert AI Tutor. Your goal is to answer the user's question accurately using ONLY the provided XML context.
 
 <input_data>
@@ -484,19 +438,10 @@ async def rag_node(state: GraphState) -> GraphState:
 </current_user_query>
 
 Answer the user's query now based on the XML data above."""
-
-    # --- Step 7: Call LLM ---
-    model_name = state.get("model") or "x-ai/grok-4.1-fast"
-    llm = get_llm(model_name, temperature=0.5) # Lower temp for more factual adherence
-    
-    # We pass the prompt as a SystemMessage. 
-    # Since we embedded history in the XML, we can technically just pass the system prompt 
-    # and the final human message, but keeping the message chain is safer for some models.
+    model_name = state.get("model") 
+    llm = get_llm(model_name, temperature=0.5) 
     
     llm_messages = [SystemMessage(content=system_prompt)]
-    
-    # Note: We already embedded history in the XML for context, but LangChain stream 
-    # usually expects the message object for the current turn.
     llm_messages.append(HumanMessage(content=query))
     
     full_response, _ = await stream_with_token_tracking(

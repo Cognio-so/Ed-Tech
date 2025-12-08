@@ -205,6 +205,7 @@ async def analyze_query(
     """
     Analyze user query using LLM to decide routing.
     Supports: RAG, WebSearch, SimpleLLM, Image
+    Note: Image routing is based on explicit generation/editing verbs in query, not is_image flag.
     """
     try:
         # Build uploaded images context
@@ -246,15 +247,15 @@ async def analyze_query(
 
 <system_state>
 <document_available>{bool(doc_url)}</document_available>
-<websearch_enabled>{is_websearch}</websearch_enabled>
-<image_intent_flag>{is_image}</image_intent_flag>{uploaded_images_text}{doc_context_text}
+<websearch_enabled>{is_websearch}</websearch_enabled>{uploaded_images_text}{doc_context_text}
 </system_state>
 </context>
 
 <task>
 Analyze the query and full conversation history, then return JSON with execution_order (list of node names) and reasoning.
 Available nodes: SimpleLLM, RAG, WebSearch, Image
-Consider the conversation context, uploaded documents, and image intent flag when making routing decisions.
+Route to Image node when user explicitly requests image generation/editing with action verbs (generate, create, make, edit, modify, etc.).
+Consider the conversation context and uploaded documents when making routing decisions.
 </task>"""
         
         messages = [
@@ -377,7 +378,7 @@ async def orchestrator_node(state: GraphState) -> GraphState:
             state["img_urls"] = []
         
         # Handle image editing scenario
-        if len(edit_img_urls) == len(new_uploaded_docs) and is_image and plan[0].lower() == "image":
+        if len(edit_img_urls) == len(new_uploaded_docs) and plan[0].lower() == "image":
             state["img_urls"] = edit_img_urls
             print(f"[Orchestrator] Image editing scenario detected")
         elif uploaded_doc:

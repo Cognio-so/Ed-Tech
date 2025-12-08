@@ -20,7 +20,7 @@ async def image_node(state: GraphState) -> GraphState:
     Image generation node.
     Generates educational images based on the topic.
     """
-    topic = state.get("topic", "")
+    topic = state.get("user_query", "")
     subject = state.get("subject", "")
     student_data = state.get("student_data", {})
     grade = student_data.get("grade", "") if isinstance(student_data, dict) else ""
@@ -28,12 +28,11 @@ async def image_node(state: GraphState) -> GraphState:
     
     try:
         generator = ImageGenerator()
-        
-        # Create schema for image generation
+
         schema_dict = {
             "topic": topic,
             "grade_level": grade,
-            "preferred_visual_type": "diagram",  # Can be 'image', 'chart', or 'diagram'
+            "preferred_visual_type": "diagram",  
             "subject": subject,
             "instructions": f"Create an educational {topic} diagram for grade {grade} {subject} class",
             "difficulty_flag": "false",
@@ -51,8 +50,7 @@ async def image_node(state: GraphState) -> GraphState:
     except Exception as e:
         state["image_result"] = None
         print(f"Image generation error: {e}")
-    
-    # Store response for orchestrator
+    print("image_result", state["image_result"])    
     if state.get("image_result"):
         state["response"] = f"Image generated successfully: {state['image_result'][:50]}..."
     else:
