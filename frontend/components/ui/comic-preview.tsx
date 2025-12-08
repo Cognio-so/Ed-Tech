@@ -3,8 +3,9 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Save, Download } from "lucide-react"
+import { Save, Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { uploadMultipleToCloudinary } from "@/lib/cloudinary"
 
 interface ComicPanel {
   index: number
@@ -19,7 +20,7 @@ interface ComicPreviewProps {
     panels?: ComicPanel[]
   }
   topic: string
-  onSave: () => void
+  onSave: (updatedContent: { story?: string; panels?: ComicPanel[] }) => void | Promise<void>
   onClose: () => void
 }
 
@@ -29,6 +30,53 @@ export function ComicPreview({
   onSave,
   onClose,
 }: ComicPreviewProps) {
+  const [isUploading, setIsUploading] = React.useState(false);
+
+  const handleSave = async () => {
+    if (!content.panels || content.panels.length === 0) {
+      toast.error("No comic panels to save");
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      // Extract image URLs from panels
+      const imageUrls = content.panels.map((panel) => panel.url);
+      
+      // Upload all images to Cloudinary in parallel
+      toast.info("Uploading comic images to Cloudinary...");
+      const cloudinaryUrls = await uploadMultipleToCloudinary(
+        imageUrls,
+        `comic_${topic?.replace(/\s+/g, "_") || "comic"}_${Date.now()}`
+      );
+
+      // Update panels with Cloudinary URLs
+      const updatedPanels: ComicPanel[] = content.panels.map((panel, index) => ({
+        ...panel,
+        url: cloudinaryUrls[index],
+      }));
+
+      // Create updated content with Cloudinary URLs
+      const updatedContent = {
+        story: content.story,
+        panels: updatedPanels,
+      };
+
+      // Call onSave with updated content
+      await onSave(updatedContent);
+      toast.success("Comic saved successfully");
+    } catch (error) {
+      console.error("Error saving comic:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to upload and save comic"
+      );
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleDownload = () => {
     if (!content.panels || content.panels.length === 0) {
       toast.error("No comic panels to download")
@@ -127,10 +175,20 @@ export function ComicPreview({
               <Button
                 variant="default"
                 size="sm"
-                onClick={onSave}
+                onClick={handleSave}
+                disabled={isUploading}
               >
-                <Save className="mr-2 h-4 w-4" />
-                Save
+                {isUploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Save
+                  </>
+                )}
               </Button>
             </div>
           </DialogTitle>
@@ -144,35 +202,78 @@ export function ComicPreview({
           )}
           {content.panels && content.panels.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {content.panels.map((panel) => (
-                <div key={panel.index} className="border rounded-lg p-4 bg-muted/50">
-                  {panel.url ? (
-                    <img
-                      src={panel.url}
-                      alt={`Panel ${panel.index}`}
-                      className="w-full h-auto rounded-lg mb-2"
-                      onError={(e) => {
-                        console.error("Image load error for panel", panel.index, panel.url?.substring(0, 50))
-                        const target = e.target as HTMLImageElement
-                        target.style.display = 'none'
-                      }}
-                    />
-                  ) : (
-                    <div className="w-full h-48 bg-muted rounded-lg mb-2 flex items-center justify-center">
-                      <p className="text-muted-foreground">Loading image...</p>
-                    </div>
-                  )}
-                  {panel.footer_text && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      {panel.footer_text}
-                    </p>
-                  )}
-                </div>
-              ))}
+              {content.panels.map((panel) => {
+                const hasImageUrl = panel.url && panel.url.length > 0;
+                const isBase64 = hasImageUrl && panel.url.startsWith("data:image");
+                
+                return (
+                  <div key={panel.index} className="border rounded-lg p-4 bg-muted/50">
+                    {hasImageUrl ? (
+                      <div className="relative">
+                        <img
+                          src={panel.url}
+                          alt={`Panel ${panel.index + 1}`}
+                          className="w-full h-auto rounded-lg mb-2 object-contain bg-white"
+                          loading="lazy"
+                          onError={(e) => {
+                            console.error("Image load error for panel", panel.index, {
+                              urlLength: panel.url?.length,
+                              urlPreview: panel.url?.substring(0, 100),
+                              isBase64: isBase64
+                            });
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            // Show error message
+                            const parent = target.parentElement;
+                            if (parent) {
+                              const errorDiv = document.createElement('div');
+                              errorDiv.className = 'w-full h-48 bg-muted rounded-lg mb-2 flex items-center justify-center';
+                              errorDiv.innerHTML = '<p class="text-muted-foreground text-sm">Failed to load image</p>';
+                              parent.appendChild(errorDiv);
+                            }
+                          }}
+                          onLoad={(e) => {
+                            // Ensure image is visible when loaded
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'block';
+                            console.log("Panel image loaded successfully:", panel.index);
+                          }}
+                        />
+                        {isBase64 && (
+                          <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                            Base64 Image
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="w-full h-48 bg-muted rounded-lg mb-2 flex items-center justify-center">
+                        <div className="text-center">
+                          <p className="text-muted-foreground">Generating panel {panel.index + 1}...</p>
+                          {panel.prompt && (
+                            <p className="text-xs text-muted-foreground mt-2 max-w-xs truncate">
+                              {panel.prompt.substring(0, 100)}...
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {panel.footer_text && (
+                      <p className="text-sm text-muted-foreground mt-2">
+                        {panel.footer_text}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="border rounded-lg p-4 bg-muted/50 text-center">
               <p className="text-muted-foreground">No panels available. Images may still be generating...</p>
+              {content.story && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Story content is ready, waiting for images...
+                </p>
+              )}
             </div>
           )}
         </div>

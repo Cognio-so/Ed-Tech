@@ -97,9 +97,9 @@ export function ImageForm({ initialGrades, initialSubjects }: ImageFormProps) {
     }
   };
 
-  const handleSave = async () => {
-    if (!generatedContent) {
-      toast.error("No content to save");
+  const handleSave = async (cloudinaryUrl: string) => {
+    if (!cloudinaryUrl) {
+      toast.error("No image URL to save");
       return;
     }
 
@@ -107,12 +107,11 @@ export function ImageForm({ initialGrades, initialSubjects }: ImageFormProps) {
     const formData = new FormData();
     formData.append("contentType", "image");
     formData.append("title", `Image - ${values.topic}`);
-    formData.append("content", generatedContent);
+    formData.append("content", cloudinaryUrl);
     formData.append("metadata", JSON.stringify(values));
 
     try {
       await saveMediaContent(formData);
-      toast.success("Image saved successfully");
       setShowPreview(false);
       setGeneratedContent(null);
       form.reset();

@@ -20,20 +20,30 @@ export async function saveMediaContent(formData: FormData) {
     const content = formData.get("content") as string;
     const metadata = formData.get("metadata") as string;
 
-    const data = {
-      userId: session.user.id,
-      title,
-      content,
-      metadata: metadata || null,
-    };
-
     switch (contentType) {
-      case "slide":
+      case "slide": {
+        const data = {
+          userId: session.user.id,
+          title,
+          content,
+          metadata: metadata || null,
+        };
         await prisma.slide.create({ data });
         break;
-      case "image":
+      }
+      case "image": {
+        // For images, store the Cloudinary URL in both content and url fields
+        const data = {
+          userId: session.user.id,
+          contentType: "image",
+          title,
+          content, // Keep for backward compatibility
+          url: content, // Store Cloudinary URL in dedicated url field
+          metadata: metadata || null,
+        };
         await prisma.image.create({ data });
         break;
+      }
       case "web":
         await prisma.webSearch.create({ data });
         break;

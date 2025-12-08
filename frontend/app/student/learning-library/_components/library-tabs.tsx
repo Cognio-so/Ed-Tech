@@ -2,31 +2,23 @@
 
 import * as React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ContentCard } from "@/components/ui/content-card";
+import { LearningLibraryCard } from "./learning-library-card";
+import { LearningDialog } from "./learning-dialog";
 import { StudentContent } from "@/data/get-student-content";
-import { AssessmentPreview } from "@/app/teacher/assessment-generation/_components/assessment-preview";
-import { SlidePreview } from "@/components/ui/slide-preview";
-import { ImagePreview } from "@/components/ui/image-preview";
-import { VideoPreview } from "@/components/ui/video-preview";
-import { ComicPreview } from "@/components/ui/comic-preview";
-import { WebSearchPreview } from "@/components/ui/web-search-preview";
-import { ContentPreview } from "@/app/teacher/media-toolkit/_components/content-preview";
-import { DownloadDialog } from "@/components/ui/download-dialog";
-import { toast } from "sonner";
+import { getSubmissionByContentId } from "../action";
+import type { SubmissionResult } from "./learning-dialog";
 
 interface LibraryTabsProps {
   content: StudentContent[];
 }
 
 export function LibraryTabs({ content }: LibraryTabsProps) {
-  const [previewItem, setPreviewItem] = React.useState<StudentContent | null>(
+  const [selectedContent, setSelectedContent] = React.useState<StudentContent | null>(
     null
   );
-  const [showDownloadDialog, setShowDownloadDialog] = React.useState(false);
-  const [downloadContent, setDownloadContent] = React.useState<{
-    content: string;
-    title: string;
-  } | null>(null);
+  const [isLearningDialogOpen, setIsLearningDialogOpen] = React.useState(false);
+  const [existingResults, setExistingResults] = React.useState<SubmissionResult | null>(null);
+  const [submissionMap, setSubmissionMap] = React.useState<Map<string, SubmissionResult>>(new Map());
 
   const lessonPlanContent = content.filter(
     (item) => item.contentType === "lesson_plan"
@@ -59,128 +51,75 @@ export function LibraryTabs({ content }: LibraryTabsProps) {
     comic: comicContent.length,
   };
 
-  const handlePreview = (item: StudentContent) => {
-    setPreviewItem(item);
-  };
-
-  const handleClosePreview = () => {
-    setPreviewItem(null);
-  };
-
-  const handleDownload = async (item: StudentContent) => {
-    try {
-      if (!item.content) {
-        toast.error("No content to download");
-        return;
+  // Load submissions for all content types on mount
+  React.useEffect(() => {
+    const loadSubmissions = async () => {
+      // Check submissions for all content types that can be submitted
+      const submittableContentTypes = [
+        "assessment",
+        "quiz",
+        "lesson_plan",
+        "worksheet",
+        "presentation",
+      ];
+      
+      const submittableItems = content.filter((item) =>
+        submittableContentTypes.includes(item.contentType)
+      );
+      
+      const submissions = new Map<string, SubmissionResult>();
+      
+      for (const item of submittableItems) {
+        try {
+          const submission = await getSubmissionByContentId(item.id);
+          if (submission) {
+            submissions.set(item.id, submission);
+          }
+        } catch (error) {
+          console.error(`Error loading submission for ${item.id}:`, error);
+        }
       }
+      
+      setSubmissionMap(submissions);
+    };
+    
+    loadSubmissions();
+  }, [content]);
 
-      let contentToDownload = item.content;
-
+  const handleStartLearning = async (item: StudentContent) => {
+    setSelectedContent(item);
+    
+    // Check if there's an existing submission for any content type
+    const existingSubmission = submissionMap.get(item.id);
+    if (existingSubmission) {
+      setExistingResults(existingSubmission);
+    } else {
+      // Try to fetch it if not in map
       try {
-        const parsed = JSON.parse(item.content);
-        if (parsed.presentation_url) {
-          window.open(parsed.presentation_url, "_blank");
-          toast.success("Opening presentation link");
-          return;
+        const submission = await getSubmissionByContentId(item.id);
+        if (submission) {
+          setExistingResults(submission);
+          setSubmissionMap((prev) => {
+            const newMap = new Map(prev);
+            newMap.set(item.id, submission);
+            return newMap;
+          });
+        } else {
+          setExistingResults(null);
         }
-        if (parsed.video_url) {
-          window.open(parsed.video_url, "_blank");
-          toast.success("Opening video link");
-          return;
-        }
-        contentToDownload = JSON.stringify(parsed, null, 2);
-      } catch {}
-
-      setDownloadContent({
-        content: contentToDownload,
-        title: item.title,
-      });
-      setShowDownloadDialog(true);
-    } catch (error) {
-      console.error("Error downloading content:", error);
-      toast.error("Failed to download content");
+      } catch (error) {
+        console.error("Error fetching submission:", error);
+        setExistingResults(null);
+      }
     }
+    
+    setIsLearningDialogOpen(true);
   };
 
-  const renderPreview = () => {
-    if (!previewItem) return null;
-
-    const contentType = previewItem.contentType;
-    const content = previewItem.content;
-
-    let parsedContent: any = null;
-    try {
-      parsedContent = JSON.parse(content);
-    } catch {}
-
-    if (contentType === "assessment") {
-      return (
-        <AssessmentPreview
-          content={content}
-          topic={previewItem.topic || previewItem.title}
-          onSave={handleClosePreview}
-          onClose={handleClosePreview}
-        />
-      );
-    }
-
-    if (contentType === "slide") {
-      return (
-        <SlidePreview
-          content={parsedContent || { content }}
-          onSave={handleClosePreview}
-          onClose={handleClosePreview}
-        />
-      );
-    }
-
-    if (contentType === "image") {
-      const imageUrl =
-        parsedContent?.image_url || parsedContent?.url || content;
-      return (
-        <ImagePreview
-          imageUrl={imageUrl}
-          topic={previewItem.topic || previewItem.title}
-          onSave={handleClosePreview}
-          onClose={handleClosePreview}
-        />
-      );
-    }
-
-    if (contentType === "video") {
-      return (
-        <VideoPreview
-          content={parsedContent || { content }}
-          title={previewItem.title}
-          onSave={handleClosePreview}
-          onClose={handleClosePreview}
-        />
-      );
-    }
-
-    if (contentType === "comic") {
-      return (
-        <ComicPreview
-          content={parsedContent || { content }}
-          topic={previewItem.topic || previewItem.title}
-          onSave={handleClosePreview}
-          onClose={handleClosePreview}
-        />
-      );
-    }
-
-    return (
-      <ContentPreview
-        content={content}
-        title={previewItem.title}
-        onCopy={() => {
-          navigator.clipboard.writeText(content);
-          toast.success("Content copied to clipboard");
-        }}
-        onDownload={() => handleDownload(previewItem)}
-        onClose={handleClosePreview}
-      />
-    );
+  const handleCloseLearningDialog = () => {
+    setIsLearningDialogOpen(false);
+    setSelectedContent(null);
+    setExistingResults(null);
   };
 
   const renderContentGrid = (items: StudentContent[]) => {
@@ -221,21 +160,19 @@ export function LibraryTabs({ content }: LibraryTabsProps) {
           }
 
           return (
-            <ContentCard
+            <LearningLibraryCard
               key={item.id}
               id={item.id}
               title={item.title}
               imageUrl={imageUrl}
               imageAlt={item.title}
-              type="content"
               contentType={item.contentType}
               grade={item.grade}
               subject={item.subject}
               topic={item.topic}
               date={item.createdAt}
-              onPreview={() => handlePreview(item)}
-              onDownload={() => handleDownload(item)}
-              onDelete={() => {}}
+              onStartLearning={() => handleStartLearning(item)}
+              hasSubmission={submissionMap.has(item.id)}
             />
           );
         })}
@@ -310,16 +247,12 @@ export function LibraryTabs({ content }: LibraryTabsProps) {
         </TabsContent>
       </Tabs>
 
-      {renderPreview()}
-
-      {downloadContent && (
-        <DownloadDialog
-          open={showDownloadDialog}
-          onOpenChange={setShowDownloadDialog}
-          content={downloadContent.content}
-          title={downloadContent.title}
-        />
-      )}
+      <LearningDialog
+        content={selectedContent}
+        open={isLearningDialogOpen}
+        onClose={handleCloseLearningDialog}
+        initialResults={existingResults}
+      />
     </>
   );
 }

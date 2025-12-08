@@ -62,30 +62,59 @@ export async function POST(request: NextRequest) {
     }
 
     const decoder = new TextDecoder();
+    let buffer = "";
     const stream = new ReadableStream({
       async start(controller) {
         try {
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+              // Process any remaining buffer
+              if (buffer.trim()) {
+                const lines = buffer.split("\n");
+                for (const line of lines) {
+                  if (line.startsWith("data: ")) {
+                    const data = line.slice(6).trim();
+                    if (data) {
+                      try {
+                        const parsed = JSON.parse(data);
+                        const textEncoder = new TextEncoder();
+                        controller.enqueue(
+                          textEncoder.encode(JSON.stringify(parsed) + "\n")
+                        );
+                      } catch (e) {
+                        console.error("Error parsing final buffer:", e);
+                      }
+                    }
+                  }
+                }
+              }
+              break;
+            }
 
-            const chunk = decoder.decode(value, { stream: true });
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            // Keep the last incomplete line in buffer
+            buffer = lines.pop() || "";
 
-            const lines = chunk.split("\n");
             for (const line of lines) {
               if (line.startsWith("data: ")) {
-                const data = line.slice(6);
-                try {
-                  const parsed = JSON.parse(data);
-                  const textEncoder = new TextEncoder();
-                  controller.enqueue(
-                    textEncoder.encode(JSON.stringify(parsed) + "\n")
-                  );
-                } catch (e) {
-                  const textEncoder = new TextEncoder();
-                  controller.enqueue(textEncoder.encode(data + "\n"));
+                const data = line.slice(6).trim();
+                if (data) {
+                  try {
+                    const parsed = JSON.parse(data);
+                    const textEncoder = new TextEncoder();
+                    controller.enqueue(
+                      textEncoder.encode(JSON.stringify(parsed) + "\n")
+                    );
+                  } catch (e) {
+                    // If parsing fails, it might be a partial JSON (long base64 string)
+                    // Skip it for now, it will be handled in the next chunk
+                    console.warn("Partial JSON detected, buffering...");
+                  }
                 }
               } else if (line.trim() && !line.startsWith(":")) {
+                // Handle non-SSE lines
                 const textEncoder = new TextEncoder();
                 controller.enqueue(textEncoder.encode(line + "\n"));
               }

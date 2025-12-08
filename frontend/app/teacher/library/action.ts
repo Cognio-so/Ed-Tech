@@ -144,15 +144,13 @@ export async function addToLesson(formData: FormData) {
         if (!originalContent || originalContent.userId !== session.user.id) {
           throw new Error("Content not found or unauthorized");
         }
-        let parsedContent: any = {};
-        try {
-          parsedContent = JSON.parse(originalContent.content);
-        } catch {}
+        // Use url field if available (new format), otherwise fallback to content field
+        const imageUrl = (originalContent as any).url || originalContent.content;
         lessonItemData = {
           ...lessonItemData,
           title: originalContent.title,
-          content: originalContent.content,
-          imageUrl: parsedContent.image_url || parsedContent.url || originalContent.content,
+          content: imageUrl, // Store the Cloudinary URL in content
+          imageUrl: imageUrl, // Also store in imageUrl field for easy access
           metadata: originalContent.metadata,
         };
         break;
