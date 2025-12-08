@@ -69,26 +69,24 @@
         <node>
             <name>Image</name>
             <description>
-                Use when the user requests image GENERATION or EDITING. Requires BOTH explicit action verbs
-                AND is_image flag to be true. NOT for prompt writing or image analysis.
+                Use when the user explicitly requests image GENERATION or EDITING with action verbs.
+                NOT for prompt writing or image analysis.
             </description>
             <use_cases>
                 - Image generation with explicit verbs: "generate", "create", "make", "draw", "produce"
                 - Image editing with explicit verbs: "edit", "modify", "change", "adjust", "enhance", "brighten"
-                - When is_image flag is TRUE and query contains action verbs
-                - Follow-up editing after Image node (when is_image is still true)
+                - When query contains explicit action verbs for image generation/editing
+                - Follow-up editing after Image node with editing verbs
             </use_cases>
             <do_not_use>
                 - Prompt generation requests ("give me a prompt for...", "create a prompt for...")
                 - Image analysis ("what's in this image", "describe this image") → Use RAG
                 - General questions about images without action verbs → Use SimpleLLM
-                - When is_image flag is FALSE
             </do_not_use>
             <requirement>
-                STRICT: Route to Image ONLY if ALL conditions met:
-                1. is_image flag is TRUE
-                2. Query contains EXPLICIT action verbs (generate, create, make, edit, modify, etc.)
-                3. Query is NOT asking for prompt generation/writing
+                Route to Image when:
+                1. Query contains EXPLICIT action verbs (generate, create, make, edit, modify, etc.) for images
+                2. Query is NOT asking for prompt generation/writing
             </requirement>
         </node>
     </available_nodes>
@@ -96,9 +94,9 @@
     <routing_logic>
         <priority>
             1. Prompt generation requests ("give a prompt", "create a prompt") → SimpleLLM (NOT Image)
-            2. Follow-up after Image with editing verbs AND is_image=true → Image
-            3. Images uploaded AND editing verbs AND is_image=true → Image (NOT RAG)
-            4. Explicit generation/editing verbs AND is_image=true AND NOT prompt request → Image
+            2. Follow-up after Image with editing verbs → Image
+            3. Images uploaded AND editing verbs → Image (NOT RAG)
+            4. Explicit generation/editing verbs AND NOT prompt request → Image
             5. New documents uploaded (new_uploaded_docs) AND analysis query → RAG
             6. Text pasted in query for processing → SimpleLLM
             7. Document/image reference for ANALYSIS OR last_route=RAG + follow-up → RAG
@@ -114,7 +112,7 @@
             - Look for keywords indicating document/image analysis needs
             - Detect follow-up questions and maintain routing context
             - Check session summary for long-term context
-            - Respect is_image flag strictly
+            - Route to Image node when user explicitly requests image generation/editing with action verbs
             - When new_uploaded_docs is present, strongly prefer RAG for analysis
             - Distinguish between image ANALYSIS (RAG) and image EDITING (Image node)
             - Distinguish between prompt REQUESTS (SimpleLLM) and image GENERATION (Image node)
@@ -135,21 +133,21 @@
         </rule>
         
         <rule type="Image">
-            When images uploaded AND editing verbs AND is_image=true:
+            When images uploaded AND editing verbs:
             <indicators>Editing verbs: "edit this image", "make it brighter", "change the color", "add something", "remove background", "adjust", "enhance"</indicators>
-            <action>Route to Image node for editing, NOT RAG. is_image flag MUST be true.</action>
+            <action>Route to Image node for editing, NOT RAG.</action>
         </rule>
         
         <rule type="Image_followup">
-            When last_route=Image AND editing verbs AND is_image=true:
+            When last_route=Image AND editing verbs:
             <indicators>Editing verbs: "make it brighter", "change the color", "add effects", "modify", "adjust"</indicators>
-            <action>Route to Image node. is_image flag MUST be true.</action>
+            <action>Route to Image node.</action>
         </rule>
         
         <rule type="Image_prompt_queries">
             When query asks FOR prompt generation/writing:
             <indicators>"give a prompt for...", "create a prompt for...", "write a prompt for...", "suggest a prompt", "what prompt for..."</indicators>
-            <action>Route to SimpleLLM, NOT Image node. Even if is_image=true and query has action verbs like "create".</action>
+            <action>Route to SimpleLLM, NOT Image node. Even if query has action verbs like "create".</action>
             <critical>If query says "create a prompt" or "generate a prompt", it means asking FOR text/prompt writing, NOT image generation.</critical>
         </rule>
         
@@ -181,13 +179,13 @@
     
     <critical_rules>
         <rule>SINGLE NODE PREFERENCE: RAG and WebSearch nodes generate their own final responses. Do NOT append SimpleLLM unless there is a distinct, separate task (e.g., "Search for X, THEN write a poem about it").</rule>
-        <rule>NEW DOCUMENTS: If new_uploaded_docs contains files, strongly prefer RAG for analysis UNLESS query is clearly for image editing (with explicit action verbs AND is_image=true).</rule>
+        <rule>NEW DOCUMENTS: If new_uploaded_docs contains files, strongly prefer RAG for analysis UNLESS query is clearly for image editing (with explicit action verbs).</rule>
         <rule>DOCUMENT TYPES: new_uploaded_docs can contain pdf, docx, txt, xlsx, csv, image (for analysis), etc.</rule>
-        <rule>FOLLOW-UPS: Continue same route (WebSearch→WebSearch, RAG→RAG, Image→Image) when appropriate, respecting flags.</rule>
-        <rule>IMAGE NODE: Requires BOTH (1) explicit generation/editing action verbs AND (2) is_image=true AND (3) NOT prompt request.</rule>
-        <rule>IMAGE EDITING: If images uploaded AND editing verbs AND is_image=true → Image node (NOT RAG).</rule>
+        <rule>FOLLOW-UPS: Continue same route (WebSearch→WebSearch, RAG→RAG, Image→Image) when appropriate.</rule>
+        <rule>IMAGE NODE: Route when query contains explicit generation/editing action verbs (generate, create, make, edit, modify, etc.) AND NOT prompt request.</rule>
+        <rule>IMAGE EDITING: If images uploaded AND editing verbs → Image node (NOT RAG).</rule>
         <rule>IMAGE ANALYSIS: "What's in image", "describe image", "extract text from image" → RAG (NOT Image node).</rule>
-        <rule>PROMPT REQUESTS: "Give a prompt for...", "create a prompt for..." → SimpleLLM (NOT Image), even if is_image=true.</rule>
+        <rule>PROMPT REQUESTS: "Give a prompt for...", "create a prompt for..." → SimpleLLM (NOT Image).</rule>
         <rule>FACTUAL QUERIES: Route to WebSearch ONLY if no pasted text AND no document references AND no new_uploaded_docs.</rule>
         <rule>PASTED TEXT: If text content is pasted directly in query for processing → SimpleLLM.</rule>
         <rule>UNCERTAIN: When uncertain, prefer SimpleLLM over WebSearch.</rule>
@@ -247,18 +245,18 @@
         
         <example>
             <query>Generate an image of a sunset over mountains</query>
-            <context>is_image flag is true, explicit generation verb</context>
+            <context>Explicit generation verb "generate"</context>
             <output>
                 {
                     "execution_order": ["Image"],
-                    "reasoning": "Image generation requested with explicit verb 'generate' and is_image flag is true"
+                    "reasoning": "Image generation requested with explicit verb 'generate'"
                 }
             </output>
         </example>
         
         <example>
             <query>Give me a prompt for generating a sunset image</query>
-            <context>is_image flag is true, but asking for prompt</context>
+            <context>Asking for prompt generation, not image generation</context>
             <output>
                 {
                     "execution_order": ["SimpleLLM"],
@@ -269,11 +267,11 @@
         
         <example>
             <query>Make this image brighter</query>
-            <context>Image uploaded, is_image flag is true, editing verb</context>
+            <context>Image uploaded, editing verb "make"</context>
             <output>
                 {
                     "execution_order": ["Image"],
-                    "reasoning": "Image editing requested with explicit verb 'make' and is_image flag is true"
+                    "reasoning": "Image editing requested with explicit verb 'make'"
                 }
             </output>
         </example>

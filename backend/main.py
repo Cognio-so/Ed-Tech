@@ -246,6 +246,26 @@ async def create_teacher_session(
     }
 
 
+@app.post("/api/student/{student_id}/sessions", tags=["Session"])
+async def create_student_session(
+    student_id: str,
+    existing_session_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create a session for a student or reuse an existing one if provided.
+    """
+    print(f"Creating session for student {student_id} with existing_session_id: {existing_session_id}")
+    session_id = await StudentSessionManager.create_session(student_id, existing_session_id)
+    session = await StudentSessionManager.get_session(session_id)
+    print(f"session_id: {session_id}, session: {session}")
+    return {
+        "session_id": session_id,
+        "student_id": student_id,
+        "created_at": session.get("created_at"),
+        "messages": session.get("messages", []),
+    }
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize background tasks on application startup."""
