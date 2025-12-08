@@ -197,7 +197,6 @@ export function ChatMessageComponent({
                               console.error("Failed to load image:", idx, url.substring(0, 50));
                               const target = e.target as HTMLImageElement;
                               target.style.display = 'none';
-                              // Show error message
                               const parent = target.parentElement;
                               if (parent) {
                                 const errorDiv = document.createElement('div');
@@ -205,9 +204,6 @@ export function ChatMessageComponent({
                                 errorDiv.innerHTML = '<p class="text-muted-foreground text-sm">Failed to load image</p>';
                                 parent.appendChild(errorDiv);
                               }
-                            }}
-                            onLoad={() => {
-                              console.log("Image loaded successfully:", idx);
                             }}
                           />
                           {isBase64 && (
@@ -221,7 +217,6 @@ export function ChatMessageComponent({
                                 e.preventDefault();
                                 e.stopPropagation();
                                 if (isBase64) {
-                                  // Handle base64 download
                                   const link = document.createElement("a");
                                   link.href = url;
                                   link.download = `image-${idx + 1}.png`;
@@ -420,3 +415,4 @@ export function ChatMessages({
     </div>
   );
 }
+

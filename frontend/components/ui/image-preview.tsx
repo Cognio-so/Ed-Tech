@@ -18,6 +18,7 @@ interface ImagePreviewProps {
   onSave: ((cloudinaryUrl: string) => void | Promise<void>) | (() => void | Promise<void>);
   onClose: () => void;
   skipUpload?: boolean; // If true, skip Cloudinary upload and call onSave directly
+  buttonText?: string; // Custom button text (default: "Save")
 }
 
 export function ImagePreview({
@@ -26,6 +27,7 @@ export function ImagePreview({
   onSave,
   onClose,
   skipUpload = false,
+  buttonText = "Save",
 }: ImagePreviewProps) {
   const [isUploading, setIsUploading] = React.useState(false);
 
@@ -110,7 +112,7 @@ export function ImagePreview({
                 ) : (
                   <>
                     <Save className="mr-2 h-4 w-4" />
-                    Save
+                    {buttonText}
                   </>
                 )}
               </Button>

@@ -14,9 +14,10 @@ interface SlidePreviewProps {
   }
   onSave: () => void
   onClose: () => void
+  buttonText?: string; // Custom button text (default: "Save")
 }
 
-export function SlidePreview({ content, onSave, onClose }: SlidePreviewProps) {
+export function SlidePreview({ content, onSave, onClose, buttonText = "Save" }: SlidePreviewProps) {
   const handleDownload = () => {
     if (content.presentation_url) {
       window.open(content.presentation_url, "_blank")
@@ -67,7 +68,7 @@ export function SlidePreview({ content, onSave, onClose }: SlidePreviewProps) {
                 onClick={onSave}
               >
                 <Save className="mr-2 h-4 w-4" />
-                Save
+                {buttonText}
               </Button>
             </div>
           </DialogTitle>

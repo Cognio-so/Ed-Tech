@@ -194,13 +194,13 @@ async def generate_assessment(
         1. "# Assessment Overview" summarizing subject, grade, topic, duration, and difficulty.
         2. "## Learning Objectives" with bullet points directly tied to the provided learning objective.
         3. "## Teacher Notes" including guidance on administering the assessment, confidence scaffolds, and differentiation ideas.
-        4. "## Questions" containing one sequentially numbered block per question (Question 1, Question 2, ...). Do **not** label blocks with the question type. Within each block:
-           - Start with `Question X:` followed by the prompt.
+        4. "## Questions" containing one sequentially numbered block per question (Question 1, Question 2, ...). Each block must include the question type. Within each block:
+           - Start with `Question X: [Type]` where [Type] is one of: "Multiple Choice", "True or False", or "Short Answer", followed by the prompt.
            - If it is a multiple-choice item, list options A–D on their own lines and include `Correct Answer: <letter>` plus a short rationale sentence.
            - If it is a true/false item, show the statement, the words "True / False" on a separate line, and add `Correct Answer: True` (or False) with a justification sentence.
            - If it is a short-answer item, provide a response placeholder (e.g., "Enter your answer here...") and add `Correct Answer:` with the ideal response plus scoring notes.
         Avoid adding standalone sections titled "Answer Key" or "Scoring & Feedback"; all answers must appear inline within the corresponding question block.
-        Ensure numbering is continuous regardless of type and only reference the type in the instructions as described above.
+        Ensure numbering is continuous regardless of type and always include the question type label in the format `Question X: [Type]`.
         If any custom instructions are provided, integrate them naturally into the relevant sections without creating new headings.
         Avoid extra commentary outside the sections above and ensure the tone is supportive and actionable for teachers.
     </instructions>

@@ -35,8 +35,10 @@ model User {
   comics        Comic[]
   videos        Video[]
   conversations TeacherConversation[]
+  studentConversations StudentConversation[]
   lessons       Lesson[]
   submissions   StudentSubmission[]
+  achievements  StudentAchievement[]
 
   @@unique([email])
   @@map("user")
@@ -340,4 +342,36 @@ model StudentSubmission {
   @@index([userId])
   @@index([contentId])
   @@map("student_submission")
+}
+
+model StudentAchievement {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalScore  Float    @default(100000)
+  currentTier String   @default("starter")
+  unlockedTiers String @db.Text
+  metadata    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId])
+  @@index([userId])
+  @@index([currentTier])
+  @@map("student_achievement")
+}
+
+model StudentConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  messages  String   @db.Text
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("student_conversation")
 }

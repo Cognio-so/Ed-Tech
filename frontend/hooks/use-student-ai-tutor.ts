@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
-import { saveConversation } from "@/app/teacher/history/action";
+import { saveStudentConversation } from "@/app/student/history/action";
 
 export interface ChatMessage {
   id: string;
@@ -28,15 +28,15 @@ export interface ChatMessage {
   }>;
 }
 
-export interface UseAITutorOptions {
+export interface UseStudentAITutorOptions {
   onMessage?: (message: ChatMessage) => void;
   onError?: (error: string) => void;
   sessionId?: string;
 }
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-export function useAITutor(options?: UseAITutorOptions) {
+export function useStudentAITutor(options?: UseStudentAITutorOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
@@ -57,8 +57,11 @@ export function useAITutor(options?: UseAITutorOptions) {
     async (
       message: string,
       messageOptions?: {
-        teacherData?: Record<string, any>;
-        studentData?: Record<string, any>;
+        studentProfile?: Record<string, any>;
+        pendingAssignments?: Array<Record<string, any>>;
+        completedAssignments?: Array<Record<string, any>>;
+        achievements?: string[];
+        assessmentData?: Record<string, any>;
         topic?: string;
         subject?: string;
         docUrl?: string;
@@ -99,7 +102,7 @@ export function useAITutor(options?: UseAITutorOptions) {
       setMessages((prev) => [...prev, assistantMessage]);
 
       if (!session?.user?.id) {
-        toast.error("Please log in to use AI Tutor");
+        toast.error("Please log in to use AI Assistant");
         setMessages((prev) =>
           prev.filter((msg) => msg.id !== assistantMessageId)
         );
@@ -107,16 +110,18 @@ export function useAITutor(options?: UseAITutorOptions) {
         return;
       }
 
-      const teacherId = session.user.id;
+      const studentId = session.user.id;
       const currentSessionId =
-        sessionIdRef.current || `session_${teacherId}_${Date.now()}`;
+        sessionIdRef.current || `session_${studentId}_${Date.now()}`;
       sessionIdRef.current = currentSessionId;
 
       try {
         const backendPayload = {
           message,
-          teacher_data: messageOptions?.teacherData || null,
-          student_data: messageOptions?.studentData || null,
+          student_profile: messageOptions?.studentProfile || null,
+          pending_assignments: messageOptions?.pendingAssignments || null,
+          achievements: messageOptions?.achievements || null,
+          assessment_data: messageOptions?.assessmentData || null,
           topic: messageOptions?.topic || null,
           subject: messageOptions?.subject || null,
           doc_url: messageOptions?.docUrl || null,
@@ -124,15 +129,14 @@ export function useAITutor(options?: UseAITutorOptions) {
           model: messageOptions?.model || null,
         };
 
-        // Log the payload being sent to backend
         console.log("📤 Sending payload to backend:", {
-          endpoint: `${BACKEND_URL}/api/teacher/${teacherId}/session/${currentSessionId}/stream-chat?stream=true`,
+          endpoint: `${BACKEND_URL}/api/student/${studentId}/session/${currentSessionId}/stream-chat?stream=true`,
           payload: backendPayload,
-          teacherId,
+          studentId,
           sessionId: currentSessionId,
         });
 
-        const endpoint = `${BACKEND_URL}/api/teacher/${teacherId}/session/${currentSessionId}/stream-chat?stream=true`;
+        const endpoint = `${BACKEND_URL}/api/student/${studentId}/session/${currentSessionId}/stream-chat?stream=true`;
 
         const response = await fetch(endpoint, {
           method: "POST",
@@ -145,7 +149,7 @@ export function useAITutor(options?: UseAITutorOptions) {
 
         if (!response.ok) {
           const errorText = await response.text();
-          let errorMessage = "Failed to get AI tutor response";
+          let errorMessage = "Failed to get AI assistant response";
           try {
             const errorJson = JSON.parse(errorText);
             errorMessage = errorJson.detail || errorJson.error || errorMessage;
@@ -165,7 +169,7 @@ export function useAITutor(options?: UseAITutorOptions) {
         let imageUrls: string[] = [];
         let videoUrls: string[] = [];
         let tokenUsage: { input_tokens: number; output_tokens: number; total_tokens: number } | undefined;
-        let buffer = ""; // Buffer for incomplete JSON lines
+        let buffer = "";
 
         const sessionIdHeader = response.headers.get("X-Session-Id");
         if (sessionIdHeader) {
@@ -180,12 +184,10 @@ export function useAITutor(options?: UseAITutorOptions) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
-            // Process any remaining buffer
             if (buffer.trim()) {
               try {
                 const data = JSON.parse(buffer.trim());
                 console.log("📥 Received final buffered data:", data.type);
-                // Process final buffered data if needed
               } catch (e) {
                 console.warn("⚠️ Could not parse final buffer:", buffer.substring(0, 100));
               }
@@ -196,8 +198,6 @@ export function useAITutor(options?: UseAITutorOptions) {
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
           
-          // Process complete lines (ending with \n)
-          // Keep processing while we have complete lines
           let newlineIndex;
           while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
             const line = buffer.substring(0, newlineIndex);
@@ -207,19 +207,15 @@ export function useAITutor(options?: UseAITutorOptions) {
               const jsonStr = line.slice(6).trim();
               if (!jsonStr) continue;
               
-              // Check if JSON appears complete (has matching braces)
-              // This is a heuristic - count opening and closing braces
               const openBraces = (jsonStr.match(/{/g) || []).length;
               const closeBraces = (jsonStr.match(/}/g) || []).length;
               const openBrackets = (jsonStr.match(/\[/g) || []).length;
               const closeBrackets = (jsonStr.match(/\]/g) || []).length;
               
-              // If braces/brackets don't match, the JSON is likely incomplete
-              // Keep it in buffer for next chunk
               if (openBraces > closeBraces || openBrackets > closeBrackets) {
                 buffer = line + "\n" + buffer;
-                console.log("⚠️ Incomplete JSON detected (unmatched braces), buffering...");
-                break; // Wait for more data
+                console.log("⚠️ Incomplete JSON detected, buffering...");
+                break;
               }
               
               try {
@@ -230,10 +226,7 @@ export function useAITutor(options?: UseAITutorOptions) {
                   if (data.data.chunk) {
                     let chunk = data.data.chunk;
                     
-                    // Remove "Image generated successfully:" prefix if present in chunk
                     chunk = chunk.replace(/Image\s+generated\s+successfully:\s*/gi, "");
-                    
-                    // Remove base64 data URLs from chunks
                     chunk = chunk.replace(/data:image\/[^,\s\)\]]+/g, "");
                     
                     accumulatedContent += chunk;
@@ -249,27 +242,21 @@ export function useAITutor(options?: UseAITutorOptions) {
                   } else if (data.data.full_response) {
                     let cleanedContent = data.data.full_response;
                     
-                    // Remove "Image generated successfully: data:image/..." pattern
-                    // This regex matches "Image generated successfully:" followed by a data URL (handles very long base64 strings)
                     cleanedContent = cleanedContent.replace(
                       /Image\s+generated\s+successfully:\s*data:image\/[^\s\)\]]+/gi,
                       ""
                     );
                     
-                    // Also remove standalone base64 data URLs that might be in the text
-                    // This removes data:image/... patterns that appear in the content
                     cleanedContent = cleanedContent.replace(
                       /data:image\/[^\s\)\]]+/g,
                       ""
                     );
                     
-                    // Clean up multiple spaces, newlines, and trailing punctuation
                     cleanedContent = cleanedContent
                       .replace(/\s+/g, " ")
                       .replace(/^[:\s,\.]+|[:\s,\.]+$/g, "")
                       .trim();
                     
-                    // If content is empty or only whitespace after cleaning, set to empty string
                     if (!cleanedContent || cleanedContent.trim().length === 0) {
                       cleanedContent = "";
                     }
@@ -277,11 +264,9 @@ export function useAITutor(options?: UseAITutorOptions) {
                     accumulatedContent = cleanedContent;
                     setStreamingContent(accumulatedContent);
 
-                    // Extract image URLs from response
                     if (data.data.image_result) {
                       const imageResult = data.data.image_result;
                       if (typeof imageResult === "string") {
-                        // Base64 data URL
                         if (imageResult.startsWith("data:image/")) {
                           imageUrls = [imageResult];
                         } else {
@@ -293,19 +278,16 @@ export function useAITutor(options?: UseAITutorOptions) {
                       console.log("🖼️ Extracted image URLs:", imageUrls.length);
                     }
 
-                    // Extract img_urls array if present
                     if (data.data.img_urls && Array.isArray(data.data.img_urls)) {
                       imageUrls = [...imageUrls, ...data.data.img_urls];
                       console.log("🖼️ Extracted img_urls:", data.data.img_urls.length);
                     }
 
-                    // Extract video URLs if present
                     if (data.data.video_urls && Array.isArray(data.data.video_urls)) {
                       videoUrls = data.data.video_urls;
                       console.log("🎥 Extracted video URLs:", videoUrls.length);
                     }
 
-                    // Extract token usage
                     if (data.data.token_usage) {
                       tokenUsage = data.data.token_usage;
                     }
@@ -337,26 +319,20 @@ export function useAITutor(options?: UseAITutorOptions) {
                   throw new Error(data.data?.error || "Unknown error");
                 }
               } catch (e) {
-                // If JSON parsing fails, check if it's incomplete
                 const jsonStr = line.slice(6).trim();
                 
-                // Check for incomplete JSON indicators
                 if (jsonStr && !jsonStr.endsWith("}") && !jsonStr.endsWith("]")) {
-                  // Might be incomplete - add back to buffer
                   buffer = line + "\n" + buffer;
                   console.log("⚠️ JSON parse failed, buffering for next chunk...");
-                  break; // Wait for more data
+                  break;
                 }
                 
-                // If it's not incomplete JSON, log the error
                 console.error("Error parsing stream data:", e instanceof Error ? e.message : String(e));
                 if (e instanceof SyntaxError) {
                   console.error("JSON syntax error - line length:", jsonStr.length);
                   console.error("First 200 chars:", jsonStr.substring(0, 200));
                   console.error("Last 200 chars:", jsonStr.substring(Math.max(0, jsonStr.length - 200)));
                   
-                  // If it's a syntax error and the string is very long, it might be a split base64
-                  // Try to recover by waiting for more chunks
                   if (jsonStr.length > 10000) {
                     buffer = line + "\n" + buffer;
                     console.log("⚠️ Very long JSON string detected, buffering for completion...");
@@ -364,7 +340,6 @@ export function useAITutor(options?: UseAITutorOptions) {
                   }
                 }
                 
-                // Try to extract any text content from the line as fallback
                 const textMatch = line.match(/data:\s*(.+)/);
                 if (textMatch && textMatch[1]) {
                   const text = textMatch[1];
@@ -381,8 +356,6 @@ export function useAITutor(options?: UseAITutorOptions) {
                 }
               }
             } else if (line.trim()) {
-              // Handle lines that don't start with "data: " but might be continuation
-              // This shouldn't happen in SSE format, but handle gracefully
               console.warn("Unexpected line format:", line.substring(0, 100));
             }
           }
@@ -423,7 +396,7 @@ export function useAITutor(options?: UseAITutorOptions) {
               lastSavedMessagesRef.current = messagesJson;
               isSavingRef.current = true;
 
-              saveConversation(
+              saveStudentConversation(
                 messagesJson,
                 undefined,
                 conversationIdRef.current || undefined,
@@ -516,3 +489,4 @@ export function useAITutor(options?: UseAITutorOptions) {
     addVoiceMessage,
   };
 }
+

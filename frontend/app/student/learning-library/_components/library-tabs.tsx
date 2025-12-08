@@ -122,6 +122,19 @@ export function LibraryTabs({ content }: LibraryTabsProps) {
     setExistingResults(null);
   };
 
+  const handleSubmissionComplete = (contentId: string, result: SubmissionResult) => {
+    // Update the submission map to reflect the new submission
+    setSubmissionMap((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(contentId, result);
+      return newMap;
+    });
+    // Also update existing results if this is the currently selected content
+    if (selectedContent?.id === contentId) {
+      setExistingResults(result);
+    }
+  };
+
   const renderContentGrid = (items: StudentContent[]) => {
     if (items.length === 0) {
       return (
@@ -136,10 +149,16 @@ export function LibraryTabs({ content }: LibraryTabsProps) {
         {items.map((item) => {
           let imageUrl: string | undefined;
 
-          if (item.imageUrl) {
+          // For image content type, prioritize imageUrl field, then content field
+          if (item.contentType === "image") {
+            imageUrl = item.imageUrl || item.content;
+            // If content looks like a URL (starts with http/https), use it
+            if (!imageUrl && item.content && (item.content.startsWith("http://") || item.content.startsWith("https://") || item.content.startsWith("data:image/"))) {
+              imageUrl = item.content;
+            }
+          } else if (item.imageUrl) {
+            // For other content types, use imageUrl if available
             imageUrl = item.imageUrl;
-          } else if (item.contentType === "image") {
-            imageUrl = item.content;
           } else if (item.contentType === "comic") {
             try {
               const parsed = JSON.parse(item.content);
@@ -252,6 +271,7 @@ export function LibraryTabs({ content }: LibraryTabsProps) {
         open={isLearningDialogOpen}
         onClose={handleCloseLearningDialog}
         initialResults={existingResults}
+        onSubmissionComplete={handleSubmissionComplete}
       />
     </>
   );

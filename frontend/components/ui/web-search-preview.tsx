@@ -12,6 +12,7 @@ interface WebSearchPreviewProps {
   topic: string
   onSave: () => void
   onClose: () => void
+  buttonText?: string; // Custom button text (default: "Save")
 }
 
 export function WebSearchPreview({
@@ -19,6 +20,7 @@ export function WebSearchPreview({
   topic,
   onSave,
   onClose,
+  buttonText = "Save",
 }: WebSearchPreviewProps) {
   const handleDownload = () => {
     if (!content) {
@@ -88,7 +90,7 @@ export function WebSearchPreview({
                 onClick={onSave}
               >
                 <Save className="mr-2 h-4 w-4" />
-                Save
+                {buttonText}
               </Button>
             </div>
           </DialogTitle>

@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock } from "lucide-react";
@@ -169,6 +168,15 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
   };
 
   const handleNext = () => {
+    const currentQuestion = questions[currentQuestionIndex];
+    const currentAnswer = answers[currentQuestion?.id];
+    
+    // Simple check: require an answer before proceeding
+      if (!currentAnswer || currentAnswer.trim() === "") {
+      toast.error("Please provide an answer before proceeding");
+        return;
+    }
+    
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     }
@@ -177,12 +185,12 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
   const handleSubmit = React.useCallback(async () => {
     if (!content) return;
 
-    // Check if all questions are answered
+    // Simple check: all questions must have answers
     const unansweredQuestions = questions.filter(
       (q) => !answers[q.id] || answers[q.id].trim() === ""
     );
 
-    if (unansweredQuestions.length > 0 && !isAssessment) {
+    if (unansweredQuestions.length > 0) {
       toast.error("Please answer all questions before submitting");
       return;
     }
@@ -248,8 +256,24 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
     setIsSubmitting(true);
     try {
       const timeSpent = Math.floor((Date.now() - contentStartTime) / 1000);
-      await submitContentCompletion(content.id, content.contentType, timeSpent);
-      toast.success("Content completed! You received 100% score.");
+      const result = await submitContentCompletion(content.id, content.contentType, timeSpent);
+      const score = result.score;
+      
+      // Create submission result object for the callback
+      const submissionResult: SubmissionResult = {
+        score: score,
+        totalQuestions: 0,
+        correctCount: 0,
+        wrongCount: 0,
+        questionResults: [],
+      };
+      
+      // Notify parent component to update submission map
+      if (onSubmissionComplete) {
+        onSubmissionComplete(content.id, submissionResult);
+      }
+      
+      toast.success(`Content completed! You received ${score} points.`);
       handleClose();
     } catch (error) {
       console.error("Error submitting content:", error);
@@ -257,7 +281,7 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
     } finally {
       setIsSubmitting(false);
     }
-  }, [content, contentStartTime, handleClose]);
+  }, [content, contentStartTime, handleClose, onSubmissionComplete]);
 
   // Track time spent for non-assessment content
   React.useEffect(() => {
@@ -275,8 +299,18 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
   // Note: quiz is handled separately in the assessment flow below
   if (content.contentType !== "assessment" && content.contentType !== "quiz") {
     // Content types that should show submit button
-    const contentTypesWithSubmit = ["lesson_plan", "worksheet", "presentation"];
-    // Only show submit if content type supports it AND hasn't been submitted yet
+    // Include all content types that can be submitted for completion
+    const contentTypesWithSubmit = [
+      "lesson_plan", 
+      "worksheet", 
+      "presentation",
+      "image",
+      "video",
+      "comic",
+      "slide",
+      "web"
+    ];
+    // Show submit button if content type supports it AND hasn't been submitted yet
     const shouldShowSubmit = contentTypesWithSubmit.includes(content.contentType) && !initialResults;
 
     // Parse content for structured types
@@ -298,6 +332,7 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
           onSave={shouldShowSubmit ? handleContentSubmit : handleClose}
           onClose={handleClose}
           skipUpload={true}
+          buttonText={shouldShowSubmit ? "Submit" : "Close"}
         />
       );
     }
@@ -310,6 +345,7 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
           title={content.title}
           onSave={shouldShowSubmit ? handleContentSubmit : handleClose}
           onClose={handleClose}
+          buttonText={shouldShowSubmit ? "Submit" : "Close"}
         />
       );
     }
@@ -322,6 +358,7 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
           topic={content.title}
           onSave={shouldShowSubmit ? handleContentSubmit : handleClose}
           onClose={handleClose}
+          buttonText={shouldShowSubmit ? "Submit" : "Close"}
         />
       );
     }
@@ -333,6 +370,7 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
           content={parsedContent || { presentation_url: content.content }}
           onSave={shouldShowSubmit ? handleContentSubmit : handleClose}
           onClose={handleClose}
+          buttonText={shouldShowSubmit ? "Submit" : "Close"}
         />
       );
     }
@@ -345,6 +383,7 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
           topic={content.title}
           onSave={shouldShowSubmit ? handleContentSubmit : handleClose}
           onClose={handleClose}
+          buttonText={shouldShowSubmit ? "Submit" : "Close"}
         />
       );
     }
@@ -455,8 +494,13 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
                         <XCircle className="h-6 w-6 text-red-600 mt-1 flex-shrink-0" />
                       )}
                       <div className="flex-1">
-                        <div className="font-semibold mb-2">
-                          Question {index + 1}
+                        <div className="font-semibold mb-2 flex items-center gap-2">
+                          <span>Question {index + 1}</span>
+                          <span className="text-xs font-normal text-muted-foreground px-2 py-1 bg-muted rounded">
+                            {question.type === "mcq" ? "Multiple Choice" : 
+                             question.type === "true_false" ? "True or False" : 
+                             "Short Answer"}
+                          </span>
                         </div>
                         <div className="mb-4">
                           <Markdown content={question.question} />
@@ -613,22 +657,29 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
 
           {/* Current Question */}
           <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium text-muted-foreground px-2 py-1 bg-muted rounded">
+                {currentQuestion.type === "mcq" ? "Multiple Choice" : 
+                 currentQuestion.type === "true_false" ? "True or False" : 
+                 "Short Answer"}
+              </span>
+            </div>
             <div className="font-semibold text-lg">
               <Markdown content={currentQuestion.question} />
             </div>
 
-            {/* MCQ Options */}
+            {/* Render based on question type */}
             {currentQuestion.type === "mcq" && currentQuestion.options && (
               <RadioGroup
                 value={answers[currentQuestion.id] || ""}
                 onValueChange={(value) => handleAnswerChange(currentQuestion.id, value)}
+                required
               >
                 {currentQuestion.options.map((option, idx) => {
                   const letter = option.charAt(0);
-                  const text = option.substring(2).trim();
                   return (
                     <div key={idx} className="flex items-center space-x-2">
-                      <RadioGroupItem value={letter} id={`option-${idx}`} />
+                      <RadioGroupItem value={letter} id={`option-${idx}`} required />
                       <Label
                         htmlFor={`option-${idx}`}
                         className="flex-1 cursor-pointer py-2"
@@ -641,20 +692,20 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
               </RadioGroup>
             )}
 
-            {/* True/False Options */}
             {currentQuestion.type === "true_false" && (
               <RadioGroup
                 value={answers[currentQuestion.id] || ""}
                 onValueChange={(value) => handleAnswerChange(currentQuestion.id, value)}
+                required
               >
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="True" id="true-option" />
+                  <RadioGroupItem value="True" id="true-option" required />
                   <Label htmlFor="true-option" className="cursor-pointer py-2">
                     True
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="False" id="false-option" />
+                  <RadioGroupItem value="False" id="false-option" required />
                   <Label htmlFor="false-option" className="cursor-pointer py-2">
                     False
                   </Label>
@@ -662,13 +713,13 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
               </RadioGroup>
             )}
 
-            {/* Short Answer Input */}
             {currentQuestion.type === "short_answer" && (
               <Textarea
                 value={answers[currentQuestion.id] || ""}
                 onChange={(e) => handleAnswerChange(currentQuestion.id, e.target.value)}
                 placeholder="Enter your answer here..."
                 className="min-h-[100px]"
+                required
               />
             )}
           </div>
@@ -693,7 +744,13 @@ export function LearningDialog({ content, open, onClose, initialResults, onSubmi
                   {isSubmitting ? "Submitting..." : "Submit"}
                 </Button>
               ) : (
-                <Button onClick={handleNext}>
+                <Button 
+                  onClick={handleNext}
+                  disabled={
+                    (currentQuestion.type === "mcq" || currentQuestion.type === "true_false") &&
+                    (!answers[currentQuestion.id] || answers[currentQuestion.id].trim() === "")
+                  }
+                >
                   Next
                   <ChevronRight className="h-4 w-4 ml-2" />
                 </Button>
