@@ -165,13 +165,14 @@ export function ChatInput({
   const [isListening, setIsListening] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
   // File uploader hook - only enable backend integration if sessionId is available
   const [fileUploadState, fileUploadActions] = useFileUpload({
     maxFiles: 5,
     maxSize: 50 * 1024 * 1024, // 50MB
-    accept: "image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,application/json,text/plain",
+    accept:
+      "image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,application/json,text/plain",
     multiple: true,
     uploadToR2: true,
     // Only send to backend if we have a valid sessionId from backend
@@ -243,14 +244,25 @@ export function ChatInput({
       setMessage("");
       fileUploadActions.clearFiles();
     }
-  }, [message, isLoading, isUploading, onSend, uploadedDocs, selectedModel, fileUploadActions]);
+  }, [
+    message,
+    isLoading,
+    isUploading,
+    onSend,
+    uploadedDocs,
+    selectedModel,
+    fileUploadActions,
+  ]);
 
-  const removeDocument = useCallback((index: number) => {
-    const fileToRemove = fileUploadState.files[index];
-    if (fileToRemove) {
-      fileUploadActions.removeFile(fileToRemove.id);
-    }
-  }, [fileUploadState.files, fileUploadActions]);
+  const removeDocument = useCallback(
+    (index: number) => {
+      const fileToRemove = fileUploadState.files[index];
+      if (fileToRemove) {
+        fileUploadActions.removeFile(fileToRemove.id);
+      }
+    },
+    [fileUploadState.files, fileUploadActions]
+  );
 
   const handleKeyPress = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -394,10 +406,7 @@ export function ChatInput({
           )}
         </div>
         <div className="flex flex-col gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2">
-          <input
-            {...fileUploadActions.getInputProps()}
-            className="hidden"
-          />
+          <input {...fileUploadActions.getInputProps()} className="hidden" />
 
           {/* Mobile Controls */}
           <div className="flex md:hidden items-center justify-between gap-1.5">
@@ -450,8 +459,8 @@ export function ChatInput({
                 canSend
                   ? "Send message"
                   : voiceMode
-                    ? "Stop voice mode"
-                    : "Start voice chat"
+                  ? "Stop voice mode"
+                  : "Start voice chat"
               }
             >
               {canSend ? (
@@ -516,8 +525,8 @@ export function ChatInput({
                   canSend
                     ? "Send message"
                     : voiceMode
-                      ? "Stop voice mode"
-                      : "Start voice chat"
+                    ? "Stop voice mode"
+                    : "Start voice chat"
                 }
               >
                 {canSend ? (

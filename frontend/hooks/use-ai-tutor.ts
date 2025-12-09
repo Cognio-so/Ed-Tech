@@ -34,7 +34,7 @@ export interface UseAITutorOptions {
   sessionId?: string;
 }
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.BACKEND_URL;
 
 export function useAITutor(options?: UseAITutorOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -109,13 +109,15 @@ export function useAITutor(options?: UseAITutorOptions) {
 
       const teacherId = session.user.id;
       const currentSessionId = sessionIdRef.current;
-      
+
       if (!currentSessionId || currentSessionId.trim() === "") {
         setIsLoading(false);
-        options?.onError?.("Session not initialized. Please wait for session to be created.");
+        options?.onError?.(
+          "Session not initialized. Please wait for session to be created."
+        );
         return;
       }
-      
+
       sessionIdRef.current = currentSessionId;
 
       try {
@@ -170,7 +172,13 @@ export function useAITutor(options?: UseAITutorOptions) {
         let accumulatedContent = "";
         let imageUrls: string[] = [];
         let videoUrls: string[] = [];
-        let tokenUsage: { input_tokens: number; output_tokens: number; total_tokens: number } | undefined;
+        let tokenUsage:
+          | {
+              input_tokens: number;
+              output_tokens: number;
+              total_tokens: number;
+            }
+          | undefined;
         let buffer = ""; // Buffer for incomplete JSON lines
 
         const sessionIdHeader = response.headers.get("X-Session-Id");
@@ -193,7 +201,10 @@ export function useAITutor(options?: UseAITutorOptions) {
                 console.log("📥 Received final buffered data:", data.type);
                 // Process final buffered data if needed
               } catch (e) {
-                console.warn("⚠️ Could not parse final buffer:", buffer.substring(0, 100));
+                console.warn(
+                  "⚠️ Could not parse final buffer:",
+                  buffer.substring(0, 100)
+                );
               }
             }
             break;
@@ -201,32 +212,39 @@ export function useAITutor(options?: UseAITutorOptions) {
 
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
-          
+
           // Process complete lines (ending with \n)
           // Keep processing while we have complete lines
           let newlineIndex;
           while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
             const line = buffer.substring(0, newlineIndex);
             buffer = buffer.substring(newlineIndex + 1);
-            
+
             if (line.trim().startsWith("data: ")) {
               const jsonStr = line.slice(6).trim();
               if (!jsonStr) continue;
-              
+
               try {
                 const data = JSON.parse(jsonStr);
-                console.log("📥 Received data from backend:", data.type, data.data ? Object.keys(data.data) : "no data");
+                console.log(
+                  "📥 Received data from backend:",
+                  data.type,
+                  data.data ? Object.keys(data.data) : "no data"
+                );
 
                 if (data.type === "content" && data.data) {
                   if (data.data.chunk) {
                     let chunk = data.data.chunk;
-                    
+
                     // Remove "Image generated successfully:" prefix if present in chunk
-                    chunk = chunk.replace(/Image\s+generated\s+successfully:\s*/gi, "");
-                    
+                    chunk = chunk.replace(
+                      /Image\s+generated\s+successfully:\s*/gi,
+                      ""
+                    );
+
                     // Remove base64 data URLs from chunks
                     chunk = chunk.replace(/data:image\/[^,\s\)\]]+/g, "");
-                    
+
                     accumulatedContent += chunk;
                     setStreamingContent(accumulatedContent);
 
@@ -239,30 +257,30 @@ export function useAITutor(options?: UseAITutorOptions) {
                     );
                   } else if (data.data.full_response) {
                     let cleanedContent = data.data.full_response;
-                    
+
                     // Remove "Image generated successfully: data:image/..." pattern
                     // This regex matches "Image generated successfully:" followed by a data URL (handles very long base64 strings)
                     cleanedContent = cleanedContent.replace(
                       /Image\s+generated\s+successfully:\s*data:image\/[^\s\)\]]+/gi,
                       ""
                     );
-                    
+
                     // Also remove standalone base64 data URLs that might be in the text
                     // This removes data:image/... patterns that appear in the content
                     cleanedContent = cleanedContent.replace(
                       /data:image\/[^\s\)\]]+/g,
                       ""
                     );
-                    
+
                     // Clean up multiple spaces, newlines, and trailing punctuation
                     // Don't replace newlines as they are needed for markdown
                     cleanedContent = cleanedContent.trim();
-                    
+
                     // If content is empty or only whitespace after cleaning, set to empty string
                     if (!cleanedContent || cleanedContent.trim().length === 0) {
                       cleanedContent = "";
                     }
-                    
+
                     accumulatedContent = cleanedContent;
                     setStreamingContent(accumulatedContent);
 
@@ -283,13 +301,22 @@ export function useAITutor(options?: UseAITutorOptions) {
                     }
 
                     // Extract img_urls array if present
-                    if (data.data.img_urls && Array.isArray(data.data.img_urls)) {
+                    if (
+                      data.data.img_urls &&
+                      Array.isArray(data.data.img_urls)
+                    ) {
                       imageUrls = [...imageUrls, ...data.data.img_urls];
-                      console.log("🖼️ Extracted img_urls:", data.data.img_urls.length);
+                      console.log(
+                        "🖼️ Extracted img_urls:",
+                        data.data.img_urls.length
+                      );
                     }
 
                     // Extract video URLs if present
-                    if (data.data.video_urls && Array.isArray(data.data.video_urls)) {
+                    if (
+                      data.data.video_urls &&
+                      Array.isArray(data.data.video_urls)
+                    ) {
                       videoUrls = data.data.video_urls;
                       console.log("🎥 Extracted video URLs:", videoUrls.length);
                     }
@@ -305,8 +332,10 @@ export function useAITutor(options?: UseAITutorOptions) {
                           ? {
                               ...msg,
                               content: accumulatedContent,
-                              imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-                              videoUrls: videoUrls.length > 0 ? videoUrls : undefined,
+                              imageUrls:
+                                imageUrls.length > 0 ? imageUrls : undefined,
+                              videoUrls:
+                                videoUrls.length > 0 ? videoUrls : undefined,
                               tokenUsage,
                             }
                           : msg
@@ -328,41 +357,60 @@ export function useAITutor(options?: UseAITutorOptions) {
               } catch (e) {
                 // If JSON parsing fails, check if it's incomplete
                 const jsonStr = line.slice(6).trim();
-                
+
                 // Check for incomplete JSON indicators - crude check
                 // If it doesn't end with a closing brace/bracket, it's definitely incomplete
-                if (jsonStr && !jsonStr.endsWith("}") && !jsonStr.endsWith("]")) {
+                if (
+                  jsonStr &&
+                  !jsonStr.endsWith("}") &&
+                  !jsonStr.endsWith("]")
+                ) {
                   // Might be incomplete - add back to buffer
                   buffer = line + "\n" + buffer;
-                  console.log("⚠️ JSON parse failed (incomplete end), buffering for next chunk...");
+                  console.log(
+                    "⚠️ JSON parse failed (incomplete end), buffering for next chunk..."
+                  );
                   break; // Wait for more data
                 }
-                
+
                 // If it ends with brace but still fails, it might be a split string inside JSON
                 // We should try to buffer it too, but be careful of infinite loops
-                // Only buffer if we haven't seen this exact line failure before? 
+                // Only buffer if we haven't seen this exact line failure before?
                 // Simpler: if it's very long, assume split.
-                 if (e instanceof SyntaxError && jsonStr.length > 100) {
-                     buffer = line + "\n" + buffer;
-                     console.log("⚠️ JSON parse failed (likely split), buffering...");
-                     break;
-                 }
-                
-                console.error("Error parsing stream data:", e instanceof Error ? e.message : String(e));
+                if (e instanceof SyntaxError && jsonStr.length > 100) {
+                  buffer = line + "\n" + buffer;
+                  console.log(
+                    "⚠️ JSON parse failed (likely split), buffering..."
+                  );
+                  break;
+                }
+
+                console.error(
+                  "Error parsing stream data:",
+                  e instanceof Error ? e.message : String(e)
+                );
                 if (e instanceof SyntaxError) {
-                  console.error("JSON syntax error - line length:", jsonStr.length);
+                  console.error(
+                    "JSON syntax error - line length:",
+                    jsonStr.length
+                  );
                   console.error("First 200 chars:", jsonStr.substring(0, 200));
-                  console.error("Last 200 chars:", jsonStr.substring(Math.max(0, jsonStr.length - 200)));
-                  
+                  console.error(
+                    "Last 200 chars:",
+                    jsonStr.substring(Math.max(0, jsonStr.length - 200))
+                  );
+
                   // If it's a syntax error and the string is very long, it might be a split base64
                   // Try to recover by waiting for more chunks
                   if (jsonStr.length > 10000) {
                     buffer = line + "\n" + buffer;
-                    console.log("⚠️ Very long JSON string detected, buffering for completion...");
+                    console.log(
+                      "⚠️ Very long JSON string detected, buffering for completion..."
+                    );
                     break;
                   }
                 }
-                
+
                 // Try to extract any text content from the line as fallback
                 const textMatch = line.match(/data:\s*(.+)/);
                 if (textMatch && textMatch[1]) {
@@ -431,10 +479,17 @@ export function useAITutor(options?: UseAITutorOptions) {
                   sessionIdRef.current || undefined
                 )
                   .then((result) => {
-                    if (result?.success && result?.conversationId && !conversationIdRef.current) {
+                    if (
+                      result?.success &&
+                      result?.conversationId &&
+                      !conversationIdRef.current
+                    ) {
                       conversationIdRef.current = result.conversationId;
                     } else if (result?.error) {
-                      console.warn("Failed to save conversation:", result.error);
+                      console.warn(
+                        "Failed to save conversation:",
+                        result.error
+                      );
                     }
                   })
                   .catch((error) => {
