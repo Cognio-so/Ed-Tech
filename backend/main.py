@@ -31,7 +31,10 @@ from models import (
     StudentVoiceSchema,
     AddDocumentsRequest,
     parse_enhanced_story_panels,
-    generate_video_background
+    generate_video_background,
+    VoiceConnectionManager,
+    teacher_voice_manager,
+    student_voice_manager
 )
 
 from teacher.media_toolkit.websearch_schema import run_search_agent
@@ -366,18 +369,15 @@ async def connect_voice_agent(
     """
     Establishes a WebRTC connection for the Voice Agent.
     """
+    # Create/Validate Session
     await SessionManager.create_session(teacher_id, session_id)
     
-    if session_id in voice_sessions:
-        logger.info(f"Cleaning up existing voice session for {session_id}")
-        await voice_sessions[session_id].disconnect()
-        del voice_sessions[session_id]
-
     try:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise HTTPException(status_code=500, detail="OpenAI API Key not configured")
 
+        # 1. Initialize the Bridge
         bridge = VoiceAgentBridge(api_key=api_key)
         
         context_data = {
@@ -386,14 +386,15 @@ async def connect_voice_agent(
             "instructions": payload.instructions
         }
         
-        # Connect
+        # 2. Connect (WebRTC Handshake)
         answer_sdp = await bridge.connect(
             offer_sdp=payload.sdp, 
             context_data=context_data,
             voice=payload.voice
         )
         
-        voice_sessions[session_id] = bridge
+        # 3. Register securely with the Manager
+        await teacher_voice_manager.register_connection(session_id, bridge)
         
         return {
             "sdp": answer_sdp["sdp"],
@@ -410,16 +411,15 @@ async def disconnect_voice_agent(
     teacher_id: str,
     session_id: str
 ) -> Dict[str, str]:
-    if session_id in voice_sessions:
-        try:
-            await voice_sessions[session_id].disconnect()
-            del voice_sessions[session_id]
-            return {"status": "disconnected", "message": "Voice agent disconnected."}
-        except Exception as e:
-            logger.error(f"Error disconnecting voice session: {e}")
-            raise HTTPException(status_code=500, detail=f"Error disconnecting: {str(e)}")
+    # 1. Use the manager to disconnect
+    was_disconnected = await teacher_voice_manager.disconnect_session(session_id)
     
-    return {"status": "not_found", "message": "No active voice session found."}
+    if was_disconnected:
+        return {"status": "disconnected", "message": "Voice agent disconnected."}
+    else:
+        # If user A is connected, and user B (invalid session) calls this, 
+        # User A is safe because session_id won't match.
+        return {"status": "not_found", "message": "No active voice session found for this session ID."}
 
 @app.post("/api/student/{student_id}/session/{session_id}/voice_agent/connect")
 async def connect_student_voice_agent(
@@ -430,25 +430,16 @@ async def connect_student_voice_agent(
     """
     Establishes a WebRTC connection for the Student Voice Agent (Study Buddy).
     """
-    # 1. Ensure Student Session Exists
     await StudentSessionManager.create_session(student_id, session_id)
-    
-    # 2. Cleanup existing voice session if strictly replacing
-    if session_id in student_voice_sessions:
-        logger.info(f"Cleaning up existing student voice session for {session_id}")
-        await student_voice_sessions[session_id].disconnect()
-        del student_voice_sessions[session_id]
 
     try:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise HTTPException(status_code=500, detail="OpenAI API Key not configured")
 
-        # 3. Initialize the Bridge
         bridge = StudyBuddyBridge(api_key=api_key)
         
-        # 4. Format assignments for the AI context
-        # Convert list of dicts into a readable string for the System Prompt
+        # Format Context
         pending_str = "None"
         if payload.pending_assignments:
             pending_str = ", ".join(
@@ -462,24 +453,22 @@ async def connect_student_voice_agent(
                 [a.get('title', 'Unknown Task') for a in payload.completed_assignments]
             )
 
-        # 5. Prepare Context Data
         context_data = {
             "student_name": payload.student_name,
             "subject": payload.subject,
             "grade": payload.grade,
             "pending_assignments": pending_str,
-            "instructions": f"The student has completed: {completed_str}. Focus on their pending work: {pending_str}."
+            "instructions": f"The student has completed: {completed_str}. Focus on pending: {pending_str}."
         }
         
-        # 6. Connect (WebRTC Handshake)
         answer_sdp = await bridge.connect(
             offer_sdp=payload.sdp, 
             context_data=context_data,
             voice=payload.voice
         )
         
-        # 7. Store the active bridge
-        student_voice_sessions[session_id] = bridge
+        # Register with STUDENT Manager
+        await student_voice_manager.register_connection(session_id, bridge)
         
         return {
             "sdp": answer_sdp["sdp"],
@@ -496,19 +485,13 @@ async def disconnect_student_voice_agent(
     student_id: str,
     session_id: str
 ) -> Dict[str, str]:
-    """
-    Disconnects the Student Voice Agent and cleans up resources.
-    """
-    if session_id in student_voice_sessions:
-        try:
-            await student_voice_sessions[session_id].disconnect()
-            del student_voice_sessions[session_id]
-            return {"status": "disconnected", "message": "Study Buddy disconnected."}
-        except Exception as e:
-            logger.error(f"Error disconnecting student voice session: {e}")
-            raise HTTPException(status_code=500, detail=f"Error disconnecting: {str(e)}")
+    # Use the student manager
+    was_disconnected = await student_voice_manager.disconnect_session(session_id)
     
-    return {"status": "not_found", "message": "No active study buddy session found."}
+    if was_disconnected:
+        return {"status": "disconnected", "message": "Study Buddy disconnected."}
+    else:
+        return {"status": "not_found", "message": "No active study buddy session found."}
 
 @app.post("/api/teacher/{teacher_id}/session/{session_id}/content_generator/{type}")
 async def generate_content(
