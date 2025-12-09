@@ -357,36 +357,61 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
     if student_id and session_id:
         try:
             if selected_doc_ids:
+                # Build doc_map from both all_available_docs and newly_uploaded_docs
                 doc_map = {d["id"]: d for d in all_available_docs if d.get("id")}
+                # Also add newly uploaded docs to the map
+                for doc in newly_uploaded_docs:
+                    if doc.get("id"):
+                        doc_map[doc["id"]] = doc
+                
+                print(f"[Student RAG] 📋 Doc map has {len(doc_map)} documents (available: {len(all_available_docs)}, newly uploaded: {len(newly_uploaded_docs)})")
+                print(f"[Student RAG] 🎯 Selected doc IDs: {selected_doc_ids}")
+                
                 tasks = []
                 for doc_id in selected_doc_ids:
                     doc_info = doc_map.get(doc_id)
-                    target_url = doc_info.get("file_url") if doc_info else None
-                    if target_url:
-                        tasks.append(retrieve_relevant_documents(
-                            student_id=student_id,
-                            session_id=session_id,
-                            query=query,
-                            top_k=4,
-                            score_threshold=0.3,
-                            filter_doc_url=target_url
-                        ))
+                    if doc_info:
+                        target_url = doc_info.get("file_url") or doc_info.get("url")
+                        if target_url:
+                            print(f"[Student RAG] 🔍 Retrieving for doc_id={doc_id}, url={target_url}")
+                            tasks.append(retrieve_relevant_documents(
+                                student_id=student_id,
+                                session_id=session_id,
+                                query=query,
+                                top_k=4,
+                                score_threshold=0.3,
+                                filter_doc_url=target_url
+                            ))
+                        else:
+                            print(f"[Student RAG] ⚠️ Doc {doc_id} has no file_url")
+                    else:
+                        print(f"[Student RAG] ⚠️ Doc {doc_id} not found in doc_map")
+                
                 if tasks:
                     results = await asyncio.gather(*tasks)
                     for res in results:
                         user_docs.extend(res)
+                    print(f"[Student RAG] ✅ Retrieved {len(user_docs)} document chunks from {len(tasks)} document(s)")
+                else:
+                    print(f"[Student RAG] ⚠️ No valid tasks created from selected_doc_ids")
             elif doc_url:
+                print(f"[Student RAG] 🔍 Using doc_url directly: {doc_url}")
                 user_docs = await retrieve_relevant_documents(
                     student_id=student_id, session_id=session_id, query=query,
                     top_k=6, score_threshold=0.3, filter_doc_url=doc_url
                 )
+                print(f"[Student RAG] ✅ Retrieved {len(user_docs)} document chunks using doc_url")
             else:
+                print(f"[Student RAG] 🔍 Retrieving without filter (all documents)")
                 user_docs = await retrieve_relevant_documents(
                     student_id=student_id, session_id=session_id, query=query,
                     top_k=6, score_threshold=0.35, filter_doc_url=None
                 )
+                print(f"[Student RAG] ✅ Retrieved {len(user_docs)} document chunks without filter")
         except Exception as e:
             print(f"[Student RAG] ❌ Retrieval failed: {e}")
+            import traceback
+            traceback.print_exc()
     
     xml_documents = ""
     if user_docs:

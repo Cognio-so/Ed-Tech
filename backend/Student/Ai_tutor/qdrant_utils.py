@@ -258,6 +258,7 @@ async def retrieve_relevant_documents(
         # 2. Build Filter
         query_filter = None
         if filter_doc_url:
+            filter_doc_url = filter_doc_url.strip()
             print(f"[Qdrant] 🔍 Filtering search for doc_url: {filter_doc_url}")
             # Match against multiple possible metadata keys to be safe
             query_filter = models.Filter(
@@ -270,6 +271,7 @@ async def retrieve_relevant_documents(
             )
 
         # 3. Search (Modern Client or HTTP Fallback)
+        search_result = []
         try:
             if hasattr(QDRANT_CLIENT, 'search'):
                 search_result = await asyncio.to_thread(
@@ -289,7 +291,53 @@ async def retrieve_relevant_documents(
                 collection_name, query_embedding, query_filter, top_k, score_threshold
             )
 
-        # 4. Process Results
+        # 4. Robust Fallback Logic
+        # 4a. If no results, retry with score_threshold=0.0 (Relaxed Score)
+        if not search_result:
+            print(f"[Qdrant] ⚠️ Search returned 0 results with threshold {score_threshold}. Retrying with threshold 0.0...")
+            try:
+                if hasattr(QDRANT_CLIENT, 'search'):
+                    search_result = await asyncio.to_thread(
+                        QDRANT_CLIENT.search,
+                        collection_name=collection_name,
+                        query_vector=query_embedding,
+                        query_filter=query_filter,
+                        limit=top_k,
+                        score_threshold=0.0, # Relaxed
+                        with_payload=True
+                    )
+                else:
+                    raise AttributeError("Old Client")
+            except (AttributeError, Exception):
+                search_result = await _http_search_fallback(
+                    collection_name, query_embedding, query_filter, top_k, 0.0
+                )
+            
+            if search_result:
+                 print(f"[Qdrant] ✅ Found {len(search_result)} results with relaxed threshold (0.0).")
+
+        # 4b. If STILL no results and we had a filter, try removing the filter (Metadata Mismatch Fallback)
+        if not search_result and filter_doc_url:
+            print(f"[Qdrant] ⚠️ Filtered search returned 0 results. Checking if ANY docs exist in {collection_name}...")
+            # Perform a quick unfiltered check to distinguish "no data" vs "bad filter"
+            unfiltered_result = await _http_search_fallback(
+                collection_name, query_embedding, None, 1, 0.0
+            )
+            if unfiltered_result:
+                print(f"[Qdrant] 💡 Data DOES exist in collection! The filter '{filter_doc_url}' likely mismatched metadata.")
+                if unfiltered_result[0].payload:
+                    print(f"[Qdrant] 🐛 Sample Payload from DB: {json.dumps(unfiltered_result[0].payload, default=str)}")
+                
+                # FALLBACK: Return unfiltered results since filter is failing
+                # CRITICAL: Use score_threshold=0.0 to ensure we get results
+                print(f"[Qdrant] 🔄 Using unfiltered results as fallback (filter not working properly)")
+                search_result = await _http_search_fallback(
+                    collection_name, query_embedding, None, top_k, 0.0
+                )
+            else:
+                print(f"[Qdrant] ℹ️ Collection is effectively empty.")
+
+        # 5. Process Results
         documents = []
         for hit in search_result:
             payload = hit.payload or {}
