@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, validator, model_validator
+import asyncio
 
 import os
 import logging
@@ -300,3 +301,68 @@ async def generate_video_background(
                 os.remove(temp_file_path)
             except OSError:
                 pass
+
+
+class VoiceConnectionManager:
+    """
+    Thread-safe manager for active voice bridge connections.
+    Encapsulates dictionary logic to prevent global variable pollution
+    and ensure atomic operations.
+    """
+    def __init__(self, name: str):
+        self.name = name
+        # The internal storage for active bridges
+        self._connections: Dict[str, Any] = {}
+        # Async lock to prevent race conditions during rapid connect/disconnect
+        self._lock = asyncio.Lock()
+
+    async def register_connection(self, session_id: str, bridge_instance: Any):
+        """
+        Safely registers a new connection. 
+        If a session already exists, it disconnects the old one first.
+        """
+        async with self._lock:
+            # 1. Check for existing stale connection for this specific session_id
+            if session_id in self._connections:
+                logger.info(f"[{self.name}] Cleaning up stale session before reconnect: {session_id}")
+                try:
+                    old_bridge = self._connections[session_id]
+                    await old_bridge.disconnect()
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Error disconnecting stale session {session_id}: {e}")
+                finally:
+                    # Ensure it's removed even if disconnect fails
+                    self._connections.pop(session_id, None)
+
+            # 2. Store the new bridge
+            self._connections[session_id] = bridge_instance
+            logger.info(f"[{self.name}] Registered new connection. Active users: {len(self._connections)}")
+
+    async def disconnect_session(self, session_id: str) -> bool:
+        """
+        Safely disconnects a specific session.
+        Returns True if found and disconnected, False otherwise.
+        """
+        async with self._lock:
+            if session_id in self._connections:
+                logger.info(f"[{self.name}] Disconnecting session: {session_id}")
+                bridge = self._connections[session_id]
+                try:
+                    await bridge.disconnect()
+                except Exception as e:
+                    logger.error(f"[{self.name}] Error during disconnect for {session_id}: {e}")
+                    # We continue to removal even if the bridge errors out
+                finally:
+                    # CRITICAL: Remove from memory to prevent leaks
+                    del self._connections[session_id]
+                return True
+            
+            logger.warning(f"[{self.name}] Disconnect requested for non-existent session: {session_id}")
+            return False
+
+    def get_active_count(self) -> int:
+        return len(self._connections)
+        
+# These are global instances, but logically isolated
+teacher_voice_manager = VoiceConnectionManager("TeacherAgent")
+student_voice_manager = VoiceConnectionManager("StudentBuddy")
