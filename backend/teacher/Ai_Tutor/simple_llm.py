@@ -395,7 +395,69 @@ async def simple_llm_node(state: GraphState) -> GraphState:
         Provide clear, educational, and contextually relevant responses based on all available information. 
         When discussing students, always use their names to avoid confusion.
         {f"When answering curriculum-related questions, use the knowledge base reference material as the primary source of information." if kb_retrieved_contexts else ""}
-        Output your responses in natural, conversational language that is helpful and professional.
+        
+        CRITICAL: Format ALL responses using proper Markdown syntax following these guidelines:
+        
+        ## Markdown Formatting Requirements:
+        
+        ### Headers:
+        - Use # for main topics (H1)
+        - Use ## for subtopics (H2) 
+        - Use ### for sections/activities (H3)
+        - Use #### for details/subsections (H4)
+        
+        ### Lists:
+        - Use * or - for unordered lists (bullet points)
+        - Use 1. 2. 3. for ordered lists (numbered)
+        - Ensure proper spacing between list items
+        
+        ### Emphasis:
+        - Use **bold text** for important concepts, key terms, or emphasis
+        - Use *italic text* for definitions or subtle emphasis
+        - Use `inline code` for technical terms, formulas, or specific instructions
+        
+        ### Code Blocks:
+        - Use triple backticks with language specification for code examples:
+        ```python
+        def example():
+            return "formatted code"
+        ```
+        
+        ### Tables:
+        - Use proper Markdown table syntax with | separators
+        - Include header row with alignment indicators
+        
+        | Property | Description | Example |
+        |----------|-------------|---------|
+        | Bold     | Emphasis    | **Important** |
+        
+        ### Blockquotes:
+        - Use > for important notes, tips, or quotes
+        > **Important**: This is a key concept to remember.
+        
+        ### Educational Content Structure:
+        When providing educational content, structure it as:
+        
+        ## Topic Name
+        
+        Brief introduction paragraph explaining the concept.
+        
+        ### Key Concepts
+        * **Concept 1** - Definition and explanation
+        * **Concept 2** - Definition and explanation
+        * **Concept 3** - Definition and explanation
+        
+        ### Examples
+        Provide clear examples with proper formatting.
+        
+        ### Activities/Practice
+        1. **Activity 1**: Step-by-step instructions
+        2. **Activity 2**: Clear objectives and methods
+        3. **Activity 3**: Assessment criteria
+        
+        > **Teacher Tip**: Practical advice for implementation
+        
+        ALWAYS use this Markdown formatting to ensure content renders beautifully in the frontend interface.
     </instructions>
 </ai_tutor_request>
 """

@@ -236,7 +236,75 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
         Provide clear, educational, and contextually relevant responses based on all available information.
         Speak in a friendly, encouraging tone that motivates the student.
         {f"When answering curriculum-related questions, use the knowledge base reference material as the primary source of information." if kb_retrieved_contexts else ""}
-        Output your responses in natural, conversational language that is helpful and supportive.
+        
+        CRITICAL: Format ALL responses using proper Markdown syntax following these guidelines:
+        
+        ## Markdown Formatting Requirements:
+        
+        ### Headers:
+        - Use # for main topics (H1)
+        - Use ## for subtopics (H2) 
+        - Use ### for sections/activities (H3)
+        - Use #### for details/subsections (H4)
+        
+        ### Lists:
+        - Use * or - for unordered lists (bullet points)
+        - Use 1. 2. 3. for ordered lists (numbered)
+        - Ensure proper spacing between list items
+        
+        ### Emphasis:
+        - Use **bold text** for important concepts, key terms, or emphasis
+        - Use *italic text* for definitions or subtle emphasis
+        - Use `inline code` for technical terms, formulas, or specific instructions
+        
+        ### Code Blocks:
+        - Use triple backticks with language specification for examples:
+        ```python
+        # Example calculation
+        result = 2 + 2
+        print(result)
+        ```
+        
+        ### Tables:
+        - Use proper Markdown table syntax for comparisons or data:
+        
+        | Property | Metal | Non-Metal |
+        |----------|-------|-----------|
+        | Hardness | Hard  | Brittle   |
+        | Conductivity | Good | Poor |
+        
+        ### Blockquotes:
+        - Use > for important notes, tips, or encouragement
+        > **Study Tip**: Remember to practice regularly for better understanding!
+        
+        ### Educational Content Structure:
+        When explaining concepts, structure responses as:
+        
+        ## {topic if topic else "Topic"}
+        
+        Hi {student_name}! Let me help you understand this concept.
+        
+        ### What You Need to Know
+        * **Key Point 1** - Clear explanation
+        * **Key Point 2** - Clear explanation  
+        * **Key Point 3** - Clear explanation
+        
+        ### Step-by-Step Guide
+        1. **Step 1**: Detailed instruction
+        2. **Step 2**: Clear next action
+        3. **Step 3**: Final step with example
+        
+        ### Practice Questions
+        Try these to test your understanding:
+        - Question about concept 1
+        - Question about concept 2
+        
+        > **Encouragement**: You're doing great! Keep practicing and you'll master this topic.
+        
+        ### Assignment Connection
+        {f"This relates to your pending assignment: {assignments_text.split('- ')[1].split(' (due:')[0] if assignments_text != 'No pending assignments logged.' else ''}" if assignments_text != "No pending assignments logged." else ""}
+        
+        ALWAYS use this Markdown formatting to ensure content renders beautifully and is easy to read.
     </instructions>
 </study_buddy_request>
 """

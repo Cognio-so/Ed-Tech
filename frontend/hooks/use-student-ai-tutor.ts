@@ -126,6 +126,7 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
           message,
           student_profile: messageOptions?.studentProfile || null,
           pending_assignments: messageOptions?.pendingAssignments || null,
+          completed_assignments: messageOptions?.completedAssignments || null,
           achievements: messageOptions?.achievements || null,
           assessment_data: messageOptions?.assessmentData || null,
           topic: messageOptions?.topic || null,
@@ -140,6 +141,8 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
           payload: backendPayload,
           studentId,
           sessionId: currentSessionId,
+          completedAssignmentsCount: backendPayload.completed_assignments?.length || 0,
+          pendingAssignmentsCount: backendPayload.pending_assignments?.length || 0,
         });
 
         const endpoint = `${BACKEND_URL}/api/student/${studentId}/session/${currentSessionId}/stream-chat?stream=true`;
@@ -213,17 +216,6 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
               const jsonStr = line.slice(6).trim();
               if (!jsonStr) continue;
               
-              const openBraces = (jsonStr.match(/{/g) || []).length;
-              const closeBraces = (jsonStr.match(/}/g) || []).length;
-              const openBrackets = (jsonStr.match(/\[/g) || []).length;
-              const closeBrackets = (jsonStr.match(/\]/g) || []).length;
-              
-              if (openBraces > closeBraces || openBrackets > closeBrackets) {
-                buffer = line + "\n" + buffer;
-                console.log("⚠️ Incomplete JSON detected, buffering...");
-                break;
-              }
-              
               try {
                 const data = JSON.parse(jsonStr);
                 console.log("📥 Received data from backend:", data.type, data.data ? Object.keys(data.data) : "no data");
@@ -258,10 +250,8 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
                       ""
                     );
                     
-                    cleanedContent = cleanedContent
-                      .replace(/\s+/g, " ")
-                      .replace(/^[:\s,\.]+|[:\s,\.]+$/g, "")
-                      .trim();
+                    // Don't replace newlines as they are needed for markdown
+                    cleanedContent = cleanedContent.trim();
                     
                     if (!cleanedContent || cleanedContent.trim().length === 0) {
                       cleanedContent = "";
@@ -329,9 +319,15 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
                 
                 if (jsonStr && !jsonStr.endsWith("}") && !jsonStr.endsWith("]")) {
                   buffer = line + "\n" + buffer;
-                  console.log("⚠️ JSON parse failed, buffering for next chunk...");
+                  console.log("⚠️ JSON parse failed (incomplete end), buffering for next chunk...");
                   break;
                 }
+
+                if (e instanceof SyntaxError && jsonStr.length > 100) {
+                     buffer = line + "\n" + buffer;
+                     console.log("⚠️ JSON parse failed (likely split), buffering...");
+                     break;
+                 }
                 
                 console.error("Error parsing stream data:", e instanceof Error ? e.message : String(e));
                 if (e instanceof SyntaxError) {

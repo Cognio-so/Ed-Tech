@@ -40,6 +40,34 @@ export default function AITutorPage() {
   const [sessionId, setSessionId] = useState<string>("");
   const [teacherId, setTeacherId] = useState<string>("");
 
+  // Use refs to always get the latest values when sending messages
+  const teacherStatsRef = useRef<TeacherStats | null>(null);
+  const topicRef = useRef<string>("");
+  const subjectRef = useRef<string>("");
+  const selectedSubjectRef = useRef<string>("");
+  const selectedGradesRef = useRef<string[]>([]);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    teacherStatsRef.current = teacherStats;
+  }, [teacherStats]);
+
+  useEffect(() => {
+    topicRef.current = topic;
+  }, [topic]);
+
+  useEffect(() => {
+    subjectRef.current = subject;
+  }, [subject]);
+
+  useEffect(() => {
+    selectedSubjectRef.current = selectedSubject;
+  }, [selectedSubject]);
+
+  useEffect(() => {
+    selectedGradesRef.current = selectedGrades;
+  }, [selectedGrades]);
+
   const {
     messages,
     isLoading,
@@ -169,16 +197,23 @@ export default function AITutorPage() {
         model?: string;
       }
     ) => {
-      const teacherData = teacherStats
+      // Use refs to get the latest values instead of stale closure values
+      const currentStats = teacherStatsRef.current;
+      const currentTopic = topicRef.current;
+      const currentSubject = subjectRef.current;
+      const currentSelectedSubject = selectedSubjectRef.current;
+      const currentSelectedGrades = selectedGradesRef.current;
+
+      const teacherData = currentStats
         ? {
-          name: teacherStats.name,
+          name: currentStats.name,
           grades:
-            selectedGrades.length > 0 ? selectedGrades : teacherStats.grades,
-          subjects: teacherStats.subjects,
-          total_content: teacherStats.totalContent,
-          total_assessments: teacherStats.totalAssessments,
-          total_students: teacherStats.totalStudents,
-          students: teacherStats.students.map((student) => ({
+            currentSelectedGrades.length > 0 ? currentSelectedGrades : currentStats.grades,
+          subjects: currentStats.subjects,
+          total_content: currentStats.totalContent,
+          total_assessments: currentStats.totalAssessments,
+          total_students: currentStats.totalStudents,
+          students: currentStats.students.map((student) => ({
             name: student.name,
             grade: student.grade,
             performance: student.performance,
@@ -190,17 +225,17 @@ export default function AITutorPage() {
         : undefined;
 
       const finalSubject =
-        selectedSubject &&
-          selectedSubject !== "all" &&
-          selectedSubject.trim() !== ""
-          ? selectedSubject
-          : subject && subject !== "all" && subject.trim() !== ""
-            ? subject
+        currentSelectedSubject &&
+          currentSelectedSubject !== "all" &&
+          currentSelectedSubject.trim() !== ""
+          ? currentSelectedSubject
+          : currentSubject && currentSubject !== "all" && currentSubject.trim() !== ""
+            ? currentSubject
             : undefined;
 
       await sendMessage(message, {
         teacherData,
-        topic: topic || undefined,
+        topic: currentTopic || undefined,
         subject: finalSubject,
         docUrl: options?.docUrl,
         uploadedDocs: options?.uploadedDocs,
@@ -208,7 +243,7 @@ export default function AITutorPage() {
         model: options?.model,
       });
     },
-    [teacherStats, topic, subject, selectedSubject, selectedGrades, sendMessage]
+    [sendMessage]
   );
 
   const handleClear = useCallback(() => {

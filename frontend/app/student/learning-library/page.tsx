@@ -9,6 +9,9 @@ export const metadata = {
   description: "Browse and access learning content tailored to your grade",
 };
 
+// Enable ISR - revalidate every 60 seconds
+export const revalidate = 60;
+
 async function LearningLibraryContent() {
   const content = await getStudentContent();
 

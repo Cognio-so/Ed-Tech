@@ -203,6 +203,19 @@ async def generate_lesson_plan(
         - Keep tone professional and classroom-ready.
         - Integrate provided context (big ideas, SEL, cultural notes) inside the relevant sections instead of creating new headings.
         - Output ONLY valid Markdown.
+        
+        MARKDOWN FORMATTING REQUIREMENTS:
+        - Output your responses in proper Markdown format, adhering to Shadcn UI typography guidelines for headings, lists, code blocks, and tables.
+        - Ensure proper spacing between list items and paragraphs.
+        - Use triple backticks for code blocks with language specification (e.g., ```python\nprint('Hello')\n```).
+        - Use Markdown table syntax for tabular data.
+        - Use `*` or `-` for unordered lists and `1.` for ordered lists.
+        - Use `**bold**` and `*italic*` for emphasis.
+        - Use `>` for blockquotes.
+        - Ensure headings are hierarchical (e.g., `# H1`, `## H2`, `### H3`, `#### H4`).
+        - Avoid excessive blank lines.
+        - Do not include any introductory or concluding remarks outside the Markdown content itself.
+        - When generating content, prioritize clarity and readability for educational purposes.
     </instructions>
 </lesson_plan_request>
 """
