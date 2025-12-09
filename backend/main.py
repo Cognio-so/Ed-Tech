@@ -141,8 +141,12 @@ class StudentSessionManager:
             student_sessions[session_id] = {
                 "session_id": session_id,
                 "student_id": student_id,
-                "created_at": str(uuid4()),
+                "created_at_ts": time.time(),
+                "created_at": str(uuid4()), 
+                "newly_uploaded_docs":[],
+                "content_generation": [],
                 "messages": [],
+                "student_payload":[]
             }
         return session_id
 

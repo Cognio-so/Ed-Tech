@@ -96,7 +96,7 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
     Uses a simple LLM with knowledge base context, student profile, and assignments.
     """
     messages = state.get("messages", [])
-    topic = state.get("topic", "")
+    topic = state.get("user_query", "")
     subject = state.get("subject", "")
     student_profile = state.get("student_profile") or {}
     pending_assignments = state.get("pending_assignments") or student_profile.get("pending_assignments") or []
