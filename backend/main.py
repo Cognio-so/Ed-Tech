@@ -705,7 +705,7 @@ async def create_assessment(
     teacher_id: str,
     payload: AssessmentRequest,
     stream: bool = False,
-) -> Dict[str, Any] | StreamingResponse:
+) -> Dict[str, Any]:
     """
     Generate an assessment aligned to the provided grade, subject, and learning objectives.
     Supports optional streaming using Server-Sent Events.
