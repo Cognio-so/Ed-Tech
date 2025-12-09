@@ -108,8 +108,14 @@ export function useAITutor(options?: UseAITutorOptions) {
       }
 
       const teacherId = session.user.id;
-      const currentSessionId =
-        sessionIdRef.current || `session_${teacherId}_${Date.now()}`;
+      const currentSessionId = sessionIdRef.current;
+      
+      if (!currentSessionId || currentSessionId.trim() === "") {
+        setIsLoading(false);
+        options?.onError?.("Session not initialized. Please wait for session to be created.");
+        return;
+      }
+      
       sessionIdRef.current = currentSessionId;
 
       try {
@@ -423,21 +429,28 @@ export function useAITutor(options?: UseAITutorOptions) {
               lastSavedMessagesRef.current = messagesJson;
               isSavingRef.current = true;
 
-              saveConversation(
-                messagesJson,
-                undefined,
-                conversationIdRef.current || undefined,
-                sessionIdRef.current || undefined
-              )
-                .then((result) => {
-                  if (result?.conversationId && !conversationIdRef.current) {
-                    conversationIdRef.current = result.conversationId;
-                  }
-                })
-                .catch(() => { })
-                .finally(() => {
-                  isSavingRef.current = false;
-                });
+              // Use setTimeout to ensure this runs after render, not during
+              setTimeout(() => {
+                saveConversation(
+                  messagesJson,
+                  undefined,
+                  conversationIdRef.current || undefined,
+                  sessionIdRef.current || undefined
+                )
+                  .then((result) => {
+                    if (result?.success && result?.conversationId && !conversationIdRef.current) {
+                      conversationIdRef.current = result.conversationId;
+                    } else if (result?.error) {
+                      console.warn("Failed to save conversation:", result.error);
+                    }
+                  })
+                  .catch((error) => {
+                    console.error("Error saving conversation:", error);
+                  })
+                  .finally(() => {
+                    isSavingRef.current = false;
+                  });
+              }, 0);
             }
           }
 

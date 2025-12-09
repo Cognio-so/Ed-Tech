@@ -17,7 +17,8 @@ export async function saveStudentConversation(
   });
 
   if (!session?.user?.id) {
-    redirect("/login");
+    // Return error instead of redirecting to avoid Router update during render
+    return { success: false, error: "Unauthorized" };
   }
 
   try {
@@ -123,7 +124,8 @@ export async function deleteStudentConversation(conversationId: string) {
   });
 
   if (!session?.user?.id) {
-    redirect("/login");
+    // Return error instead of redirecting to avoid Router update during render
+    return { success: false, error: "Unauthorized" };
   }
 
   try {

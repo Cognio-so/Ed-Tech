@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { LiveWaveform } from "@/components/ui/live-waveform";
 import { useStudentVoiceStream } from "@/hooks/use-student-voice-stream";
+import { useFileUpload, type FileWithPreview } from "@/hooks/use-file-uploader";
 
 export interface ChatInputProps {
   onSend: (
@@ -156,12 +157,48 @@ export function ChatInput({
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [selectedModel, setSelectedModel] = useState("gemini_2_5_flash");
-  const [uploadedDocs, setUploadedDocs] = useState<UploadedDoc[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+  // File uploader hook - only enable backend integration if sessionId is available
+  const [fileUploadState, fileUploadActions] = useFileUpload({
+    maxFiles: 5,
+    maxSize: 50 * 1024 * 1024, // 50MB
+    accept: "image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,application/json,text/plain",
+    multiple: true,
+    uploadToR2: true,
+    // Only send to backend if we have a valid sessionId from backend
+    backendUrl: sessionId && sessionId.trim() !== "" ? BACKEND_URL : undefined,
+    userId: studentId,
+    sessionId: sessionId && sessionId.trim() !== "" ? sessionId : undefined,
+    userType: "student",
+    onFilesAdded: (files: FileWithPreview[]) => {
+      toast.success(`${files.length} file(s) uploaded successfully`);
+    },
+    onUploadError: ({ fileId, error }) => {
+      toast.error(`Failed to upload file: ${error}`);
+    },
+  });
+
+  const uploadedDocs: UploadedDoc[] = fileUploadState.files
+    .map((file) => {
+      if (file.file instanceof File) {
+        // File is still being uploaded or hasn't been uploaded yet
+        return null;
+      }
+      // File has been uploaded and is now FileMetadata
+      return {
+        url: file.file.url,
+        filename: file.file.name,
+        type: file.file.type,
+      };
+    })
+    .filter((doc): doc is UploadedDoc => doc !== null); // Only include files with URLs (uploaded to R2)
+
+  const isUploading = fileUploadState.isUploading;
 
   const { status, isRecording, error, connect, disconnect, toggleMute } =
     useStudentVoiceStream();
@@ -198,80 +235,16 @@ export function ChatInput({
       });
 
       setMessage("");
-      setUploadedDocs([]);
+      fileUploadActions.clearFiles();
     }
-  }, [message, isLoading, isUploading, onSend, uploadedDocs, selectedModel]);
-
-  const handleFileUpload = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files || files.length === 0) return;
-
-      const allowedTypes = [
-        "image/",
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "text/markdown",
-        "application/json",
-        "text/plain",
-      ];
-
-      const totalFiles = uploadedDocs.length + files.length;
-      if (totalFiles > 5) {
-        toast.error(`You can only upload up to 5 documents at once.`);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-        return;
-      }
-
-      setIsUploading(true);
-      const newDocs: UploadedDoc[] = [];
-
-      try {
-        for (const file of Array.from(files)) {
-          const formData = new FormData();
-          formData.append("file", file);
-          if (sessionId) {
-            formData.append("sessionId", sessionId);
-          }
-
-          const response = await fetch("/api/upload", {
-            method: "POST",
-            body: formData,
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            newDocs.push({
-              url: data.url || data.fileUrl,
-              filename: file.name,
-              type: file.type,
-            });
-          }
-        }
-
-        if (newDocs.length > 0) {
-          setUploadedDocs((prev) => [...prev, ...newDocs]);
-          toast.success(`${newDocs.length} file(s) uploaded successfully`);
-        }
-      } catch (error) {
-        console.error("Error uploading file:", error);
-        toast.error("Failed to upload file(s)");
-      } finally {
-        setIsUploading(false);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-      }
-    },
-    [uploadedDocs.length, sessionId]
-  );
+  }, [message, isLoading, isUploading, onSend, uploadedDocs, selectedModel, fileUploadActions]);
 
   const removeDocument = useCallback((index: number) => {
-    setUploadedDocs((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+    const fileToRemove = fileUploadState.files[index];
+    if (fileToRemove) {
+      fileUploadActions.removeFile(fileToRemove.id);
+    }
+  }, [fileUploadState.files, fileUploadActions]);
 
   const handleKeyPress = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -416,11 +389,7 @@ export function ChatInput({
         </div>
         <div className="flex flex-col gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2">
           <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,application/json,text/plain"
-            onChange={handleFileUpload}
+            {...fileUploadActions.getInputProps()}
             className="hidden"
           />
 
@@ -431,7 +400,7 @@ export function ChatInput({
                 size="icon"
                 className="h-6 w-6 sm:h-7 sm:w-7 rounded-full"
                 disabled={disabled || isLoading || isUploading}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={fileUploadActions.openFileDialog}
                 title="Attach file"
               >
                 <Paperclip className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
@@ -522,7 +491,7 @@ export function ChatInput({
                 size="icon"
                 className="h-7 w-7 rounded-full"
                 disabled={disabled || isLoading || isUploading}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={fileUploadActions.openFileDialog}
                 title="Attach file"
               >
                 <Paperclip className="h-3.5 w-3.5" />
