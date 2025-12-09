@@ -132,8 +132,10 @@ class StudentAITutorRequest(BaseModel):
     doc_url: Optional[str] = Field(None, description="Optional document to analyze")
     language: str = Field("English", description="Conversation language")
     pending_assignments: Optional[List[Dict[str, Any]]] = Field(None, description="Assignments to keep in mind")
+    completed_assignments: Optional[List[Dict[str, Any]]] = Field(None, description="Recently completed assignments")
     achievements: Optional[List[str]] = Field(None, description="Recent accomplishments")
     assessment_data: Optional[Dict[str, Any]] = Field(None, description="Assessment details for personalization")
+    model: Optional[str] = Field(None, description="Selected AI model (e.g., 'google/gemini-2.5-flash')")
 
 class ImageGenSchema(BaseModel):
     topic: str = Field(..., description="Topic for the image")

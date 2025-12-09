@@ -9,11 +9,13 @@ class StudentGraphState(TypedDict, total=False):
     session_id: Optional[str]
     student_profile: Optional[Dict[str, Any]]
     pending_assignments: Optional[List[Dict[str, Any]]]
+    completed_assignments: Optional[List[Dict[str, Any]]]
     assessment_data: Optional[Dict[str, Any]]
     achievements: Optional[List[str]]
     doc_url: Optional[str]
     subject: Optional[str]
     language: Optional[str]
+    model: Optional[str]
     context: Optional[Dict[str, Any]]
     should_continue: bool
     chunk_callback: Optional[Any]
