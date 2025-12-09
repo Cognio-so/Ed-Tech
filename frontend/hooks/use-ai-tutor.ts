@@ -512,8 +512,79 @@ export function useAITutor(options?: UseAITutorOptions) {
           });
         }
 
-        setStreamingContent("");
-      } catch (error: any) {
+          setStreamingContent("");
+
+          // Final save when streaming completes
+          setMessages((prev) => {
+            const finalMessages = prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    content: accumulatedContent,
+                    imageUrls: imageUrls.length > 0 ? imageUrls : msg.imageUrls,
+                    videoUrls: videoUrls.length > 0 ? videoUrls : msg.videoUrls,
+                    tokenUsage: tokenUsage || msg.tokenUsage,
+                  }
+                : msg
+            );
+
+            // Save final state
+            if (session?.user?.id && finalMessages.length > 0) {
+              const messagesJson = JSON.stringify(
+                finalMessages.map((msg) => ({
+                  id: msg.id,
+                  role: msg.role,
+                  content: msg.content,
+                  timestamp: msg.timestamp.toISOString(),
+                  uploadedDocs: msg.uploadedDocs,
+                  imageUrls: msg.imageUrls,
+                  videoUrls: msg.videoUrls,
+                  tokenUsage: msg.tokenUsage,
+                  sources: msg.sources,
+                }))
+              );
+
+              if (
+                messagesJson !== lastSavedMessagesRef.current &&
+                !isSavingRef.current
+              ) {
+                lastSavedMessagesRef.current = messagesJson;
+                isSavingRef.current = true;
+
+                setTimeout(() => {
+                  saveConversation(
+                    messagesJson,
+                    undefined,
+                    conversationIdRef.current || undefined,
+                    sessionIdRef.current || undefined
+                  )
+                    .then((result) => {
+                      if (
+                        result?.success &&
+                        result?.conversationId &&
+                        !conversationIdRef.current
+                      ) {
+                        conversationIdRef.current = result.conversationId;
+                      } else if (result?.error) {
+                        console.warn(
+                          "Failed to save conversation:",
+                          result.error
+                        );
+                      }
+                    })
+                    .catch((error) => {
+                      console.error("Error saving conversation:", error);
+                    })
+                    .finally(() => {
+                      isSavingRef.current = false;
+                    });
+                }, 100);
+              }
+            }
+
+            return finalMessages;
+          });
+        } catch (error: any) {
         if (error.name === "AbortError") {
           return;
         }
@@ -562,9 +633,67 @@ export function useAITutor(options?: UseAITutorOptions) {
         content,
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, message]);
+      setMessages((prev) => {
+        const updated = [...prev, message];
+        
+        // Save conversation when voice message is added
+        if (session?.user?.id && updated.length > 0) {
+          const messagesJson = JSON.stringify(
+            updated.map((msg) => ({
+              id: msg.id,
+              role: msg.role,
+              content: msg.content,
+              timestamp: msg.timestamp.toISOString(),
+              uploadedDocs: msg.uploadedDocs,
+              imageUrls: msg.imageUrls,
+              videoUrls: msg.videoUrls,
+              tokenUsage: msg.tokenUsage,
+              sources: msg.sources,
+            }))
+          );
+
+          if (
+            messagesJson !== lastSavedMessagesRef.current &&
+            !isSavingRef.current
+          ) {
+            lastSavedMessagesRef.current = messagesJson;
+            isSavingRef.current = true;
+
+            setTimeout(() => {
+              saveConversation(
+                messagesJson,
+                undefined,
+                conversationIdRef.current || undefined,
+                sessionIdRef.current || undefined
+              )
+                .then((result) => {
+                  if (
+                    result?.success &&
+                    result?.conversationId &&
+                    !conversationIdRef.current
+                  ) {
+                    conversationIdRef.current = result.conversationId;
+                  } else if (result?.error) {
+                    console.warn(
+                      "Failed to save conversation:",
+                      result.error
+                    );
+                  }
+                })
+                .catch((error) => {
+                  console.error("Error saving conversation:", error);
+                })
+                .finally(() => {
+                  isSavingRef.current = false;
+                });
+            }, 100);
+          }
+        }
+        
+        return updated;
+      });
     },
-    []
+    [session?.user?.id]
   );
 
   return {
