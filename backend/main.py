@@ -6,6 +6,7 @@ import inspect
 import json
 import os
 import logging
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
@@ -704,7 +705,7 @@ async def create_assessment(
     teacher_id: str,
     payload: AssessmentRequest,
     stream: bool = False,
-) -> Dict[str, Any]:
+) -> Dict[str, Any] | StreamingResponse:
     """
     Generate an assessment aligned to the provided grade, subject, and learning objectives.
     Supports optional streaming using Server-Sent Events.
@@ -1618,7 +1619,7 @@ async def student_ai_tutor_stream_chat(
     """
     current_session_id = session_id
     session = await StudentSessionManager.get_session(current_session_id)
-
+    print(f"payload: {payload}")
 
     queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
     full_response = ""
@@ -1638,8 +1639,16 @@ async def student_ai_tutor_stream_chat(
         )
 
     session_messages = session.setdefault("messages", [])
+    print(f"[STUDENT CHAT ENDPOINT] 📜 Session messages BEFORE adding new user message: {len(session_messages)} messages")
+    for i, msg in enumerate(session_messages):
+        print(f"  [{i}] {msg.get('role', 'unknown')}: {msg.get('content', '')[:100]}...")
+    
     session_messages.append({"role": "user", "content": payload.message})
-    recent_messages = session_messages[-3:]
+    recent_messages = session_messages[-4:]
+    
+    print(f"[STUDENT CHAT ENDPOINT] 📜 Recent messages (last 4): {len(recent_messages)} messages")
+    for i, msg in enumerate(recent_messages):
+        print(f"  [{i}] {msg.get('role', 'unknown')}: {msg.get('content', '')[:100]}...")
 
     langchain_messages = []
     for msg in recent_messages:
@@ -1648,7 +1657,7 @@ async def student_ai_tutor_stream_chat(
         elif msg.get("role") == "assistant":
             langchain_messages.append(AIMessage(content=msg.get("content", "")))
 
-    print(f"[STUDENT CHAT ENDPOINT] 📜 Loading conversation history: {len(session_messages)} previous messages")
+    print(f"[STUDENT CHAT ENDPOINT] 📜 LangChain messages created: {len(langchain_messages)} messages")
     newly_uploaded_docs = session.get("newly_uploaded_docs", [])
     uploaded_doc_flag = bool(newly_uploaded_docs)
     
@@ -1665,12 +1674,14 @@ async def student_ai_tutor_stream_chat(
         "session_id": current_session_id,
         "student_profile": payload.student_profile,
         "pending_assignments": payload.pending_assignments,
+        "completed_assignments": payload.completed_assignments,
         "assessment_data": payload.assessment_data,
         "achievements": payload.achievements,
         "topic": payload.topic,
         "subject": payload.subject,
         "doc_url": payload.doc_url,
         "language": payload.language,
+        "model": payload.model,
         "context": {
             "session": {
                 "summary": session.get("summary", ""),

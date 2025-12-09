@@ -22,13 +22,17 @@ except ImportError:
     from teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
 
 
-def _format_last_turns(messages, k=3):
-    """Format last k messages for context."""
+def _format_last_turns(messages, k=4):
+    """Format last k messages (2-4 messages) for context."""
     if not messages:
         return "(no previous conversation)"
     
+    # Use last 2-4 messages (1-2 conversation turns)
+    num_messages = min(k, len(messages))
+    recent_messages = messages[-num_messages:] if num_messages > 0 else []
+    
     formatted = []
-    for m in messages[-k:]:
+    for m in recent_messages:
         if isinstance(m, dict):
             role = (m.get("type") or m.get("role") or "").lower()
             content = m.get("content", "")
@@ -56,6 +60,55 @@ def _format_assignments(pending_assignments):
         status = assignment.get("status", "pending")
         formatted.append(f"- {title} (due: {due}, status: {status})")
     return "\n".join(formatted)
+
+
+def _format_completed_assignments(completed_assignments):
+    """Format completed assignments for context."""
+    if not completed_assignments:
+        return "No recently completed assignments."
+    formatted = []
+    for assignment in completed_assignments[:5]:
+        title = assignment.get("title") or assignment.get("name") or "Assignment"
+        score = assignment.get("score")
+        submitted_at = assignment.get("submittedAt") or assignment.get("submitted_at") or "Recently"
+        assignment_type = assignment.get("type", "assignment")
+        if score is not None:
+            formatted.append(f"- {title} ({assignment_type}, score: {score}, submitted: {submitted_at})")
+        else:
+            formatted.append(f"- {title} ({assignment_type}, submitted: {submitted_at})")
+    return "\n".join(formatted)
+
+
+def _get_low_score_assessments(completed_assignments, threshold=60):
+    """
+    Extract assessments with scores below threshold.
+    Returns list of dicts with title, score, and extracted topic.
+    """
+    if not completed_assignments:
+        return []
+    
+    low_score_assessments = []
+    for assignment in completed_assignments:
+        score = assignment.get("score")
+        assignment_type = assignment.get("type", "").lower()
+        
+        # Only check assessment-type assignments
+        if assignment_type == "assessment" and score is not None and score < threshold:
+            title = assignment.get("title") or assignment.get("name") or "Assessment"
+            # Try to extract topic from title (e.g., "Assessment - Chemical reactions" -> "Chemical reactions")
+            topic = title
+            if " - " in title:
+                topic = title.split(" - ", 1)[1]
+            elif ":" in title:
+                topic = title.split(":", 1)[1]
+            
+            low_score_assessments.append({
+                "title": title,
+                "topic": topic.strip(),
+                "score": score
+            })
+    
+    return low_score_assessments
 
 
 def _format_achievements(achievements):
@@ -100,6 +153,7 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
     subject = state.get("subject", "")
     student_profile = state.get("student_profile") or {}
     pending_assignments = state.get("pending_assignments") or student_profile.get("pending_assignments") or []
+    completed_assignments = state.get("completed_assignments") or student_profile.get("completed_assignments") or []
     achievements = state.get("achievements") or student_profile.get("achievements") or []
     language = state.get("language", "English")
     chunk_callback = state.get("chunk_callback")
@@ -160,16 +214,58 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
         formatted_kb_context = "\n\n".join(kb_retrieved_contexts[:5])
     
     assignments_text = _format_assignments(pending_assignments)
+    completed_assignments_text = _format_completed_assignments(completed_assignments)
     achievements_text = _format_achievements(achievements)
+    
+    # Check for low-scoring assessments (< 60%)
+    low_score_assessments = _get_low_score_assessments(completed_assignments, threshold=60)
+    low_score_context = ""
+    if low_score_assessments:
+        topics_list = [assess["topic"] for assess in low_score_assessments]
+        topics_text = ", ".join(topics_list)
+        scores_text = ", ".join([f"{assess['topic']} ({assess['score']}%)" for assess in low_score_assessments])
+        low_score_context = f"""
+        <low_performance_alert>
+            <status>ACTIVE</status>
+            <message>The student has recently completed assessments with scores below 60%:</message>
+            <assessments>
+                {scores_text}
+            </assessments>
+            <action_required>
+                When the student greets you or asks a general question, proactively and supportively ask which topic from these assessments they would like to review and study: {topics_text}
+                Be encouraging and supportive - frame it as an opportunity to improve understanding.
+            </action_required>
+        </low_performance_alert>"""
+    else:
+        low_score_context = """
+        <low_performance_alert>
+            <status>INACTIVE</status>
+            <message>No low-scoring assessments detected.</message>
+        </low_performance_alert>"""
+    
+    # Format conversation history and add debug logging
+    conversation_history = _format_last_turns(messages, k=4)
+    print(f"[STUDENT SIMPLE_LLM] 📜 Total messages in state: {len(messages)}")
+    print(f"[STUDENT SIMPLE_LLM] 📝 Conversation history:\n{conversation_history}")
+    print(f"[STUDENT SIMPLE_LLM] 📝 Current user query: '{topic}'")
     
     xml_prompt = f"""
 <study_buddy_request>
     <context>
         <role>Supportive AI Study Buddy</role>
         <task>Help students with their learning, assignments, and educational questions</task>
+        
+        **CONVERSATION HISTORY - READ THIS FIRST:**
         <recent_conversation>
-{_format_last_turns(messages, k=3)}
+{conversation_history}
         </recent_conversation>
+        
+        **CURRENT USER QUERY - WHAT THE STUDENT JUST SAID:**
+        <current_user_query>
+{topic}
+        </current_user_query>
+        
+        **IMPORTANT:** The conversation history above shows what was discussed before. Use it to understand context!
     </context>
     
     <parameters>
@@ -196,9 +292,13 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
         <pending_assignments>
 {assignments_text}
         </pending_assignments>
+        <completed_assignments>
+{completed_assignments_text}
+        </completed_assignments>
         <recent_achievements>
 {achievements_text}
         </recent_achievements>
+{low_score_context}
     </student_information>
     
     <capabilities>
@@ -206,6 +306,7 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
             <item>Topic and subject information</item>
             <item>Complete student profile (name, grade, learning style, subject focus)</item>
             <item>Pending assignments with due dates and status</item>
+            <item>Completed assignments with scores and submission dates</item>
             <item>Recent achievements and accomplishments</item>
 {f"            <item>Curriculum knowledge base content for Grade {grade}, Subject: {subject}, Language: {language} - Use this authoritative curriculum material to answer curriculum-related questions</item>" if kb_retrieved_contexts else ""}
         </access>
@@ -214,11 +315,13 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
     <role_responsibilities>
         <responsibility>Answer questions about the current subject and topic</responsibility>
         <responsibility>Help students understand their assignments and provide guidance</responsibility>
-        <responsibility>Celebrate achievements and provide encouragement</responsibility>
+        <responsibility>Celebrate achievements and completed assignments</responsibility>
         <responsibility>Adapt explanations to the student's learning style and grade level</responsibility>
         <responsibility>Answer questions related to the subject, topic, and grade level using curriculum knowledge base when available</responsibility>
         <responsibility>Provide step-by-step explanations that are clear and encouraging</responsibility>
         <responsibility>Connect answers to pending assignments when relevant</responsibility>
+        <responsibility>Recognize and acknowledge completed assignments and their scores</responsibility>
+        <responsibility>When low-scoring assessments are detected (below 60%), proactively and supportively ask the student which topic they would like to review, especially during greetings or general conversations</responsibility>
 {f"        <responsibility>When answering curriculum-related questions, prioritize information from the knowledge base section as it contains authoritative curriculum content</responsibility>" if kb_retrieved_contexts else ""}
     </role_responsibilities>
     
@@ -226,16 +329,75 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
         <guideline>Speak directly to {student_name} in {language}</guideline>
         <guideline>Keep explanations clear, step-by-step, and encouraging</guideline>
         <guideline>Connect answers to pending assignments when possible</guideline>
-        <guideline>Celebrate progress and keep motivation high</guideline>
+        <guideline>Celebrate progress, completed assignments, and keep motivation high</guideline>
         <guideline>Adapt to the student's learning style: {learning_style}</guideline>
         <guideline>Be supportive and patient, especially when explaining complex concepts</guideline>
         <guideline>When multiple assignments are pending, help prioritize based on due dates</guideline>
+        <guideline>Acknowledge completed assignments and use them to build on student's progress</guideline>
+        <guideline>If the student has low-scoring assessments (below 60%), proactively ask which topic they'd like to review when they greet you or ask general questions - be encouraging and frame it as a learning opportunity</guideline>
     </important_guidelines>
     
     <instructions>
-        Provide clear, educational, and contextually relevant responses based on all available information.
-        Speak in a friendly, encouraging tone that motivates the student.
-        {f"When answering curriculum-related questions, use the knowledge base reference material as the primary source of information." if kb_retrieved_contexts else ""}
+        **CRITICAL: YOU MUST READ THE <recent_conversation> SECTION BEFORE RESPONDING!**
+        
+        The <recent_conversation> section contains the previous messages in this conversation. 
+        The <current_user_query> is what the student just said.
+        
+        **STEP 1: READ AND UNDERSTAND THE CONVERSATION HISTORY**
+        Look at <recent_conversation> and identify:
+        - What topics were discussed?
+        - What questions were asked?
+        - What was the last thing you (Buddy) said?
+        - What was the context of the conversation?
+        
+        **STEP 2: ANALYZE THE CURRENT QUERY IN CONTEXT**
+        Read <current_user_query> and determine:
+        
+        **If <recent_conversation> shows you asked a question (like "Would you like to review Chemical reactions and equations?") 
+        and <current_user_query> is "yes" or "ok" or similar:**
+        → This is a FOLLOW-UP. Continue with the topic you asked about. DO NOT repeat the greeting.
+        
+        **If <recent_conversation> shows you were explaining a topic (like Chemical reactions and equations) 
+        and <current_user_query> is "explain in detail" or "tell me more":**
+        → This is a CONTINUATION. Continue explaining the SAME topic in more detail. DO NOT repeat the greeting.
+        
+        **If <recent_conversation> is empty or only shows greetings, and <current_user_query> is "hi" or "hello":**
+        → This is a GREETING. Show student data (assignments, achievements, etc.)
+        
+        **If <current_user_query> is a new question about a different topic:**
+        → This is a NEW QUESTION. Answer it directly as an AI assistant.
+        
+        1. **If this is a GREETING or INITIAL MESSAGE** (e.g., 'hi', 'hello', 'hey', or first message in conversation):
+           - Provide a warm greeting using the student's name
+           - Display ALL student information from <student_information>:
+             * Completed assignments with scores
+             * Pending assignments with due dates
+             * Recent achievements
+           - If there are low-scoring assessments (below 60%), proactively and supportively ask which topic they'd like to review (at the end, before closing)
+           - End with: "How can I help you today?"
+           - DO NOT start explaining topics unless explicitly asked
+        
+        2. **If this is a FOLLOW-UP or CONTINUATION** (e.g., 'yes', 'ok', 'explain in detail', 'tell me more', or clearly responding to a previous question):
+           - Look at the conversation history to understand what topic was being discussed
+           - Continue with the SAME topic from the previous conversation
+           - DO NOT repeat the greeting or list all assignments again
+           - DO NOT ask if they want to review a topic if you were already discussing it
+           - Provide detailed, helpful information about the topic that was being discussed
+           - Work like a normal AI assistant - answer the question directly
+        
+        3. **If this is a NEW QUESTION or TOPIC REQUEST**:
+           - Answer the question directly as an AI assistant
+           - Use the knowledge base content if available and relevant
+           - Provide clear, educational explanations
+           - DO NOT show student data unless it's relevant to the answer
+        
+        **Key Rules:**
+        - Use conversation history intelligently to understand context
+        - Only show student data (assignments, achievements) during greetings
+        - For follow-ups, continue the previous topic discussion
+        - For new questions, answer directly without repeating student data
+        - Be natural and conversational - don't force patterns
+        - Use the knowledge base content when answering curriculum-related questions
         
         CRITICAL: Format ALL responses using proper Markdown syntax following these guidelines:
         
@@ -304,6 +466,9 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
         ### Assignment Connection
         {f"This relates to your pending assignment: {assignments_text.split('- ')[1].split(' (due:')[0] if assignments_text != 'No pending assignments logged.' else ''}" if assignments_text != "No pending assignments logged." else ""}
         
+        ### Recent Progress
+        {f"Great work on completing your recent assignments! This shows your dedication to learning." if completed_assignments_text != "No recently completed assignments." else "Keep up the great work!"}
+        
         ALWAYS use this Markdown formatting to ensure content renders beautifully and is easy to read.
     </instructions>
 </study_buddy_request>
@@ -312,26 +477,17 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
     model_name = state.get("model") if state.get("model") else "x-ai/grok-4.1-fast"
     llm = get_llm(model_name, temperature=0.55)
     
+    # Build LLM messages: System message with XML prompt, then conversation history
     llm_messages = [
-        SystemMessage(content="You are a supportive AI study buddy. Process the following XML request and provide helpful, educational responses."),
-        HumanMessage(content=xml_prompt)
+        SystemMessage(content="You are a supportive AI study buddy. Process the following XML request and provide helpful, educational responses.")
     ]
     
-    if messages:
-        for msg in messages:
-            if hasattr(msg, 'content') and msg.content:
-                if hasattr(msg, 'type') or hasattr(msg, 'role'):
-                    msg_type = getattr(msg, 'type', None) or getattr(msg, 'role', None)
-                    if msg_type and msg_type.lower() in ('human', 'user'):
-                        llm_messages.append(HumanMessage(content=msg.content))
-                    elif msg_type and msg_type.lower() in ('ai', 'assistant'):
-                        llm_messages.append(AIMessage(content=msg.content))
-                else:
-                    llm_messages.append(HumanMessage(content=msg.content))
-    else:
-        user_message = state.get("resolved_query") or state.get("user_query", "")
-        if user_message:
-            llm_messages.append(HumanMessage(content=user_message))
+    # Add the XML prompt as a human message (contains all context including conversation history)
+    llm_messages.append(HumanMessage(content=xml_prompt))
+    
+    # IMPORTANT: The conversation history is already in the XML prompt's <recent_conversation> section
+    # We don't need to add messages again here - that would duplicate the context
+    # The current user query is in <current_user_query> section of the XML prompt
     
     # Await the async LLM streaming operation
     try:

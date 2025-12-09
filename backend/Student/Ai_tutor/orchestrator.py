@@ -300,10 +300,15 @@ async def orchestrator_node(state: StudentGraphState) -> StudentGraphState:
             state["resolved_query"] = user_query
         else:
             if state.get("intermediate_results"):
-                combined = []
-                for result in state["intermediate_results"]:
-                    combined.append(f"{result.get('node', 'step').title()}:\n{result.get('output', '')}")
-                state["final_answer"] = "\n\n".join(combined)
+                # Only combine with node names if there are multiple results
+                if len(state["intermediate_results"]) > 1:
+                    combined = []
+                    for result in state["intermediate_results"]:
+                        combined.append(f"{result.get('node', 'step').title()}:\n{result.get('output', '')}")
+                    state["final_answer"] = "\n\n".join(combined)
+                else:
+                    # Single result - use output directly without node name prefix
+                    state["final_answer"] = state["intermediate_results"][0].get("output", "")
             else:
                 state["final_answer"] = state.get("response", "Task completed.")
             state["route"] = "end"
