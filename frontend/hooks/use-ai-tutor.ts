@@ -34,7 +34,7 @@ export interface UseAITutorOptions {
   sessionId?: string;
 }
 
-const BACKEND_URL = process.env.BACKEND_URL;
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 export function useAITutor(options?: UseAITutorOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
