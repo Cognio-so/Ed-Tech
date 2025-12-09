@@ -64,18 +64,31 @@ export default function AITutorPage() {
 
           try {
             const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+            if (!backendUrl) {
+              console.error("Backend URL not configured");
+              return;
+            }
+            
             const sessRes = await fetch(`${backendUrl}/api/teacher/${tId}/sessions`, {
               method: "POST"
             });
+            
             if (sessRes.ok) {
               const sessData = await sessRes.json();
-              setSessionId(sessData.session_id);
+              if (sessData.session_id) {
+                console.log("✅ Session created by backend:", sessData.session_id);
+                setSessionId(sessData.session_id);
+              } else {
+                console.error("❌ Backend did not return session_id");
+              }
             } else {
-              setSessionId(`session_${tId}_${Date.now()}`);
+              const errorText = await sessRes.text();
+              console.error("❌ Failed to create session:", sessRes.status, errorText);
+              // Don't set fallback session - wait for backend to be available
             }
           } catch (e) {
-            console.error("Error creating session:", e);
-            setSessionId(`session_${tId}_${Date.now()}`);
+            console.error("❌ Error creating session:", e);
+            // Don't set fallback session - wait for backend to be available
           }
         }
 
