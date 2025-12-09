@@ -203,6 +203,19 @@ async def generate_assessment(
         Ensure numbering is continuous regardless of type and always include the question type label in the format `Question X: [Type]`.
         If any custom instructions are provided, integrate them naturally into the relevant sections without creating new headings.
         Avoid extra commentary outside the sections above and ensure the tone is supportive and actionable for teachers.
+        
+        MARKDOWN FORMATTING REQUIREMENTS:
+        - Output your responses in proper Markdown format, adhering to Shadcn UI typography guidelines for headings, lists, code blocks, and tables.
+        - Ensure proper spacing between list items and paragraphs.
+        - Use triple backticks for code blocks with language specification (e.g., ```python\nprint('Hello')\n```).
+        - Use Markdown table syntax for tabular data.
+        - Use `*` or `-` for unordered lists and `1.` for ordered lists.
+        - Use `**bold**` and `*italic*` for emphasis.
+        - Use `>` for blockquotes.
+        - Ensure headings are hierarchical (e.g., `# H1`, `## H2`, `### H3`, `#### H4`).
+        - Avoid excessive blank lines.
+        - Do not include any introductory or concluding remarks outside the Markdown content itself.
+        - When generating content, prioritize clarity and readability for educational purposes.
     </instructions>
 </assessment_generation_request>
 """.strip()

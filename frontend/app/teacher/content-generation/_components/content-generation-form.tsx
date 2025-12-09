@@ -72,6 +72,15 @@ interface Content {
   grade?: string | null;
   subject?: string | null;
   topic?: string | null;
+  language?: string | null;
+  learningObjective?: string | null;
+  emotionalConsideration?: number | null;
+  adaptiveLearning?: boolean | null;
+  includeAssessment?: boolean | null;
+  multimediaSuggestion?: boolean | null;
+  instructionDepth?: string | null;
+  numberOfSessions?: string | null;
+  durationOfSession?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -161,20 +170,23 @@ export function ContentGenerationForm({
         try {
           const editContent: Content = JSON.parse(editContentStr);
           setEditingId(editContent.id);
+          
           form.reset({
             contentType: editContent.contentType as any,
             grade: editContent.grade || "",
             subject: editContent.subject || "",
             topic: editContent.topic || "",
-            language: "English",
-            learningObjective: "",
-            emotionalConsideration: 3,
-            adaptiveLearning: false,
-            includeAssessment: false,
-            multimediaSuggestion: false,
-            instructionDepth: "Standard",
-            numberOfSessions: "",
-            durationOfSession: "",
+            language: (editContent.language === "English" || editContent.language === "Hindi") 
+              ? editContent.language as "English" | "Hindi" 
+              : "English",
+            learningObjective: editContent.learningObjective || "",
+            emotionalConsideration: editContent.emotionalConsideration || 3,
+            adaptiveLearning: editContent.adaptiveLearning || false,
+            includeAssessment: editContent.includeAssessment || false,
+            multimediaSuggestion: editContent.multimediaSuggestion || false,
+            instructionDepth: (editContent.instructionDepth as "Basic" | "Standard" | "Advanced") || "Standard",
+            numberOfSessions: editContent.numberOfSessions || "",
+            durationOfSession: editContent.durationOfSession || "",
           });
           setGeneratedContent(editContent.content);
           setShowPreview(true);
@@ -194,8 +206,8 @@ export function ContentGenerationForm({
       ...values,
     };
 
-    console.log("📝 Form values:", values);
-    console.log("📦 Payload being sent:", payload);
+    console.log("📝 Content Form values:", values);
+    console.log("📦 Content Payload being sent:", payload);
 
     await streamContent("/api/content-generation", payload, {
       onComplete: (content) => {

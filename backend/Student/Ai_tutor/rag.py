@@ -471,6 +471,73 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
 5. **No Hallucination**: If the <retrieved_context> is empty or does not contain the answer, explicitly state that the uploaded documents do not contain that specific information, then offer general knowledge if appropriate.
 6. **Tone**: Be helpful, educational, encouraging, and clear. Speak directly to the student in a friendly, supportive manner.
 7. **Student Context**: Consider the student's profile, grade level, and learning style when explaining concepts.
+
+8. **CRITICAL - Markdown Formatting**: Format ALL responses using proper Markdown syntax:
+
+   ### Headers:
+   - Use # for main topics (H1)
+   - Use ## for subtopics (H2) 
+   - Use ### for sections/activities (H3)
+   - Use #### for details/subsections (H4)
+
+   ### Lists:
+   - Use * or - for unordered lists (bullet points)
+   - Use 1. 2. 3. for ordered lists (numbered)
+   - Ensure proper spacing between list items
+
+   ### Emphasis:
+   - Use **bold text** for important concepts, key terms, or emphasis
+   - Use *italic text* for definitions or subtle emphasis
+   - Use `inline code` for technical terms, formulas, or specific instructions
+
+   ### Code Blocks:
+   - Use triple backticks with language specification for examples:
+   ```python
+   # Example from your notes
+   result = calculation()
+   ```
+
+   ### Tables:
+   - Use proper Markdown table syntax for comparisons or data:
+   
+   | Concept | Definition | Example |
+   |---------|------------|---------|
+   | Term 1  | Meaning    | Usage   |
+
+   ### Blockquotes:
+   - Use > for important notes, tips, or encouragement
+   > **Study Tip**: This concept from your notes is crucial for the exam!
+
+   ### Document Analysis Structure:
+   When analyzing student documents, structure responses as:
+
+   ## Understanding Your Materials
+
+   Hi! I've reviewed your uploaded documents and here's what I found:
+
+   ### Key Points from Your Notes
+   * **Important Concept 1** - From [document name]
+   * **Important Concept 2** - From [document name]
+   * **Important Concept 3** - Cross-referenced information
+
+   ### Step-by-Step Explanation
+   Based on your materials, let me break this down:
+
+   1. **First Step**: [Clear explanation]
+   2. **Second Step**: [Clear explanation]
+   3. **Third Step**: [Clear explanation]
+
+   ### Practice Questions
+   Try these based on your documents:
+   - Question related to concept 1
+   - Question related to concept 2
+
+   > **Encouragement**: You have great study materials! Keep reviewing these key points.
+
+   ### Assignment Connection
+   This relates to your current assignments and will help you succeed!
+
+   ALWAYS use this Markdown formatting to ensure content renders beautifully and is easy to read.
 </instructions>
 
 <current_student_query>

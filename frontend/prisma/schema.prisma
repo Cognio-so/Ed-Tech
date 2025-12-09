@@ -323,6 +323,7 @@ model LessonItem {
   @@index([lessonId])
   @@index([contentType])
   @@index([contentId])
+  @@index([grade])
   @@map("lesson_item")
 }
 

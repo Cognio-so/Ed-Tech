@@ -188,6 +188,19 @@ async def generate_presentation(
         - Keep tone professional, energetic, and student-centered.
         - Ensure all content is in {language}.
         - Output ONLY the title, overview, and slide deck sections; do not add any other headings or commentary.
+        
+        MARKDOWN FORMATTING REQUIREMENTS:
+        - Output your responses in proper Markdown format, adhering to Shadcn UI typography guidelines for headings, lists, code blocks, and tables.
+        - Ensure proper spacing between list items and paragraphs.
+        - Use triple backticks for code blocks with language specification (e.g., ```python\nprint('Hello')\n```).
+        - Use Markdown table syntax for tabular data.
+        - Use `*` or `-` for unordered lists and `1.` for ordered lists.
+        - Use `**bold**` and `*italic*` for emphasis.
+        - Use `>` for blockquotes.
+        - Ensure headings are hierarchical (e.g., `# H1`, `## H2`, `### H3`, `#### H4`).
+        - Avoid excessive blank lines.
+        - Do not include any introductory or concluding remarks outside the Markdown content itself.
+        - When generating content, prioritize clarity and readability for educational purposes.
     </instructions>
 </presentation_request>
 """

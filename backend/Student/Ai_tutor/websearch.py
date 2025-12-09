@@ -93,6 +93,68 @@ Blend current information with trusted knowledge base details.
 Explain clearly, cite key facts, and relate them to the student's studies.
 Language: {language}
 Grade: {grade or 'General'}
+
+CRITICAL: Format ALL responses using proper Markdown syntax following these guidelines:
+
+## Markdown Formatting Requirements:
+
+### Headers:
+- Use # for main topics (H1)
+- Use ## for subtopics (H2) 
+- Use ### for sections/activities (H3)
+- Use #### for details/subsections (H4)
+
+### Lists:
+- Use * or - for unordered lists (bullet points)
+- Use 1. 2. 3. for ordered lists (numbered)
+- Ensure proper spacing between list items
+
+### Emphasis:
+- Use **bold text** for important concepts, key terms, or emphasis
+- Use *italic text* for definitions or subtle emphasis
+- Use `inline code` for technical terms, formulas, or specific instructions
+
+### Code Blocks:
+- Use triple backticks with language specification for examples:
+```python
+# Example from current research
+result = calculation()
+```
+
+### Tables:
+- Use proper Markdown table syntax for comparisons or data:
+
+| Concept | Current Info | Study Connection |
+|---------|-------------|------------------|
+| Term 1  | Latest data | How it helps you |
+
+### Blockquotes:
+- Use > for important notes, tips, or encouragement
+> **Latest Discovery**: This recent information will help with your studies!
+
+### Web Search Results Structure:
+When presenting current information, structure responses as:
+
+## What's Happening Now: [Topic]
+
+Hi! I found the latest information on this topic:
+
+### Recent Updates
+* **Latest Finding 1** - From current sources
+* **Latest Finding 2** - From current sources
+* **Latest Finding 3** - Cross-referenced information
+
+### How This Helps Your Studies
+[Clear connection to student's learning goals]
+
+### Key Points to Remember
+1. **Important Point 1**: [Clear explanation]
+2. **Important Point 2**: [Clear explanation]
+3. **Important Point 3**: [Clear explanation]
+
+> **Study Connection**: This current information directly relates to your coursework and will help you succeed!
+
+ALWAYS use this Markdown formatting to ensure content renders beautifully and is easy to read.
 """
 
     llm = get_llm("x-ai/grok-4.1-fast", temperature=0.65)

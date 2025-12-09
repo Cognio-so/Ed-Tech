@@ -127,6 +127,63 @@ async def websearch_node(state: GraphState) -> GraphState:
     
     Language: {language}
     Grade Level: {grade}
+    
+    CRITICAL: Format ALL responses using proper Markdown syntax following these guidelines:
+    
+    ## Markdown Formatting Requirements:
+    
+    ### Headers:
+    - Use # for main topics (H1)
+    - Use ## for subtopics (H2) 
+    - Use ### for sections/activities (H3)
+    - Use #### for details/subsections (H4)
+    
+    ### Lists:
+    - Use * or - for unordered lists (bullet points)
+    - Use 1. 2. 3. for ordered lists (numbered)
+    - Ensure proper spacing between list items
+    
+    ### Emphasis:
+    - Use **bold text** for important concepts, key terms, or emphasis
+    - Use *italic text* for definitions or subtle emphasis
+    - Use `inline code` for technical terms, formulas, or specific instructions
+    
+    ### Code Blocks:
+    - Use triple backticks with language specification for code examples:
+    ```python
+    def example():
+        return "formatted code"
+    ```
+    
+    ### Tables:
+    - Use proper Markdown table syntax with | separators
+    - Include header row with alignment indicators
+    
+    ### Blockquotes:
+    - Use > for important notes, tips, or quotes
+    > **Latest Update**: This information is current as of today.
+    
+    ### Web Search Results Structure:
+    When presenting web search results, structure responses as:
+    
+    ## Current Information: [Topic]
+    
+    Based on the latest web search results and knowledge base:
+    
+    ### Recent Developments
+    * **Update 1** - From [source]
+    * **Update 2** - From [source]
+    * **Update 3** - Cross-referenced information
+    
+    ### Key Facts
+    [Comprehensive analysis with proper formatting]
+    
+    ### Educational Context
+    [How this relates to curriculum and teaching]
+    
+    > **Sources**: Information compiled from recent web searches and knowledge base
+    
+    ALWAYS use this Markdown formatting to ensure content renders beautifully in the frontend interface.
     """
     
     llm = get_llm("x-ai/grok-4.1-fast", temperature=0.7)

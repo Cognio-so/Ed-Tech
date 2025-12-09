@@ -50,6 +50,7 @@ export async function getTeacherStats(): Promise<TeacherStats | null> {
         contents: {
           select: {
             id: true,
+            contentType: true,
           },
         },
       },
@@ -59,16 +60,16 @@ export async function getTeacherStats(): Promise<TeacherStats | null> {
       return null;
     }
 
-    const totalContent = teacher.contents.length;
+    // Filter content by type - exclude assessments from content count
+    const contentItems = teacher.contents.filter(
+      (content) => content.contentType !== "assessment"
+    );
+    const totalContent = contentItems.length;
 
-    const assessments = await prisma.content.findMany({
-      where: {
-        userId: session.user.id,
-      },
-      select: {
-        id: true,
-      },
-    });
+    // Count only assessment type content
+    const assessments = teacher.contents.filter(
+      (content) => content.contentType === "assessment"
+    );
 
     const studentsData = await getStudentData();
 

@@ -213,21 +213,6 @@ export function useAITutor(options?: UseAITutorOptions) {
               const jsonStr = line.slice(6).trim();
               if (!jsonStr) continue;
               
-              // Check if JSON appears complete (has matching braces)
-              // This is a heuristic - count opening and closing braces
-              const openBraces = (jsonStr.match(/{/g) || []).length;
-              const closeBraces = (jsonStr.match(/}/g) || []).length;
-              const openBrackets = (jsonStr.match(/\[/g) || []).length;
-              const closeBrackets = (jsonStr.match(/\]/g) || []).length;
-              
-              // If braces/brackets don't match, the JSON is likely incomplete
-              // Keep it in buffer for next chunk
-              if (openBraces > closeBraces || openBrackets > closeBrackets) {
-                buffer = line + "\n" + buffer;
-                console.log("⚠️ Incomplete JSON detected (unmatched braces), buffering...");
-                break; // Wait for more data
-              }
-              
               try {
                 const data = JSON.parse(jsonStr);
                 console.log("📥 Received data from backend:", data.type, data.data ? Object.keys(data.data) : "no data");
@@ -270,10 +255,8 @@ export function useAITutor(options?: UseAITutorOptions) {
                     );
                     
                     // Clean up multiple spaces, newlines, and trailing punctuation
-                    cleanedContent = cleanedContent
-                      .replace(/\s+/g, " ")
-                      .replace(/^[:\s,\.]+|[:\s,\.]+$/g, "")
-                      .trim();
+                    // Don't replace newlines as they are needed for markdown
+                    cleanedContent = cleanedContent.trim();
                     
                     // If content is empty or only whitespace after cleaning, set to empty string
                     if (!cleanedContent || cleanedContent.trim().length === 0) {
@@ -346,15 +329,25 @@ export function useAITutor(options?: UseAITutorOptions) {
                 // If JSON parsing fails, check if it's incomplete
                 const jsonStr = line.slice(6).trim();
                 
-                // Check for incomplete JSON indicators
+                // Check for incomplete JSON indicators - crude check
+                // If it doesn't end with a closing brace/bracket, it's definitely incomplete
                 if (jsonStr && !jsonStr.endsWith("}") && !jsonStr.endsWith("]")) {
                   // Might be incomplete - add back to buffer
                   buffer = line + "\n" + buffer;
-                  console.log("⚠️ JSON parse failed, buffering for next chunk...");
+                  console.log("⚠️ JSON parse failed (incomplete end), buffering for next chunk...");
                   break; // Wait for more data
                 }
                 
-                // If it's not incomplete JSON, log the error
+                // If it ends with brace but still fails, it might be a split string inside JSON
+                // We should try to buffer it too, but be careful of infinite loops
+                // Only buffer if we haven't seen this exact line failure before? 
+                // Simpler: if it's very long, assume split.
+                 if (e instanceof SyntaxError && jsonStr.length > 100) {
+                     buffer = line + "\n" + buffer;
+                     console.log("⚠️ JSON parse failed (likely split), buffering...");
+                     break;
+                 }
+                
                 console.error("Error parsing stream data:", e instanceof Error ? e.message : String(e));
                 if (e instanceof SyntaxError) {
                   console.error("JSON syntax error - line length:", jsonStr.length);

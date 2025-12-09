@@ -139,9 +139,15 @@ export function AssessmentForm({
           setGeneratedContent(editAssessment.content);
           setShowPreview(true);
 
-          const assessmentData = JSON.parse(
-            editAssessment.numberOfSessions || "{}"
-          );
+          // Parse assessment-specific data from numberOfSessions field
+          let assessmentData: any = {};
+          try {
+            assessmentData = JSON.parse(editAssessment.numberOfSessions || "{}");
+          } catch (parseError) {
+            console.warn("Could not parse assessment data:", parseError);
+            assessmentData = {};
+          }
+
           form.reset({
             subject: editAssessment.subject || "",
             grade: editAssessment.grade || "",
@@ -156,12 +162,12 @@ export function AssessmentForm({
             duration: editAssessment.durationOfSession || "45 minutes",
             confidenceLevel: editAssessment.emotionalConsideration || 3,
             customInstruction: assessmentData.customInstruction || "",
-            mcqEnabled: assessmentData.mcqEnabled || false,
-            mcqCount: assessmentData.mcqCount || 0,
-            trueFalseEnabled: assessmentData.trueFalseEnabled || false,
-            trueFalseCount: assessmentData.trueFalseCount || 0,
-            shortAnswerEnabled: assessmentData.shortAnswerEnabled || false,
-            shortAnswerCount: assessmentData.shortAnswerCount || 0,
+            mcqEnabled: Boolean(assessmentData.mcqEnabled),
+            mcqCount: Number(assessmentData.mcqCount) || 0,
+            trueFalseEnabled: Boolean(assessmentData.trueFalseEnabled),
+            trueFalseCount: Number(assessmentData.trueFalseCount) || 0,
+            shortAnswerEnabled: Boolean(assessmentData.shortAnswerEnabled),
+            shortAnswerCount: Number(assessmentData.shortAnswerCount) || 0,
           });
 
           sessionStorage.removeItem("editAssessment");
@@ -193,6 +199,9 @@ export function AssessmentForm({
       shortAnswerEnabled: values.shortAnswerEnabled,
       shortAnswerCount: values.shortAnswerEnabled ? values.shortAnswerCount : 0,
     };
+
+    console.log("📝 Assessment Form values:", values);
+    console.log("📦 Assessment Payload being sent:", payload);
 
     await streamContent("/api/assessment-generation", payload, {
       onComplete: (content) => {

@@ -431,6 +431,61 @@ async def rag_node(state: GraphState) -> GraphState:
 4. **Citations**: When you use information from a document, mention the source naturally. Example: "According to the lecture notes..." or "As seen in [filename]...".
 5. **No Hallucination**: If the <retrieved_context> is empty or does not contain the answer, explicitly state that the uploaded documents do not contain that specific information, then offer general knowledge if appropriate.
 6. **Tone**: Be helpful, educational, and clear.
+
+7. **CRITICAL - Markdown Formatting**: Format ALL responses using proper Markdown syntax:
+
+   ### Headers:
+   - Use # for main topics (H1)
+   - Use ## for subtopics (H2) 
+   - Use ### for sections/activities (H3)
+   - Use #### for details/subsections (H4)
+
+   ### Lists:
+   - Use * or - for unordered lists (bullet points)
+   - Use 1. 2. 3. for ordered lists (numbered)
+   - Ensure proper spacing between list items
+
+   ### Emphasis:
+   - Use **bold text** for important concepts, key terms, or emphasis
+   - Use *italic text* for definitions or subtle emphasis
+   - Use `inline code` for technical terms, formulas, or specific instructions
+
+   ### Code Blocks:
+   - Use triple backticks with language specification for code examples:
+   ```python
+   def example():
+       return "formatted code"
+   ```
+
+   ### Tables:
+   - Use proper Markdown table syntax with | separators
+   - Include header row with alignment indicators
+
+   ### Blockquotes:
+   - Use > for important notes, tips, or quotes
+   > **Important**: This is a key concept from the document.
+
+   ### Document Analysis Structure:
+   When analyzing documents, structure responses as:
+
+   ## Document Analysis: [Topic]
+
+   Based on the uploaded documents, here's what I found:
+
+   ### Key Findings
+   * **Finding 1** - From [document name]
+   * **Finding 2** - From [document name]
+   * **Finding 3** - Cross-referenced from multiple sources
+
+   ### Detailed Analysis
+   [Comprehensive analysis with proper formatting]
+
+   ### Summary
+   [Concise summary with actionable insights]
+
+   > **Source**: Information compiled from [list document names]
+
+   ALWAYS use this Markdown formatting to ensure content renders beautifully in the frontend interface.
 </instructions>
 
 <current_user_query>
