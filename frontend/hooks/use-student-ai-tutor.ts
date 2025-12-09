@@ -34,7 +34,7 @@ export interface UseStudentAITutorOptions {
   sessionId?: string;
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 export function useStudentAITutor(options?: UseStudentAITutorOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -112,13 +112,15 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
 
       const studentId = session.user.id;
       const currentSessionId = sessionIdRef.current;
-      
+
       if (!currentSessionId || currentSessionId.trim() === "") {
         setIsLoading(false);
-        options?.onError?.("Session not initialized. Please wait for session to be created.");
+        options?.onError?.(
+          "Session not initialized. Please wait for session to be created."
+        );
         return;
       }
-      
+
       sessionIdRef.current = currentSessionId;
 
       try {
@@ -141,8 +143,10 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
           payload: backendPayload,
           studentId,
           sessionId: currentSessionId,
-          completedAssignmentsCount: backendPayload.completed_assignments?.length || 0,
-          pendingAssignmentsCount: backendPayload.pending_assignments?.length || 0,
+          completedAssignmentsCount:
+            backendPayload.completed_assignments?.length || 0,
+          pendingAssignmentsCount:
+            backendPayload.pending_assignments?.length || 0,
         });
 
         const endpoint = `${BACKEND_URL}/api/student/${studentId}/session/${currentSessionId}/stream-chat?stream=true`;
@@ -177,7 +181,13 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
         let accumulatedContent = "";
         let imageUrls: string[] = [];
         let videoUrls: string[] = [];
-        let tokenUsage: { input_tokens: number; output_tokens: number; total_tokens: number } | undefined;
+        let tokenUsage:
+          | {
+              input_tokens: number;
+              output_tokens: number;
+              total_tokens: number;
+            }
+          | undefined;
         let buffer = "";
 
         const sessionIdHeader = response.headers.get("X-Session-Id");
@@ -198,7 +208,10 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
                 const data = JSON.parse(buffer.trim());
                 console.log("📥 Received final buffered data:", data.type);
               } catch (e) {
-                console.warn("⚠️ Could not parse final buffer:", buffer.substring(0, 100));
+                console.warn(
+                  "⚠️ Could not parse final buffer:",
+                  buffer.substring(0, 100)
+                );
               }
             }
             break;
@@ -206,27 +219,34 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
 
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
-          
+
           let newlineIndex;
           while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
             const line = buffer.substring(0, newlineIndex);
             buffer = buffer.substring(newlineIndex + 1);
-            
+
             if (line.trim().startsWith("data: ")) {
               const jsonStr = line.slice(6).trim();
               if (!jsonStr) continue;
-              
+
               try {
                 const data = JSON.parse(jsonStr);
-                console.log("📥 Received data from backend:", data.type, data.data ? Object.keys(data.data) : "no data");
+                console.log(
+                  "📥 Received data from backend:",
+                  data.type,
+                  data.data ? Object.keys(data.data) : "no data"
+                );
 
                 if (data.type === "content" && data.data) {
                   if (data.data.chunk) {
                     let chunk = data.data.chunk;
-                    
-                    chunk = chunk.replace(/Image\s+generated\s+successfully:\s*/gi, "");
+
+                    chunk = chunk.replace(
+                      /Image\s+generated\s+successfully:\s*/gi,
+                      ""
+                    );
                     chunk = chunk.replace(/data:image\/[^,\s\)\]]+/g, "");
-                    
+
                     accumulatedContent += chunk;
                     setStreamingContent(accumulatedContent);
 
@@ -239,24 +259,24 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
                     );
                   } else if (data.data.full_response) {
                     let cleanedContent = data.data.full_response;
-                    
+
                     cleanedContent = cleanedContent.replace(
                       /Image\s+generated\s+successfully:\s*data:image\/[^\s\)\]]+/gi,
                       ""
                     );
-                    
+
                     cleanedContent = cleanedContent.replace(
                       /data:image\/[^\s\)\]]+/g,
                       ""
                     );
-                    
+
                     // Don't replace newlines as they are needed for markdown
                     cleanedContent = cleanedContent.trim();
-                    
+
                     if (!cleanedContent || cleanedContent.trim().length === 0) {
                       cleanedContent = "";
                     }
-                    
+
                     accumulatedContent = cleanedContent;
                     setStreamingContent(accumulatedContent);
 
@@ -274,12 +294,21 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
                       console.log("🖼️ Extracted image URLs:", imageUrls.length);
                     }
 
-                    if (data.data.img_urls && Array.isArray(data.data.img_urls)) {
+                    if (
+                      data.data.img_urls &&
+                      Array.isArray(data.data.img_urls)
+                    ) {
                       imageUrls = [...imageUrls, ...data.data.img_urls];
-                      console.log("🖼️ Extracted img_urls:", data.data.img_urls.length);
+                      console.log(
+                        "🖼️ Extracted img_urls:",
+                        data.data.img_urls.length
+                      );
                     }
 
-                    if (data.data.video_urls && Array.isArray(data.data.video_urls)) {
+                    if (
+                      data.data.video_urls &&
+                      Array.isArray(data.data.video_urls)
+                    ) {
                       videoUrls = data.data.video_urls;
                       console.log("🎥 Extracted video URLs:", videoUrls.length);
                     }
@@ -294,8 +323,10 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
                           ? {
                               ...msg,
                               content: accumulatedContent,
-                              imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-                              videoUrls: videoUrls.length > 0 ? videoUrls : undefined,
+                              imageUrls:
+                                imageUrls.length > 0 ? imageUrls : undefined,
+                              videoUrls:
+                                videoUrls.length > 0 ? videoUrls : undefined,
                               tokenUsage,
                             }
                           : msg
@@ -316,32 +347,51 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
                 }
               } catch (e) {
                 const jsonStr = line.slice(6).trim();
-                
-                if (jsonStr && !jsonStr.endsWith("}") && !jsonStr.endsWith("]")) {
+
+                if (
+                  jsonStr &&
+                  !jsonStr.endsWith("}") &&
+                  !jsonStr.endsWith("]")
+                ) {
                   buffer = line + "\n" + buffer;
-                  console.log("⚠️ JSON parse failed (incomplete end), buffering for next chunk...");
+                  console.log(
+                    "⚠️ JSON parse failed (incomplete end), buffering for next chunk..."
+                  );
                   break;
                 }
 
                 if (e instanceof SyntaxError && jsonStr.length > 100) {
-                     buffer = line + "\n" + buffer;
-                     console.log("⚠️ JSON parse failed (likely split), buffering...");
-                     break;
-                 }
-                
-                console.error("Error parsing stream data:", e instanceof Error ? e.message : String(e));
+                  buffer = line + "\n" + buffer;
+                  console.log(
+                    "⚠️ JSON parse failed (likely split), buffering..."
+                  );
+                  break;
+                }
+
+                console.error(
+                  "Error parsing stream data:",
+                  e instanceof Error ? e.message : String(e)
+                );
                 if (e instanceof SyntaxError) {
-                  console.error("JSON syntax error - line length:", jsonStr.length);
+                  console.error(
+                    "JSON syntax error - line length:",
+                    jsonStr.length
+                  );
                   console.error("First 200 chars:", jsonStr.substring(0, 200));
-                  console.error("Last 200 chars:", jsonStr.substring(Math.max(0, jsonStr.length - 200)));
-                  
+                  console.error(
+                    "Last 200 chars:",
+                    jsonStr.substring(Math.max(0, jsonStr.length - 200))
+                  );
+
                   if (jsonStr.length > 10000) {
                     buffer = line + "\n" + buffer;
-                    console.log("⚠️ Very long JSON string detected, buffering for completion...");
+                    console.log(
+                      "⚠️ Very long JSON string detected, buffering for completion..."
+                    );
                     break;
                   }
                 }
-                
+
                 const textMatch = line.match(/data:\s*(.+)/);
                 if (textMatch && textMatch[1]) {
                   const text = textMatch[1];
@@ -407,10 +457,17 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
                   sessionIdRef.current || undefined
                 )
                   .then((result) => {
-                    if (result?.success && result?.conversationId && !conversationIdRef.current) {
+                    if (
+                      result?.success &&
+                      result?.conversationId &&
+                      !conversationIdRef.current
+                    ) {
                       conversationIdRef.current = result.conversationId;
                     } else if (result?.error) {
-                      console.warn("Failed to save conversation:", result.error);
+                      console.warn(
+                        "Failed to save conversation:",
+                        result.error
+                      );
                     }
                   })
                   .catch((error) => {
@@ -498,4 +555,3 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
     addVoiceMessage,
   };
 }
-

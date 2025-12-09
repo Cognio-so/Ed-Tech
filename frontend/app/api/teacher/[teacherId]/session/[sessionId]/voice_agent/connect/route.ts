@@ -12,7 +12,7 @@ export async function POST(
     console.log("📦 Connect request for:", { teacherId, sessionId });
 
     // Forward to FastAPI backend
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+    const backendUrl = process.env.BACKEND_URL;
     const endpoint = `${backendUrl}/api/teacher/${teacherId}/session/${sessionId}/voice_agent/connect`;
 
     console.log("🔄 Proxying voice connect request to:", endpoint);

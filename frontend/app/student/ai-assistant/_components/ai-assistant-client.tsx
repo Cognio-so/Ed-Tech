@@ -24,20 +24,28 @@ interface AIAssistantClientProps {
   initialAssignments: any;
 }
 
-function AIAssistantClient({ 
-  initialProfile, 
-  initialStats, 
-  initialAssignments 
+function AIAssistantClient({
+  initialProfile,
+  initialStats,
+  initialAssignments,
 }: AIAssistantClientProps) {
-  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(
+    null
+  );
   const [topic, setTopic] = useState<string>("");
   const [subject, setSubject] = useState<string>("");
   const [selectedSubject, setSelectedSubject] = useState<string>("");
-  const [subjects, setSubjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [subjects, setSubjects] = useState<Array<{ id: string; name: string }>>(
+    []
+  );
   const [sessionId, setSessionId] = useState<string>("");
   const [studentId, setStudentId] = useState<string>("");
-  const [pendingAssignments, setPendingAssignments] = useState<Array<Record<string, any>>>([]);
-  const [completedAssignments, setCompletedAssignments] = useState<Array<Record<string, any>>>([]);
+  const [pendingAssignments, setPendingAssignments] = useState<
+    Array<Record<string, any>>
+  >([]);
+  const [completedAssignments, setCompletedAssignments] = useState<
+    Array<Record<string, any>>
+  >([]);
 
   // Use refs to always get the latest values when sending messages
   const studentProfileRef = useRef<StudentProfile | null>(null);
@@ -94,23 +102,33 @@ function AIAssistantClient({
           setStudentId(sId);
 
           try {
-            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-            
-            const sessRes = await fetch(`${backendUrl}/api/student/${sId}/sessions`, {
-              method: "POST"
-            });
-            
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+
+            const sessRes = await fetch(
+              `${backendUrl}/api/student/${sId}/sessions`,
+              {
+                method: "POST",
+              }
+            );
+
             if (sessRes.ok) {
               const sessData = await sessRes.json();
               if (sessData.session_id) {
-                console.log("✅ Session created by backend:", sessData.session_id);
+                console.log(
+                  "✅ Session created by backend:",
+                  sessData.session_id
+                );
                 setSessionId(sessData.session_id);
               } else {
                 console.error("❌ Backend did not return session_id");
               }
             } else {
               const errorText = await sessRes.text();
-              console.error("❌ Failed to create session:", sessRes.status, errorText);
+              console.error(
+                "❌ Failed to create session:",
+                sessRes.status,
+                errorText
+              );
             }
           } catch (e) {
             console.error("❌ Error creating session:", e);
@@ -141,10 +159,11 @@ function AIAssistantClient({
 
         if (initialStats) {
           if (initialStats.achievement) {
-            const unlockedTiers = typeof initialStats.achievement.unlockedTiers === "string"
-              ? JSON.parse(initialStats.achievement.unlockedTiers)
-              : initialStats.achievement.unlockedTiers || [];
-            
+            const unlockedTiers =
+              typeof initialStats.achievement.unlockedTiers === "string"
+                ? JSON.parse(initialStats.achievement.unlockedTiers)
+                : initialStats.achievement.unlockedTiers || [];
+
             setStudentProfile((prev) => ({
               ...prev!,
               achievements: unlockedTiers,
@@ -228,46 +247,60 @@ function AIAssistantClient({
         currentSelectedSubject !== "all" &&
         currentSelectedSubject.trim() !== ""
           ? currentSelectedSubject
-          : currentSubject && currentSubject !== "all" && currentSubject.trim() !== ""
+          : currentSubject &&
+            currentSubject !== "all" &&
+            currentSubject.trim() !== ""
           ? currentSubject
           : undefined;
 
       // Filter completed assignments by topic/subject if specified
-      const filterAssignmentsByTopicSubject = (assignments: Array<Record<string, any>>) => {
+      const filterAssignmentsByTopicSubject = (
+        assignments: Array<Record<string, any>>
+      ) => {
         if (!assignments || assignments.length === 0) return assignments;
-        
+
         const topicToMatch = currentTopic?.toLowerCase().trim();
         const subjectToMatch = finalSubject?.toLowerCase().trim();
-        
+
         if (!topicToMatch && !subjectToMatch) return assignments;
-        
+
         return assignments.filter((assignment) => {
           const assignmentTopic = assignment.topic?.toLowerCase().trim();
           const assignmentSubject = assignment.subject?.toLowerCase().trim();
-          
+
           // Match by topic if specified
           if (topicToMatch && assignmentTopic) {
-            if (assignmentTopic.includes(topicToMatch) || topicToMatch.includes(assignmentTopic)) {
+            if (
+              assignmentTopic.includes(topicToMatch) ||
+              topicToMatch.includes(assignmentTopic)
+            ) {
               return true;
             }
           }
-          
+
           // Match by subject if specified
           if (subjectToMatch && assignmentSubject) {
-            if (assignmentSubject.includes(subjectToMatch) || subjectToMatch.includes(assignmentSubject)) {
+            if (
+              assignmentSubject.includes(subjectToMatch) ||
+              subjectToMatch.includes(assignmentSubject)
+            ) {
               return true;
             }
           }
-          
+
           return false;
         });
       };
 
       // Filter completed assignments relevant to current topic/subject
-      const relevantCompletedAssignments = filterAssignmentsByTopicSubject(currentCompletedAssignments);
-      
+      const relevantCompletedAssignments = filterAssignmentsByTopicSubject(
+        currentCompletedAssignments
+      );
+
       // Also filter pending assignments for context
-      const relevantPendingAssignments = filterAssignmentsByTopicSubject(currentPendingAssignments);
+      const relevantPendingAssignments = filterAssignmentsByTopicSubject(
+        currentPendingAssignments
+      );
 
       // Log what we're sending for debugging
       console.log("📚 Student AI Tutor - Sending completed assessments:", {
@@ -275,13 +308,22 @@ function AIAssistantClient({
         finalSubject: finalSubject,
         totalCompletedAssignments: currentCompletedAssignments.length,
         relevantCompletedAssignments: relevantCompletedAssignments.length,
-        completedAssignmentsData: relevantCompletedAssignments.length > 0 ? relevantCompletedAssignments : currentCompletedAssignments,
+        completedAssignmentsData:
+          relevantCompletedAssignments.length > 0
+            ? relevantCompletedAssignments
+            : currentCompletedAssignments,
       });
 
       await sendMessage(message, {
         studentProfile: studentProfileData,
-        pendingAssignments: relevantPendingAssignments.length > 0 ? relevantPendingAssignments : currentPendingAssignments,
-        completedAssignments: relevantCompletedAssignments.length > 0 ? relevantCompletedAssignments : currentCompletedAssignments,
+        pendingAssignments:
+          relevantPendingAssignments.length > 0
+            ? relevantPendingAssignments
+            : currentPendingAssignments,
+        completedAssignments:
+          relevantCompletedAssignments.length > 0
+            ? relevantCompletedAssignments
+            : currentCompletedAssignments,
         achievements: currentProfile?.achievements,
         topic: currentTopic || undefined,
         subject: finalSubject,
