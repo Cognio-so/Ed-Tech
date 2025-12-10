@@ -83,8 +83,8 @@ async function DashboardContent() {
   return (
     <ClientMotionWrapper>
       <div className="p-6 lg:p-8">
-        <DashboardHeader name={studentData.name} />
-      </div>
+      <DashboardHeader name={studentData.name} />
+          </div>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 px-6 lg:px-8 pb-6 min-h-0">
         {/* Left Column - 40% */}
@@ -97,12 +97,12 @@ async function DashboardContent() {
         <div className="lg:col-span-7 space-y-8 flex flex-col min-h-0">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-shrink-0">
             <div className="h-full">
-              <ProfileCard
-                name={studentData.name}
-                image={studentData.image}
+          <ProfileCard
+            name={studentData.name}
+            image={studentData.image}
                 grade={studentData.grade?.name}
                 achievements={achievementsCount}
-              />
+          />
             </div>
             <div className="h-full">
               <DashboardCards totalScore={stats?.achievement?.totalScore} />

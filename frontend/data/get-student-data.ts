@@ -14,6 +14,10 @@ export interface StudentData {
   issues: string | null;
   image: string | null;
   createdAt: Date;
+  submissions?: Array<{
+    score: number;
+    submittedAt: Date;
+  }>;
 }
 
 /**
@@ -67,19 +71,68 @@ export async function getStudentData(): Promise<StudentData[]> {
       },
     });
 
-    return students.map((student) => ({
-      id: student.id,
-      name: student.name,
-      email: student.email,
-      grade: student.grade?.name || null,
-      performance: null,
-      achievements: null,
-      feedback: null,
-      issues: null,
-      image: student.image,
-      createdAt: student.createdAt,
-    }));
+    // Fetch performance and achievement data for each student
+    const studentsWithData = await Promise.all(
+      students.map(async (student) => {
+        // Get student submissions to calculate performance
+        const submissions = await prisma.studentSubmission.findMany({
+          where: { userId: student.id },
+          select: {
+            score: true,
+            submittedAt: true,
+          },
+          orderBy: {
+            submittedAt: "asc",
+          },
+        });
+
+        // Calculate average score
+        const totalScore = submissions.reduce((sum, s) => sum + Number(s.score), 0);
+        const averageScore = submissions.length > 0 
+          ? Math.round((totalScore / submissions.length) * 10) / 10 
+          : 0;
+
+        // Get achievements
+        const achievement = await prisma.studentAchievement.findUnique({
+          where: { userId: student.id },
+          select: {
+            unlockedTiers: true,
+            currentTier: true,
+          },
+        });
+
+        let achievementsCount = 0;
+        if (achievement?.unlockedTiers) {
+          try {
+            const unlockedTiers = JSON.parse(achievement.unlockedTiers);
+            achievementsCount = Array.isArray(unlockedTiers) ? unlockedTiers.length : 0;
+          } catch {
+            achievementsCount = 0;
+          }
+        }
+
+        return {
+          id: student.id,
+          name: student.name,
+          email: student.email,
+          grade: student.grade?.name || null,
+          performance: averageScore > 0 ? `${averageScore}%` : null,
+          achievements: achievementsCount > 0 ? `${achievementsCount} tiers unlocked` : null,
+          feedback: null, // Feedback can be added later if needed
+          issues: null, // Issues can be added later if needed
+          image: student.image,
+          createdAt: student.createdAt,
+          submissions: submissions.map(s => ({
+            score: Number(s.score),
+            submittedAt: s.submittedAt,
+          })),
+        };
+      })
+    );
+
+    return studentsWithData;
   } catch (error) {
+    console.error("Error fetching student data:", error);
     return [];
   }
 }

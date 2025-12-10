@@ -31,7 +31,7 @@ export function ClassTabs({ students }: ClassTabsProps) {
       </TabsContent>
 
       <TabsContent value="feedbacks" className="mt-6">
-        <FeedbackList students={students} />
+        <FeedbackList />
       </TabsContent>
     </Tabs>
   );

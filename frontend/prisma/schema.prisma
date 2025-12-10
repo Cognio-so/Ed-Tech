@@ -39,19 +39,22 @@ model User {
   lessons       Lesson[]
   submissions   StudentSubmission[]
   achievements  StudentAchievement[]
+  feedbacks     StudentFeedback[]
+  attendances   Attendance[]
 
   @@unique([email])
   @@map("user")
 }
 
 model Grade {
-  id          String      @id @default(cuid())
-  name        String      @unique
+  id          String       @id @default(cuid())
+  name        String       @unique
   description String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  users       User[]      @relation("UserPrimaryGrade")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  users       User[]       @relation("UserPrimaryGrade")
   userGrades  UserGrade[]
+  attendances Attendance[]
 
   @@map("grade")
 }
@@ -375,4 +378,43 @@ model StudentConversation {
   @@index([userId])
   @@index([createdAt])
   @@map("student_conversation")
+}
+
+model StudentFeedback {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentId   String
+  contentType String
+  title       String
+  feedback    String   @db.Text
+  rating      Int?     // Optional rating 1-5
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([contentId])
+  @@index([createdAt])
+  @@map("student_feedback")
+}
+
+model Attendance {
+  id        String   @id @default(cuid())
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  gradeId   String
+  grade     Grade    @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  teacherId String   // ID of the teacher who marked attendance
+  date      DateTime @db.Date
+  status    String   // "present" or "absent"
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, date])
+  @@index([studentId])
+  @@index([gradeId])
+  @@index([date])
+  @@index([teacherId])
+  @@map("attendance")
 }
