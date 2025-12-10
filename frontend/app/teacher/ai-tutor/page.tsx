@@ -40,6 +40,9 @@ export default function AITutorPage() {
   const [sessionId, setSessionId] = useState<string>("");
   const [teacherId, setTeacherId] = useState<string>("");
 
+  // Track if session creation has been attempted to prevent duplicates
+  const sessionCreationAttemptedRef = useRef<boolean>(false);
+
   // Use refs to always get the latest values when sending messages
   const teacherStatsRef = useRef<TeacherStats | null>(null);
   const topicRef = useRef<string>("");
@@ -81,45 +84,73 @@ export default function AITutorPage() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLElement | null>(null);
 
+  // Function to create a new session from backend
+  const createNewSession = useCallback(async () => {
+    try {
+      const sessionData = await authClient.getSession();
+      if (sessionData?.data?.user?.id) {
+        const tId = sessionData.data.user.id;
+        setTeacherId(tId);
+
+        try {
+          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+          if (!backendUrl) {
+            console.error("Backend URL not configured");
+            toast.error("Backend URL not configured");
+            return;
+          }
+          
+          const sessRes = await fetch(`${backendUrl}/api/teacher/${tId}/sessions`, {
+            method: "POST"
+          });
+          
+          if (sessRes.ok) {
+            const sessData = await sessRes.json();
+            if (sessData.session_id) {
+              console.log("✅ New session created by backend:", sessData.session_id);
+              setSessionId(sessData.session_id);
+              toast.success("New chat session started");
+              return sessData.session_id;
+            } else {
+              console.error("❌ Backend did not return session_id");
+              toast.error("Failed to create session");
+            }
+          } else {
+            const errorText = await sessRes.text();
+            console.error("❌ Failed to create session:", sessRes.status, errorText);
+            toast.error("Failed to create session");
+          }
+        } catch (e) {
+          console.error("❌ Error creating session:", e);
+          toast.error("Error creating session");
+        }
+      }
+    } catch (error) {
+      console.error("Error creating session:", error);
+      toast.error("Error creating session");
+    }
+    return null;
+  }, []);
+
+  // Session creation - only run once on mount
+  useEffect(() => {
+    async function createSession() {
+      // Prevent creating a new session if we've already attempted to create one
+      if (sessionCreationAttemptedRef.current) {
+        console.log("✅ Session creation already attempted, skipping");
+        return;
+      }
+
+      sessionCreationAttemptedRef.current = true;
+      await createNewSession();
+    }
+    createSession();
+  }, [createNewSession]); // Only run once on mount
+
+  // Data fetching - separate from session creation
   useEffect(() => {
     async function fetchStats() {
       try {
-        // Get current user session
-        const sessionData = await authClient.getSession();
-        if (sessionData?.data?.user?.id) {
-          const tId = sessionData.data.user.id;
-          setTeacherId(tId);
-
-          try {
-            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-            if (!backendUrl) {
-              console.error("Backend URL not configured");
-              return;
-            }
-            
-            const sessRes = await fetch(`${backendUrl}/api/teacher/${tId}/sessions`, {
-              method: "POST"
-            });
-            
-            if (sessRes.ok) {
-              const sessData = await sessRes.json();
-              if (sessData.session_id) {
-                console.log("✅ Session created by backend:", sessData.session_id);
-                setSessionId(sessData.session_id);
-              } else {
-                console.error("❌ Backend did not return session_id");
-              }
-            } else {
-              const errorText = await sessRes.text();
-              console.error("❌ Failed to create session:", sessRes.status, errorText);
-              // Don't set fallback session - wait for backend to be available
-            }
-          } catch (e) {
-            console.error("❌ Error creating session:", e);
-            // Don't set fallback session - wait for backend to be available
-          }
-        }
-
         const response = await fetch("/api/teacher/stats");
         if (response.ok) {
           const stats = await response.json();
@@ -251,8 +282,11 @@ export default function AITutorPage() {
     toast.success("Chat history cleared");
   }, [clearMessages]);
 
-  const handleNewChat = useCallback(() => {
+  const handleNewChat = useCallback(async () => {
+    // Clear messages first
     clearMessages();
+    
+    // Reset form fields
     setTopic("");
     setSubject("");
     if (teacherStats?.grades && teacherStats.grades.length > 0) {
@@ -261,7 +295,10 @@ export default function AITutorPage() {
       setSelectedGrades([]);
     }
     setSelectedSubject("");
-  }, [clearMessages, teacherStats]);
+    
+    // Create a new session from backend
+    await createNewSession();
+  }, [clearMessages, teacherStats, createNewSession]);
 
   const handleGradeChange = useCallback((grades: string[]) => {
     setSelectedGrades(grades);

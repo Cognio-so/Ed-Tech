@@ -47,6 +47,9 @@ function AIAssistantClient({
     Array<Record<string, any>>
   >([]);
 
+  // Track if session creation has been attempted to prevent duplicates
+  const sessionCreationAttemptedRef = useRef<boolean>(false);
+
   // Use refs to always get the latest values when sending messages
   const studentProfileRef = useRef<StudentProfile | null>(null);
   const pendingAssignmentsRef = useRef<Array<Record<string, any>>>([]);
@@ -93,95 +96,123 @@ function AIAssistantClient({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    async function initializeData() {
-      try {
-        const sessionData = await authClient.getSession();
-        if (sessionData?.data?.user?.id) {
-          const sId = sessionData.data.user.id;
-          setStudentId(sId);
+  // Function to create a new session from backend
+  const createNewSession = useCallback(async () => {
+    try {
+      const sessionData = await authClient.getSession();
+      if (sessionData?.data?.user?.id) {
+        const sId = sessionData.data.user.id;
+        setStudentId(sId);
 
-          try {
-            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+        try {
+          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+          if (!backendUrl) {
+            console.error("Backend URL not configured");
+            toast.error("Backend URL not configured");
+            return;
+          }
 
-            const sessRes = await fetch(
-              `${backendUrl}/api/student/${sId}/sessions`,
-              {
-                method: "POST",
-              }
-            );
-
-            if (sessRes.ok) {
-              const sessData = await sessRes.json();
-              if (sessData.session_id) {
-                console.log(
-                  "✅ Session created by backend:",
-                  sessData.session_id
-                );
-                setSessionId(sessData.session_id);
-              } else {
-                console.error("❌ Backend did not return session_id");
-              }
-            } else {
-              const errorText = await sessRes.text();
-              console.error(
-                "❌ Failed to create session:",
-                sessRes.status,
-                errorText
-              );
+          const sessRes = await fetch(
+            `${backendUrl}/api/student/${sId}/sessions`,
+            {
+              method: "POST",
             }
-          } catch (e) {
-            console.error("❌ Error creating session:", e);
-          }
-        }
+          );
 
-        // Use the server-fetched data
-        if (initialProfile) {
-          setStudentProfile({
-            name: initialProfile.name || "Student",
-            grade: initialProfile.grade || null,
-            subjects: initialProfile.subjects || [],
-            achievements: initialProfile.achievements || [],
-            totalScore: initialProfile.totalScore || 0,
-            currentTier: initialProfile.currentTier || "starter",
-          });
-
-          if (initialProfile.subjects && initialProfile.subjects.length > 0) {
-            const subjectList = initialProfile.subjects.map(
-              (name: string, index: number) => ({
-                id: `subject-${index}`,
-                name,
-              })
+          if (sessRes.ok) {
+            const sessData = await sessRes.json();
+            if (sessData.session_id) {
+              console.log(
+                "✅ New session created by backend:",
+                sessData.session_id
+              );
+              setSessionId(sessData.session_id);
+              toast.success("New chat session started");
+              return sessData.session_id;
+            } else {
+              console.error("❌ Backend did not return session_id");
+              toast.error("Failed to create session");
+            }
+          } else {
+            const errorText = await sessRes.text();
+            console.error(
+              "❌ Failed to create session:",
+              sessRes.status,
+              errorText
             );
-            setSubjects(subjectList);
+            toast.error("Failed to create session");
           }
+        } catch (e) {
+          console.error("❌ Error creating session:", e);
+          toast.error("Error creating session");
         }
+      }
+    } catch (error) {
+      console.error("Error creating session:", error);
+      toast.error("Error creating session");
+    }
+    return null;
+  }, []);
 
-        if (initialStats) {
-          if (initialStats.achievement) {
-            const unlockedTiers =
-              typeof initialStats.achievement.unlockedTiers === "string"
-                ? JSON.parse(initialStats.achievement.unlockedTiers)
-                : initialStats.achievement.unlockedTiers || [];
+  // Session creation - only run once on mount
+  useEffect(() => {
+    async function createSession() {
+      // Prevent creating a new session if we've already attempted to create one
+      if (sessionCreationAttemptedRef.current) {
+        console.log("✅ Session creation already attempted, skipping");
+        return;
+      }
 
-            setStudentProfile((prev) => ({
-              ...prev!,
-              achievements: unlockedTiers,
-              totalScore: initialStats.achievement.totalScore || 0,
-              currentTier: initialStats.achievement.currentTier || "starter",
-            }));
-          }
-        }
+      sessionCreationAttemptedRef.current = true;
+      await createNewSession();
+    }
+    createSession();
+  }, [createNewSession]); // Only run once on mount
 
-        if (initialAssignments) {
-          setPendingAssignments(initialAssignments.pending);
-          setCompletedAssignments(initialAssignments.completed);
-        }
-      } catch (error) {
-        console.error("Error initializing student data:", error);
+  // Data initialization - can run when props change
+  useEffect(() => {
+    // Use the server-fetched data
+    if (initialProfile) {
+      setStudentProfile({
+        name: initialProfile.name || "Student",
+        grade: initialProfile.grade || null,
+        subjects: initialProfile.subjects || [],
+        achievements: initialProfile.achievements || [],
+        totalScore: initialProfile.totalScore || 0,
+        currentTier: initialProfile.currentTier || "starter",
+      });
+
+      if (initialProfile.subjects && initialProfile.subjects.length > 0) {
+        const subjectList = initialProfile.subjects.map(
+          (name: string, index: number) => ({
+            id: `subject-${index}`,
+            name,
+          })
+        );
+        setSubjects(subjectList);
       }
     }
-    initializeData();
+
+    if (initialStats) {
+      if (initialStats.achievement) {
+        const unlockedTiers =
+          typeof initialStats.achievement.unlockedTiers === "string"
+            ? JSON.parse(initialStats.achievement.unlockedTiers)
+            : initialStats.achievement.unlockedTiers || [];
+
+        setStudentProfile((prev) => ({
+          ...prev!,
+          achievements: unlockedTiers,
+          totalScore: initialStats.achievement.totalScore || 0,
+          currentTier: initialStats.achievement.currentTier || "starter",
+        }));
+      }
+    }
+
+    if (initialAssignments) {
+      setPendingAssignments(initialAssignments.pending);
+      setCompletedAssignments(initialAssignments.completed);
+    }
   }, [initialProfile, initialStats, initialAssignments]);
 
   useEffect(() => {
@@ -340,12 +371,18 @@ function AIAssistantClient({
     toast.success("Chat history cleared");
   }, [clearMessages]);
 
-  const handleNewChat = useCallback(() => {
+  const handleNewChat = useCallback(async () => {
+    // Clear messages first
     clearMessages();
+    
+    // Reset form fields
     setTopic("");
     setSubject("");
     setSelectedSubject("");
-  }, [clearMessages]);
+    
+    // Create a new session from backend
+    await createNewSession();
+  }, [clearMessages, createNewSession]);
 
   const handleSubjectChange = useCallback((subject: string) => {
     setSelectedSubject(subject);
