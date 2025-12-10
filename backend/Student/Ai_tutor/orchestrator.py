@@ -122,11 +122,16 @@ Nodes: SimpleLLM, RAG, WebSearch, Image, END.
 Route to Image node when user explicitly requests image generation/editing with action verbs (generate, create, make, edit, modify, etc.).
 Consider the conversation context and uploaded documents when making routing decisions.
 </task>"""
-
+    import os
+    from langchain_groq import ChatGroq
     messages = [SystemMessage(content=STATIC_SYS), HumanMessage(content=dynamic_context)]
     try:
-        llm = get_llm("x-ai/grok-4.1-fast", 0.35)
-        response = await llm.ainvoke(messages)
+        chat = ChatGroq(
+            model="openai/gpt-oss-120b",
+            temperature=0.4,
+            groq_api_key=os.getenv("GROQ_API_KEY")
+        )
+        response = await chat.ainvoke(messages)
         content = (response.content or "").strip()
         match = re.search(r"\{[\s\S]*\}", content)
         if match:

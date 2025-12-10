@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -8,6 +8,7 @@ import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { InlineMath, BlockMath } from "react-katex";
+import mermaid from "mermaid";
 import "katex/dist/katex.min.css";
 import { cn } from "@/lib/utils";
 import {
@@ -49,6 +50,90 @@ const isImageUrl = (url: string): boolean => {
   });
 
   return hasImageExtension || hasImageHost;
+};
+
+// Mermaid Diagram Component
+const MermaidDiagram: React.FC<{ code: string }> = ({ code }) => {
+  const mermaidRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!mermaidRef.current) return;
+
+    // Initialize Mermaid if not already initialized
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "default",
+      securityLevel: "loose",
+      fontFamily: "inherit",
+    });
+
+    // Generate a unique ID for this diagram
+    const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Clear any previous content
+    mermaidRef.current.innerHTML = "";
+
+    // Sanitize code to fix common LLM generation errors
+    const sanitizedCode = code.replace(/\[(.*?)\]/g, (match, content) => {
+      // If content is already quoted, leave it mostly alone but check for arrows
+      if (content.startsWith('"') && content.endsWith('"')) {
+        return match;
+      }
+      
+      let cleanContent = content
+        .replace(/-->/g, " to ")
+        .replace(/->/g, " to ")
+        .replace(/</g, " less than ")
+        .replace(/>/g, " greater than ")
+        .replace(/"/g, "'"); // Replace double quotes with single quotes inside
+        
+      return `["${cleanContent}"]`; // Wrap in quotes to handle other special chars
+    });
+
+    // Render the diagram
+    mermaid
+      .render(id, sanitizedCode)
+      .then((result) => {
+        if (mermaidRef.current) {
+          mermaidRef.current.innerHTML = result.svg;
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        console.error("Mermaid rendering error:", err);
+        // Try fallback rendering with raw code if fails
+        setError("Failed to render diagram. Please check the syntax.");
+        if (mermaidRef.current) {
+          mermaidRef.current.innerHTML = `<pre class="text-xs text-muted-foreground p-4 overflow-auto">${code}</pre>`;
+        }
+      });
+  }, [code]);
+
+  if (error) {
+    return (
+      <div className="my-4 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+        <p className="text-sm font-medium text-destructive mb-2 flex items-center gap-2">
+          <span>⚠️</span> Diagram Syntax Error
+        </p>
+        <p className="text-xs text-muted-foreground mb-2">
+          The AI generated an invalid diagram definition.
+        </p>
+        <div className="bg-muted/50 p-2 rounded overflow-x-auto">
+          <pre className="text-xs text-muted-foreground">
+            {code}
+          </pre>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={mermaidRef}
+      className="my-6 flex justify-center items-center rounded-lg border bg-card p-6 overflow-x-auto shadow-sm"
+    />
+  );
 };
 
 // Utility function to get image source type
@@ -204,6 +289,13 @@ const Markdown: React.FC<MarkdownProps> = ({
           code({ children, className }) {
             const match = /language-(\w+)/.exec(className || "");
             const language = match ? match[1] : "";
+
+            // Handle Mermaid diagrams
+            if (language === "mermaid") {
+              return (
+                <MermaidDiagram code={String(children).replace(/\n$/, "")} />
+              );
+            }
 
             if (language) {
               return (

@@ -23,6 +23,8 @@
                 - Educational guidance and tutoring
                 - Conversational interactions
                 - Prompt generation requests (when user asks for prompts, not images)
+                - Flowchart creation requests ("create a flowchart", "make a flowchart", "design a flowchart")
+                - Diagram/prompt design requests (asking for text/design instructions, not actual image generation)
                 - When no specialized resources are needed
             </use_cases>
         </node>
@@ -79,7 +81,9 @@
                 - Follow-up editing after Image node with editing verbs
             </use_cases>
             <do_not_use>
-                - Prompt generation requests ("give me a prompt for...", "create a prompt for...")
+                - Prompt generation requests ("give me a prompt for...", "create a prompt for...") → Use SimpleLLM
+                - Flowchart creation requests ("create a flowchart", "make a flowchart", "design a flowchart") → Use SimpleLLM
+                - Diagram design requests (asking for text instructions/design, not actual image generation) → Use SimpleLLM
                 - Image analysis ("what's in this image", "describe this image") → Use RAG
                 - General questions about images without action verbs → Use SimpleLLM
             </do_not_use>
@@ -94,16 +98,18 @@
     <routing_logic>
         <priority>
             1. Prompt generation requests ("give a prompt", "create a prompt") → SimpleLLM (NOT Image)
-            2. Follow-up after Image with editing verbs → Image
-            3. Images uploaded AND editing verbs → Image (NOT RAG)
-            4. Explicit generation/editing verbs AND NOT prompt request → Image
-            5. New documents uploaded (new_uploaded_docs) AND analysis query → RAG
-            6. Text pasted in query for processing → SimpleLLM
-            7. Document/image reference for ANALYSIS OR last_route=RAG + follow-up → RAG
-            8. last_route=WebSearch + follow-up (even vague) → WebSearch
-            9. Factual/informational query (no pasted text) → WebSearch
-            10. Pure casual conversation → SimpleLLM
-            11. Default fallback → SimpleLLM
+            2. Flowchart creation requests ("create a flowchart", "make a flowchart", "design a flowchart") → SimpleLLM (NOT Image)
+            3. Diagram/prompt design requests (asking for text instructions, not actual image generation) → SimpleLLM (NOT Image)
+            4. Follow-up after Image with editing verbs → Image
+            5. Images uploaded AND editing verbs → Image (NOT RAG)
+            6. Explicit image generation/editing verbs (generate, create, make, draw, produce) AND NOT prompt/flowchart request → Image
+            7. New documents uploaded (new_uploaded_docs) AND analysis query → RAG
+            8. Text pasted in query for processing → SimpleLLM
+            9. Document/image reference for ANALYSIS OR last_route=RAG + follow-up → RAG
+            10. last_route=WebSearch + follow-up (even vague) → WebSearch
+            11. Factual/informational query (no pasted text) → WebSearch
+            12. Pure casual conversation → SimpleLLM
+            13. Default fallback → SimpleLLM
         </priority>
         
         <considerations>
@@ -116,6 +122,9 @@
             - When new_uploaded_docs is present, strongly prefer RAG for analysis
             - Distinguish between image ANALYSIS (RAG) and image EDITING (Image node)
             - Distinguish between prompt REQUESTS (SimpleLLM) and image GENERATION (Image node)
+            - Distinguish between flowchart/design CREATION requests (SimpleLLM) and actual image GENERATION (Image node)
+            - Flowchart creation = asking for text/design instructions → SimpleLLM
+            - Image generation = asking to generate/create actual image → Image node
         </considerations>
     </routing_logic>
     
@@ -149,6 +158,13 @@
             <indicators>"give a prompt for...", "create a prompt for...", "write a prompt for...", "suggest a prompt", "what prompt for..."</indicators>
             <action>Route to SimpleLLM, NOT Image node. Even if query has action verbs like "create".</action>
             <critical>If query says "create a prompt" or "generate a prompt", it means asking FOR text/prompt writing, NOT image generation.</critical>
+        </rule>
+        
+        <rule type="Flowchart_creation_queries">
+            When query asks FOR flowchart creation/design:
+            <indicators>"create a flowchart", "make a flowchart", "design a flowchart", "create flowchart for...", "make flowchart of...", "design flowchart showing..."</indicators>
+            <action>Route to SimpleLLM, NOT Image node. Even if query has action verbs like "create" or "make".</action>
+            <critical>Flowchart creation requests are asking for text/design instructions or flowchart structure, NOT actual image generation. Route to SimpleLLM.</critical>
         </rule>
         
         <rule type="topic_switch">
@@ -186,6 +202,9 @@
         <rule>IMAGE EDITING: If images uploaded AND editing verbs → Image node (NOT RAG).</rule>
         <rule>IMAGE ANALYSIS: "What's in image", "describe image", "extract text from image" → RAG (NOT Image node).</rule>
         <rule>PROMPT REQUESTS: "Give a prompt for...", "create a prompt for..." → SimpleLLM (NOT Image).</rule>
+        <rule>FLOWCHART CREATION: "Create a flowchart", "make a flowchart", "design a flowchart" → SimpleLLM (NOT Image). These are text/design instruction requests, not actual image generation.</rule>
+        <rule>DIAGRAM DESIGN: Requests for flowchart/diagram design instructions → SimpleLLM (NOT Image).</rule>
+        <rule>IMAGE GENERATION: Only route to Image when user explicitly requests actual image generation with verbs like "generate image", "create image", "make image", "draw image" (NOT flowchart creation).</rule>
         <rule>FACTUAL QUERIES: Route to WebSearch ONLY if no pasted text AND no document references AND no new_uploaded_docs.</rule>
         <rule>PASTED TEXT: If text content is pasted directly in query for processing → SimpleLLM.</rule>
         <rule>UNCERTAIN: When uncertain, prefer SimpleLLM over WebSearch.</rule>
@@ -283,6 +302,28 @@
                 {
                     "execution_order": ["RAG"],
                     "reasoning": "Image analysis requested (describing content), not editing, so use RAG for analysis"
+                }
+            </output>
+        </example>
+        
+        <example>
+            <query>Create a flowchart for the water cycle</query>
+            <context>Flowchart creation request</context>
+            <output>
+                {
+                    "execution_order": ["SimpleLLM"],
+                    "reasoning": "Flowchart creation request is asking for text/design instructions, not actual image generation"
+                }
+            </output>
+        </example>
+        
+        <example>
+            <query>Generate an image of a flowchart showing the water cycle</query>
+            <context>Explicit image generation request</context>
+            <output>
+                {
+                    "execution_order": ["Image"],
+                    "reasoning": "Explicit image generation requested with verb 'generate' for actual image creation"
                 }
             </output>
         </example>
