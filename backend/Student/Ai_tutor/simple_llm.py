@@ -23,7 +23,7 @@ except ImportError:
 
 
 def _format_last_turns(messages, k=4):
-    """Format last k messages (2-4 messages) for context, truncating long responses."""
+    """Format last k messages (2-4 messages) for context."""
     if not messages:
         return "(no previous conversation)"
     
@@ -42,10 +42,6 @@ def _format_last_turns(messages, k=4):
         
         if not content:
             continue
-        
-        # Truncate very long messages to save tokens (approx 150-200 words)
-        if len(content) > 800:
-            content = content[:800] + "... (truncated)"
         
         speaker = "Student" if role in ("human", "user") else "Buddy"
         formatted.append(f"{speaker}: {content}")
@@ -81,6 +77,38 @@ def _format_completed_assignments(completed_assignments):
         else:
             formatted.append(f"- {title} ({assignment_type}, submitted: {submitted_at})")
     return "\n".join(formatted)
+
+
+def _is_greeting(text: str) -> bool:
+    """Detect simple greeting messages to use a lightweight prompt."""
+    if not text:
+        return False
+    t = text.strip().lower()
+    
+    # Educational request keywords - if these are present, it's NOT a greeting
+    educational_keywords = [
+        "explain", "teach", "help", "what is", "what are", "how does", "why does",
+        "tell me about", "describe", "define", "show me", "learn", "study",
+        "understand", "example", "examples", "question", "questions"
+    ]
+    
+    # If it contains educational keywords, it's NOT a greeting
+    if any(keyword in t for keyword in educational_keywords):
+        return False
+    
+    # Only check for greetings if it's not an educational request
+    greetings = [
+        "hi",
+        "hello",
+        "hey",
+        "hi!",
+        "hello!",
+        "hey!",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    ]
+    return any(t == g or t.startswith(g + " ") for g in greetings)
 
 
 def _get_low_score_assessments(completed_assignments, threshold=60):
@@ -189,7 +217,7 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
         if user_query:
             try:
                 print(f"[Student SimpleLLM KB] 🔍 Searching collection '{collection_name}' for query: {user_query[:120]}...")
-                kb_retrieved_contexts = await retrieve_kb_context(collection_name, user_query, top_k=3)
+                kb_retrieved_contexts = await retrieve_kb_context(collection_name, user_query, top_k=5)
                 if kb_retrieved_contexts:
                     print(f"[Student SimpleLLM KB] ✅ Retrieved {len(kb_retrieved_contexts)} context chunk(s) from knowledge base")
                 else:
@@ -213,9 +241,13 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
             missing.append("language")
         print(f"[Student SimpleLLM KB] ⚠️ Skipping KB search - missing: {', '.join(missing)}")
     
+    # Format KB context - this is the curriculum knowledge base content
     formatted_kb_context = ""
+    has_kb_context = False
     if kb_retrieved_contexts:
         formatted_kb_context = "\n\n".join(kb_retrieved_contexts[:5])
+        has_kb_context = True
+        print(f"[STUDENT SIMPLE_LLM] 📚 KB Context retrieved: {len(kb_retrieved_contexts)} chunks, total length: {len(formatted_kb_context)} chars")
     
     assignments_text = _format_assignments(pending_assignments)
     completed_assignments_text = _format_completed_assignments(completed_assignments)
@@ -252,191 +284,342 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
     print(f"[STUDENT SIMPLE_LLM] 📜 Total messages in state: {len(messages)}")
     print(f"[STUDENT SIMPLE_LLM] 📝 Conversation history:\n{conversation_history}")
     print(f"[STUDENT SIMPLE_LLM] 📝 Current user query: '{topic}'")
-    
-    xml_prompt = f"""
-<study_buddy_request>
-    <context>
-        <role>Supportive AI Study Buddy</role>
-        <task>Help students with their learning, assignments, and educational questions</task>
-        
-        **CONVERSATION HISTORY - READ THIS FIRST:**
-        <recent_conversation>
-{conversation_history}
-        </recent_conversation>
-        
-        **CURRENT USER QUERY - WHAT THE STUDENT JUST SAID:**
-        <current_user_query>
-{topic}
-        </current_user_query>
-        
-        **IMPORTANT:** The conversation history above shows what was discussed before. Use it to understand context!
-    </context>
-    
-    <parameters>
-        <topic>{topic if topic else "Not specified"}</topic>
-        <subject>{subject if subject else "Not specified"}</subject>
-        <grade>{grade if grade else "Not specified"}</grade>
-        <language>{language}</language>
-    </parameters>
-    
-    <knowledge_base>
-{f"        <collection>kb_grad_{grade}_sub_{subject.lower().replace(' ', '_')}_lang_{LANGUAGES.get(language, language).lower()}</collection>" if kb_retrieved_contexts else "        <collection>None</collection>"}
-        <reference_text>
-{formatted_kb_context if formatted_kb_context else "            No knowledge base content available."}
-        </reference_text>
-        <guidance>
-            {f"Use ONLY the reference material when answering curriculum-related questions. This is authoritative curriculum content for Grade {grade}, Subject: {subject}, Language: {language}." if kb_retrieved_contexts else "No knowledge base content available for this grade/subject/language combination."}
-        </guidance>
-    </knowledge_base>
-    
-    <student_information>
-        <profile>
+
+    # Check if this is an educational request (should NOT show student data)
+    is_educational_request = any(keyword in topic.lower() for keyword in [
+        "explain", "teach", "what is", "what are", "help with", "describe", "define", 
+        "show me", "learn", "study", "understand", "tell me about", "how does", "why does"
+    ])
+    print(f"[STUDENT SIMPLE_LLM] 🎓 Is educational request: {is_educational_request}")
+
+    # Lightweight path for first-turn greetings to reduce token usage
+    # ONLY use this if it's a greeting AND NOT an educational request
+    last_user_text = topic
+    if messages:
+        # Find last human/user message content if available
+        for m in reversed(messages):
+            role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
+            if role in ("human", "user") and getattr(m, "content", None):
+                last_user_text = m.content
+                break
+
+    is_first_turn = len(messages) <= 1
+    # Only use greeting path if it's actually a greeting AND not an educational request
+    if _is_greeting(last_user_text) and is_first_turn and not is_educational_request:
+        # Build a much smaller prompt focused only on greeting + student info
+        greeting_prompt = f"""
+You are a supportive AI study buddy.
+
+Student profile (for context, do not restate everything verbatim):
 {student_context if student_context != "No student profile provided." else "No student profile available."}
-        </profile>
-        <pending_assignments>
+
+Pending assignments:
 {assignments_text}
-        </pending_assignments>
-        <completed_assignments>
+
+Completed assignments:
 {completed_assignments_text}
-        </completed_assignments>
-        <recent_achievements>
+
+Recent achievements:
 {achievements_text}
-        </recent_achievements>
-{low_score_context}
-    </student_information>
-    
-    <capabilities>
-        <access>
-            <item>Topic and subject information</item>
-            <item>Complete student profile (name, grade, learning style, subject focus)</item>
-            <item>Pending assignments with due dates and status</item>
-            <item>Completed assignments with scores and submission dates</item>
-            <item>Recent achievements and accomplishments</item>
-{f"            <item>Curriculum knowledge base content for Grade {grade}, Subject: {subject}, Language: {language} - Use this authoritative curriculum material to answer curriculum-related questions</item>" if kb_retrieved_contexts else ""}
-        </access>
-    </capabilities>
-    
-    <role_responsibilities>
-        <responsibility>Answer questions about the current subject and topic</responsibility>
-        <responsibility>Help students understand their assignments and provide guidance</responsibility>
-        <responsibility>Celebrate achievements and completed assignments</responsibility>
-        <responsibility>Adapt explanations to the student's learning style and grade level</responsibility>
-        <responsibility>Answer questions related to the subject, topic, and grade level using curriculum knowledge base when available</responsibility>
-        <responsibility>Provide step-by-step explanations that are clear and encouraging</responsibility>
-        <responsibility>Connect answers to pending assignments when relevant</responsibility>
-        <responsibility>Recognize and acknowledge completed assignments and their scores</responsibility>
-        <responsibility>When low-scoring assessments are detected (below 60%), proactively and supportively ask the student which topic they would like to review, especially during greetings or general conversations</responsibility>
-{f"        <responsibility>When answering curriculum-related questions, prioritize information from the knowledge base section as it contains authoritative curriculum content</responsibility>" if kb_retrieved_contexts else ""}
-    </role_responsibilities>
-    
-    <important_guidelines>
-        <guideline>Speak directly to {student_name} in {language}</guideline>
-        <guideline>Keep explanations clear, step-by-step, and encouraging</guideline>
-        <guideline>Connect answers to pending assignments when possible</guideline>
-        <guideline>Celebrate progress, completed assignments, and keep motivation high</guideline>
-        <guideline>Adapt to the student's learning style: {learning_style}</guideline>
-        <guideline>Be supportive and patient, especially when explaining complex concepts</guideline>
-        <guideline>When multiple assignments are pending, help prioritize based on due dates</guideline>
-        <guideline>Acknowledge completed assignments and use them to build on student's progress</guideline>
-        <guideline>If the student has low-scoring assessments (below 60%), proactively ask which topic they'd like to review when they greet you or ask general questions - be encouraging and frame it as a learning opportunity</guideline>
-    </important_guidelines>
-    
-    <instructions>
-        **CRITICAL: YOU MUST READ THE <recent_conversation> SECTION BEFORE RESPONDING!**
+
+Low-score assessments (if any):
+{", ".join([f"{assess['topic']} ({assess['score']}%)" for assess in low_score_assessments]) if low_score_assessments else "None"}
+
+The student just said: "{last_user_text}".
+
+Respond with a short, friendly greeting to {student_name} in {language}, then:
+- Briefly summarize pending and completed assignments only at a high level (no long lists).
+- If there are low-scoring assessments, gently ask which topic they'd like to review.
+- End with: "How can I help you today?".
+Use concise Markdown with at most two headings and a few bullet points.
+"""
+        model_name = state.get("model") if state.get("model") else "x-ai/grok-4.1-fast"
+        llm = get_llm(model_name, temperature=0.55)
+        llm_messages = [
+            SystemMessage(content="You are a supportive AI study buddy. Keep responses concise and student-friendly."),
+            HumanMessage(content=greeting_prompt),
+        ]
+        try:
+            full_response, token_usage = await stream_with_token_tracking(
+                llm,
+                llm_messages,
+                chunk_callback=chunk_callback,
+                state=state,
+            )
+            state["simple_llm_response"] = full_response
+            state["response"] = full_response
+            if token_usage:
+                current_usage = state.get("token_usage", {})
+                if isinstance(current_usage, dict):
+                    for key, value in token_usage.items():
+                        current_usage[key] = current_usage.get(key, 0) + value
+                    state["token_usage"] = current_usage
+                else:
+                    state["token_usage"] = token_usage
+        except asyncio.CancelledError:
+            print(f"[Student SimpleLLM] ⚠️ LLM streaming was cancelled (greeting path)")
+            raise
+        except Exception as e:
+            print(f"[Student SimpleLLM] ❌ Error during LLM streaming (greeting path): {e}")
+            import traceback
+            traceback.print_exc()
+            state["simple_llm_response"] = f"Error: {str(e)}"
+            state["response"] = f"Error: {str(e)}"
+        return state
+
+    # Build concise prompt based on request type
+    if is_educational_request:
+        # Minimal prompt for educational requests - no student data
+        if has_kb_context:
+            kb_section = f"""
+<curriculum_knowledge_base>
+This is the official curriculum content retrieved from the knowledge base for Grade {grade}, Subject: {subject}, Language: {language}.
+This content is the PRIMARY and AUTHORITATIVE source for your answer. You MUST base your response on this curriculum content.
+
+CURRICULUM CONTENT:
+{formatted_kb_context}
+
+CRITICAL INSTRUCTIONS:
+- Your answer MUST be based on the curriculum content above.
+- Use the exact concepts, definitions, and explanations from the curriculum knowledge base.
+- Ensure your answer aligns with the grade level ({grade}) and subject ({subject}) curriculum.
+- If the curriculum content covers the topic, use it as the foundation of your explanation.
+- Do NOT make up information that contradicts the curriculum content.
+</curriculum_knowledge_base>
+"""
+        else:
+            kb_section = f"""
+<curriculum_knowledge_base>
+No curriculum content was found in the knowledge base for this query.
+You may use your general knowledge, but ensure it's appropriate for Grade {grade} level.
+</curriculum_knowledge_base>
+"""
         
-        The <recent_conversation> section contains the previous messages in this conversation. 
-        The <current_user_query> is what the student just said.
+        xml_prompt = f"""You are a supportive AI tutor for {student_name} (Grade {grade}, {language}).
+
+<recent_conversation>
+{conversation_history}
+</recent_conversation>
+
+<current_user_query>
+{topic}
+</current_user_query>
+
+{kb_section}
+
+<instructions>
+CRITICAL PRIORITY RULES:
+1. If curriculum knowledge base content is provided above, it is the PRIMARY source. Base your answer 100% on that content.
+2. Answer the educational question directly. Focus 100% on teaching/explaining.
+3. Use Markdown formatting (headers, lists, bold, code blocks).
+4. DO NOT mention assignments, achievements, or student profile.
+5. Ensure the answer is appropriate for Grade {grade} level and aligns with {subject} curriculum.
+
+<diagram_requirements>
+MANDATORY: When explaining any of the following, you MUST include a Mermaid.js diagram:
+- Processes (e.g., water cycle, photosynthesis, how a bill becomes a law)
+- Systems (e.g., digestive system, government branches, computer architecture)
+- Hierarchies (e.g., classification systems, organizational structures)
+- Timelines or sequences (e.g., historical events, steps in a procedure)
+- Cycles (e.g., life cycles, economic cycles, chemical cycles)
+- Relationships (e.g., cause and effect, dependencies, interactions)
+- Workflows or decision trees
+
+HOW TO CREATE MERMAID DIAGRAMS:
+1. Wrap the Mermaid code in a markdown code block with language "mermaid":
+   ```mermaid
+   graph TD
+       A[Start] --> B[Process]
+       B --> C[End]
+   ```
+
+2. Use appropriate Mermaid diagram types:
+   - graph TD (Top-Down) or graph LR (Left-Right) for flowcharts
+   - sequenceDiagram for interactions over time
+   - flowchart TD/LR for modern flowcharts
+   - mindmap for hierarchical concepts
+
+3. Keep diagrams simple and clear:
+   - Use short, descriptive labels in square brackets: [Label]
+   - Use arrows (--> or ---) to show flow
+   - Use curly braces for decisions: {{Decision}}
+   - Use clear, grade-appropriate language
+   - CRITICAL: NEVER use arrows (-->) or special characters inside node labels.
+     * BAD: [Acids + Bases --> Salt + Water] or [pH < 7]
+     * GOOD: [Acids plus Bases produce Salt and Water] or [pH less than 7]
+   - Sanitize ALL text inside square brackets [ ]:
+     * Replace '-->' with 'produces' or 'to'
+     * Replace '<' with 'less than', '>' with 'greater than'
+     * Replace '+' with 'plus', '=' with 'equals'
+     * Remove ':', ';', '"', "'", '(', ')'
+   - Keep node IDs simple (A, B, C, D1).
+   - Edge labels should be simple text without special characters
+
+4. Always explain the diagram in text before or after showing it.
+
+EXAMPLE FORMAT:
+Here's how the water cycle works:
+
+The water cycle involves several key stages...
+
+```mermaid
+graph TD
+    A[Evaporation] --> B[Condensation]
+    B --> C[Precipitation]
+    C --> D[Collection]
+    D --> A
+```
+
+BAD EXAMPLE (DO NOT USE):
+```mermaid
+graph TD
+    A[pH < 7] --> B[Acidic]
+    C[Acids + Bases --> Salt + Water] --> D[Result]
+```
+This will FAIL because of special characters and arrows in labels.
+
+GOOD EXAMPLE (USE THIS):
+```mermaid
+graph TD
+    A[pH less than 7] --> B[Acidic]
+    C[Acids plus Bases produce Salt and Water] --> D[Result]
+```
+
+As you can see, the cycle repeats continuously...
+</diagram_requirements>
+</instructions>
+"""
+    else:
+        # Full prompt for greetings/follow-ups with student data
+        if has_kb_context:
+            kb_section = f"""
+<curriculum_knowledge_base>
+This is the official curriculum content retrieved from the knowledge base for Grade {grade}, Subject: {subject}, Language: {language}.
+If the user's query relates to educational content, use this curriculum knowledge as the PRIMARY source for your answer.
+
+CURRICULUM CONTENT:
+{formatted_kb_context}
+
+IMPORTANT: If the query is educational and curriculum content is available, base your answer on this curriculum content.
+</curriculum_knowledge_base>
+"""
+        else:
+            kb_section = f"""
+<curriculum_knowledge_base>
+No curriculum content was found in the knowledge base for this query.
+</curriculum_knowledge_base>
+"""
         
-        **STEP 1: READ AND UNDERSTAND THE CONVERSATION HISTORY**
-        Look at <recent_conversation> and identify:
-        - What topics were discussed?
-        - What questions were asked?
-        - What was the last thing you (Buddy) said?
-        - What was the context of the conversation?
+        profile_summary = student_context[:200] if student_context != "No student profile provided." else "N/A"
+        pending_summary = assignments_text[:300] if assignments_text != "No pending assignments logged." else "None"
+        completed_summary = completed_assignments_text[:300] if completed_assignments_text != "No recently completed assignments." else "None"
+        achievements_summary = achievements_text[:200] if achievements_text != "No recent achievements noted." else "None"
+        low_scores_text = ""
+        if low_score_assessments:
+            low_scores_list = [f"{a['topic']} ({a['score']}%)" for a in low_score_assessments[:3]]
+            low_scores_text = f"- Low scores: {', '.join(low_scores_list)}"
         
-        **STEP 2: ANALYZE THE CURRENT QUERY IN CONTEXT**
-        Read <current_user_query> and determine:
-        
-        **If <recent_conversation> shows you asked a question (like "Would you like to review Chemical reactions and equations?") 
-        and <current_user_query> is "yes" or "ok" or similar:**
-        → This is a FOLLOW-UP. Continue with the topic you asked about. DO NOT repeat the greeting.
-        
-        **If <recent_conversation> shows you were explaining a topic (like Chemical reactions and equations) 
-        and <current_user_query> is "explain in detail" or "tell me more":**
-        → This is a CONTINUATION. Continue explaining the SAME topic in more detail. DO NOT repeat the greeting.
-        
-        **If <recent_conversation> is empty or only shows greetings, and <current_user_query> is "hi" or "hello":**
-        → This is a GREETING. Show student data (assignments, achievements, etc.)
-        
-        **If <current_user_query> is a new question about a different topic:**
-        → This is a NEW QUESTION. Answer it directly as an AI assistant.
-        
-        1. **If this is a GREETING or INITIAL MESSAGE** (e.g., 'hi', 'hello', 'hey', or first message in conversation):
-           - Provide a warm greeting using the student's name
-           - Display ALL student information from <student_information>:
-             * Completed assignments with scores
-             * Pending assignments with due dates
-             * Recent achievements
-           - If there are low-scoring assessments (below 60%), proactively and supportively ask which topic they'd like to review (at the end, before closing)
-           - End with: "How can I help you today?"
-           - DO NOT start explaining topics unless explicitly asked
-        
-        2. **If this is a FOLLOW-UP or CONTINUATION** (e.g., 'yes', 'ok', 'explain in detail', 'tell me more', or clearly responding to a previous question):
-           - Look at the conversation history to understand what topic was being discussed
-           - Continue with the SAME topic from the previous conversation
-           - DO NOT repeat the greeting or list all assignments again
-           - DO NOT ask if they want to review a topic if you were already discussing it
-           - Provide detailed, helpful information about the topic that was being discussed
-           - Work like a normal AI assistant - answer the question directly
-        
-        3. **If this is a NEW QUESTION or TOPIC REQUEST**:
-           - Answer the question directly as an AI assistant
-           - Use the knowledge base content if available and relevant
-           - Provide clear, educational explanations
-           - DO NOT show student data unless it's relevant to the answer
-        
-        **Key Rules:**
-        - Use conversation history intelligently to understand context
-        - Only show student data (assignments, achievements) during greetings
-        - For follow-ups, continue the previous topic discussion
-        - For new questions, answer directly without repeating student data
-        - Be natural and conversational - don't force patterns
-        - Use the knowledge base content when answering curriculum-related questions
-        
-        CRITICAL: Format ALL responses using proper Markdown syntax following these guidelines:
-        
-        ## Markdown Formatting Requirements:
-        - Use headers (# H1, ## H2, ### H3) to structure content.
-        - Use **bold** for key terms and *italics* for emphasis.
-        - Use lists (- or 1.) for steps or items.
-        - Use `inline code` for formulas/terms.
-        - Use blockquotes (>) for tips/notes.
-        - Use triple backticks for code/examples.
-        - Use Markdown tables for comparisons.
-        
-        ### Educational Content Structure:
-        When explaining concepts, structure responses as:
-        ## {topic}
-        Hi {student_name}! [Intro]
-        ### What You Need to Know
-        * **Key Point 1**
-        * **Key Point 2**
-        
-        ### Step-by-Step Guide
-        1. **Step 1**: [Instruction]
-        2. **Step 2**: [Instruction]
-        
-        ### Practice Questions
-        - [Question 1]
-        
-        > **Encouragement**: [Message]
-        
-        ### Assignment/Progress Connection
-        [Link to assignments if relevant]
-        
-        ALWAYS use this Markdown formatting to ensure content renders beautifully.
-    </instructions>
-</study_buddy_request>
+        xml_prompt = f"""You are a supportive AI study buddy for {student_name} (Grade {grade}, {language}).
+
+<recent_conversation>
+{conversation_history}
+</recent_conversation>
+
+<current_user_query>
+{topic}
+</current_user_query>
+
+{kb_section}
+
+<student_information>
+- Profile: {profile_summary}
+- Pending: {pending_summary}
+- Completed: {completed_summary}
+- Achievements: {achievements_summary}
+{low_scores_text}
+</student_information>
+
+<response_rules>
+1. If curriculum knowledge base content is provided and the query is educational, use that curriculum content as the PRIMARY source.
+2. Educational query (explain/teach/help/what is) → Answer directly based on curriculum content if available, NO student data.
+3. Greeting (hi/hello/hey only) → Greet + show assignments/achievements + ask about low scores.
+4. Follow-up (yes/tell me more) → Continue previous topic, NO greeting/stats. Use curriculum content if relevant.
+
+Format: Markdown with headers, lists, bold, code blocks.
+
+<diagram_requirements>
+MANDATORY: When explaining any of the following, you MUST include a Mermaid.js diagram:
+- Processes (e.g., water cycle, photosynthesis, how a bill becomes a law)
+- Systems (e.g., digestive system, government branches, computer architecture)
+- Hierarchies (e.g., classification systems, organizational structures)
+- Timelines or sequences (e.g., historical events, steps in a procedure)
+- Cycles (e.g., life cycles, economic cycles, chemical cycles)
+- Relationships (e.g., cause and effect, dependencies, interactions)
+- Workflows or decision trees
+
+HOW TO CREATE MERMAID DIAGRAMS:
+1. Wrap the Mermaid code in a markdown code block with language "mermaid":
+   ```mermaid
+   graph TD
+       A[Start] --> B[Process]
+       B --> C[End]
+   ```
+
+2. Use appropriate Mermaid diagram types:
+   - graph TD (Top-Down) or graph LR (Left-Right) for flowcharts
+   - sequenceDiagram for interactions over time
+   - flowchart TD/LR for modern flowcharts
+   - mindmap for hierarchical concepts
+
+3. Keep diagrams simple and clear:
+   - Use short, descriptive labels in square brackets: [Label]
+   - Use arrows (--> or ---) to show flow
+   - Use curly braces for decisions: {{Decision}}
+   - Use clear, grade-appropriate language
+   - CRITICAL: NEVER use arrows (-->) or special characters inside node labels.
+     * BAD: [Acids + Bases --> Salt + Water] or [pH < 7]
+     * GOOD: [Acids plus Bases produce Salt and Water] or [pH less than 7]
+   - Sanitize ALL text inside square brackets [ ]:
+     * Replace '-->' with 'produces' or 'to'
+     * Replace '<' with 'less than', '>' with 'greater than'
+     * Replace '+' with 'plus', '=' with 'equals'
+     * Remove ':', ';', '"', "'", '(', ')'
+   - Keep node IDs simple (A, B, C, D1).
+   - Edge labels should be simple text without special characters
+
+4. Always explain the diagram in text before or after showing it.
+
+EXAMPLE FORMAT:
+Here's how the water cycle works:
+
+The water cycle involves several key stages...
+
+```mermaid
+graph TD
+    A[Evaporation] --> B[Condensation]
+    B --> C[Precipitation]
+    C --> D[Collection]
+    D --> A
+```
+
+BAD EXAMPLE (DO NOT USE):
+```mermaid
+graph TD
+    A[pH < 7] --> B[Acidic]
+    C[Acids + Bases --> Salt + Water] --> D[Result]
+```
+This will FAIL because of special characters and arrows in labels.
+
+GOOD EXAMPLE (USE THIS):
+```mermaid
+graph TD
+    A[pH less than 7] --> B[Acidic]
+    C[Acids plus Bases produce Salt and Water] --> D[Result]
+```
+
+As you can see, the cycle repeats continuously...
+</diagram_requirements>
+</response_rules>
 """
     
     model_name = state.get("model") if state.get("model") else "x-ai/grok-4.1-fast"
@@ -444,7 +627,7 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
     
     # Build LLM messages: System message with XML prompt, then conversation history
     llm_messages = [
-        SystemMessage(content="You are a supportive AI study buddy. Process the following XML request and provide helpful, educational responses.")
+        SystemMessage(content="You are a supportive AI study buddy. Process the following XML request and provide helpful, educational responses. When explaining processes, systems, or complex concepts, always include Mermaid.js diagrams in markdown code blocks labeled 'mermaid'.")
     ]
     
     # Add the XML prompt as a human message (contains all context including conversation history)
