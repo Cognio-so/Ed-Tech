@@ -36,7 +36,7 @@ USER_DOC_TTL_SECONDS = int(24 * 60 * 60)
 
 
 def _format_last_turns(messages, k=3):
-    """Format last k messages for context."""
+    """Format last k messages for context, truncating long responses."""
     if not messages:
         return "(no previous conversation)"
     
@@ -51,6 +51,10 @@ def _format_last_turns(messages, k=3):
         
         if not content:
             continue
+        
+        # Truncate very long messages to save tokens (approx 150 words)
+        if len(content) > 800:
+            content = content[:800] + "... (truncated)"
         
         speaker = "Student" if role in ("human", "user") else "Buddy"
         formatted.append(f"{speaker}: {content}")
@@ -374,12 +378,16 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
                         target_url = doc_info.get("file_url") or doc_info.get("url")
                         if target_url:
                             print(f"[Student RAG] 🔍 Retrieving for doc_id={doc_id}, url={target_url}")
+                            # Increase top_k for detailed queries to ensure sufficient content coverage
+                            is_detailed_query = any(word in query.lower() for word in ["detail", "explain", "tell me", "what is", "how does", "describe", "elaborate"])
+                            top_k_value = 5 if is_detailed_query else 3
+                            
                             tasks.append(retrieve_relevant_documents(
                                 student_id=student_id,
                                 session_id=session_id,
                                 query=query,
-                                top_k=4,
-                                score_threshold=0.3,
+                                top_k=top_k_value,
+                                score_threshold=0.35, # Slightly higher threshold to prefer quality
                                 filter_doc_url=target_url
                             ))
                         else:
@@ -396,16 +404,24 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
                     print(f"[Student RAG] ⚠️ No valid tasks created from selected_doc_ids")
             elif doc_url:
                 print(f"[Student RAG] 🔍 Using doc_url directly: {doc_url}")
+                # Increase top_k for detailed queries
+                is_detailed_query = any(word in query.lower() for word in ["detail", "explain", "tell me", "what is", "how does", "describe", "elaborate"])
+                top_k_value = 6 if is_detailed_query else 4
+                
                 user_docs = await retrieve_relevant_documents(
                     student_id=student_id, session_id=session_id, query=query,
-                    top_k=6, score_threshold=0.3, filter_doc_url=doc_url
+                    top_k=top_k_value, score_threshold=0.35, filter_doc_url=doc_url
                 )
                 print(f"[Student RAG] ✅ Retrieved {len(user_docs)} document chunks using doc_url")
             else:
                 print(f"[Student RAG] 🔍 Retrieving without filter (all documents)")
+                # Increase top_k for detailed queries
+                is_detailed_query = any(word in query.lower() for word in ["detail", "explain", "tell me", "what is", "how does", "describe", "elaborate"])
+                top_k_value = 6 if is_detailed_query else 4
+                
                 user_docs = await retrieve_relevant_documents(
                     student_id=student_id, session_id=session_id, query=query,
-                    top_k=6, score_threshold=0.35, filter_doc_url=None
+                    top_k=top_k_value, score_threshold=0.35, filter_doc_url=None
                 )
                 print(f"[Student RAG] ✅ Retrieved {len(user_docs)} document chunks without filter")
         except Exception as e:
@@ -453,6 +469,11 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
         s_info = _escape_xml(student_data)
         xml_student = f"<student_profile>\n{s_info}\n</student_profile>"
 
+    # Define variables for prompt template
+    student_name = student_profile.get("name") or student_profile.get("student_name") or "Student"
+    # Use topic if available, otherwise fall back to the user's query for the header
+    topic_from_query = topic if topic else query
+
     system_prompt = f"""You are a supportive AI Study Buddy. Your goal is to answer the student's question accurately using ONLY the provided XML context.
 
 <input_data>
@@ -470,75 +491,42 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
 4. **Citations**: When you use information from a document, mention the source naturally. Example: "According to your notes..." or "As seen in [filename]...".
 5. **No Hallucination**: If the <retrieved_context> is empty or does not contain the answer, explicitly state that the uploaded documents do not contain that specific information, then offer general knowledge if appropriate.
 6. **Tone**: Be helpful, educational, encouraging, and clear. Speak directly to the student in a friendly, supportive manner.
-7. **Student Context**: Consider the student's profile, grade level, and learning style when explaining concepts.
-
-8. **CRITICAL - Markdown Formatting**: Format ALL responses using proper Markdown syntax:
-
-   ### Headers:
-   - Use # for main topics (H1)
-   - Use ## for subtopics (H2) 
-   - Use ### for sections/activities (H3)
-   - Use #### for details/subsections (H4)
-
-   ### Lists:
-   - Use * or - for unordered lists (bullet points)
-   - Use 1. 2. 3. for ordered lists (numbered)
-   - Ensure proper spacing between list items
-
-   ### Emphasis:
-   - Use **bold text** for important concepts, key terms, or emphasis
-   - Use *italic text* for definitions or subtle emphasis
-   - Use `inline code` for technical terms, formulas, or specific instructions
-
-   ### Code Blocks:
-   - Use triple backticks with language specification for examples:
-   ```python
-   # Example from your notes
-   result = calculation()
-   ```
-
-   ### Tables:
-   - Use proper Markdown table syntax for comparisons or data:
+   7. **Student Context**: Consider the student's profile, grade level, and learning style when explaining concepts.
    
-   | Concept | Definition | Example |
-   |---------|------------|---------|
-   | Term 1  | Meaning    | Usage   |
+   8. **CRITICAL - Markdown Formatting**: Format ALL responses using proper Markdown syntax:
+      - Use headers (# H1, ## H2) to structure content.
+      - Use **bold** and *italics* for emphasis.
+      - Use lists (- or 1.) for items.
+      - Use `inline code` for terms.
+      - Use blockquotes (>) for tips.
+      - Use Markdown tables for data.
+      - Use triple backticks for code blocks.
 
-   ### Blockquotes:
-   - Use > for important notes, tips, or encouragement
-   > **Study Tip**: This concept from your notes is crucial for the exam!
+    ### Document Analysis Structure:
+    ## {topic_from_query}
+    
+    Hi {student_name}! Based on the documents you uploaded, here is the detailed information you asked for:
 
-   ### Document Analysis Structure:
-   When analyzing student documents, structure responses as:
+    ### Core Concept
+    [Directly define/explain the main concept using the document text]
 
-   ## Understanding Your Materials
+    ### Detailed Explanation
+    [Provide the "very details" requested. Break down how it works, mechanisms, or deeper layers found in the text.]
+    * **Key Aspect 1**: [Explanation]
+    * **Key Aspect 2**: [Explanation]
 
-   Hi! I've reviewed your uploaded documents and here's what I found:
+    ### Key Insights from Your Documents
+    [Synthesize specific points found in the chunks]
+    * From [Document A]: [Insight]
+    * From [Document B]: [Insight]
 
-   ### Key Points from Your Notes
-   * **Important Concept 1** - From [document name]
-   * **Important Concept 2** - From [document name]
-   * **Important Concept 3** - Cross-referenced information
+    ### Practice/Application
+    [If applicable, list examples or questions found in the text]
 
-   ### Step-by-Step Explanation
-   Based on your materials, let me break this down:
+    > **Note**: [Relevant study tip from the content]
 
-   1. **First Step**: [Clear explanation]
-   2. **Second Step**: [Clear explanation]
-   3. **Third Step**: [Clear explanation]
-
-   ### Practice Questions
-   Try these based on your documents:
-   - Question related to concept 1
-   - Question related to concept 2
-
-   > **Encouragement**: You have great study materials! Keep reviewing these key points.
-
-   ### Assignment Connection
-   This relates to your current assignments and will help you succeed!
-
-   ALWAYS use this Markdown formatting to ensure content renders beautifully and is easy to read.
-</instructions>
+    ALWAYS use this Markdown formatting to ensure content renders beautifully.
+ </instructions>
 
 <current_student_query>
 {query}

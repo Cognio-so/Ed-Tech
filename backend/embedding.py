@@ -20,21 +20,6 @@ _cached_embedding_models: Dict[str, OpenAIEmbeddings] = {}
 def get_embedding_model(model: str = "text-embedding-3-small", dimensions: int = None) -> OpenAIEmbeddings:
     """
     Get or create cached OpenAIEmbeddings instance with shared HTTP client.
-    
-    ⚙️ Features:
-    - Single cached instance (no re-instantiation)
-    - Persistent HTTP/2 keep-alive connection pool
-    - Reduced TLS handshake latency
-    - Shared across all sessions for maximum efficiency
-    - Supports dimension reduction for text-embedding-3 models
-    
-    Args:
-        model: Embedding model name (default: "text-embedding-3-small")
-        dimensions: Optional dimension size (e.g., 1024). If None, uses model default.
-                   Supported for text-embedding-3-small and text-embedding-3-large.
-    
-    Returns:
-        Cached OpenAIEmbeddings instance
     """
     global _cached_embedding_models
     
@@ -60,7 +45,7 @@ def get_embedding_model(model: str = "text-embedding-3-small", dimensions: int =
 
 async def embed_chunks_parallel(
     texts: List[str], 
-    batch_size: int = 200,
+    batch_size: int = 500,
     model: str = "text-embedding-3-small",
     dimensions: int = None
 ) -> List[List[float]]:
@@ -77,7 +62,7 @@ async def embed_chunks_parallel(
     
     Args:
         texts: List of text strings to embed
-        batch_size: Number of texts per batch (default: 200, optimal for OpenAI API)
+        batch_size: Number of texts per batch (default: 500, optimal for OpenAI API - supports up to 2048)
         model: Embedding model name
         dimensions: Optional dimension size (e.g., 1024). If None, uses model default.
     
@@ -86,8 +71,8 @@ async def embed_chunks_parallel(
     
     Example:
         >>> texts = ["text1", "text2", ..., "text1000"]
-        >>> embeddings = await embed_chunks_parallel(texts, batch_size=200, dimensions=1024)
-        >>> # Will create 5 batches of 200, process them in parallel with 1024 dimensions
+        >>> embeddings = await embed_chunks_parallel(texts, batch_size=500, dimensions=1024)
+        >>> # Will create 2 batches of 500, process them in parallel with 1024 dimensions
     """
     if not texts:
         return []

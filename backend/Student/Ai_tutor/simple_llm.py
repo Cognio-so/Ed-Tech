@@ -23,7 +23,7 @@ except ImportError:
 
 
 def _format_last_turns(messages, k=4):
-    """Format last k messages (2-4 messages) for context."""
+    """Format last k messages (2-4 messages) for context, truncating long responses."""
     if not messages:
         return "(no previous conversation)"
     
@@ -42,6 +42,10 @@ def _format_last_turns(messages, k=4):
         
         if not content:
             continue
+        
+        # Truncate very long messages to save tokens (approx 150-200 words)
+        if len(content) > 800:
+            content = content[:800] + "... (truncated)"
         
         speaker = "Student" if role in ("human", "user") else "Buddy"
         formatted.append(f"{speaker}: {content}")
@@ -185,7 +189,7 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
         if user_query:
             try:
                 print(f"[Student SimpleLLM KB] 🔍 Searching collection '{collection_name}' for query: {user_query[:120]}...")
-                kb_retrieved_contexts = await retrieve_kb_context(collection_name, user_query, top_k=5)
+                kb_retrieved_contexts = await retrieve_kb_context(collection_name, user_query, top_k=3)
                 if kb_retrieved_contexts:
                     print(f"[Student SimpleLLM KB] ✅ Retrieved {len(kb_retrieved_contexts)} context chunk(s) from knowledge base")
                 else:
@@ -402,74 +406,35 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
         CRITICAL: Format ALL responses using proper Markdown syntax following these guidelines:
         
         ## Markdown Formatting Requirements:
-        
-        ### Headers:
-        - Use # for main topics (H1)
-        - Use ## for subtopics (H2) 
-        - Use ### for sections/activities (H3)
-        - Use #### for details/subsections (H4)
-        
-        ### Lists:
-        - Use * or - for unordered lists (bullet points)
-        - Use 1. 2. 3. for ordered lists (numbered)
-        - Ensure proper spacing between list items
-        
-        ### Emphasis:
-        - Use **bold text** for important concepts, key terms, or emphasis
-        - Use *italic text* for definitions or subtle emphasis
-        - Use `inline code` for technical terms, formulas, or specific instructions
-        
-        ### Code Blocks:
-        - Use triple backticks with language specification for examples:
-        ```python
-        # Example calculation
-        result = 2 + 2
-        print(result)
-        ```
-        
-        ### Tables:
-        - Use proper Markdown table syntax for comparisons or data:
-        
-        | Property | Metal | Non-Metal |
-        |----------|-------|-----------|
-        | Hardness | Hard  | Brittle   |
-        | Conductivity | Good | Poor |
-        
-        ### Blockquotes:
-        - Use > for important notes, tips, or encouragement
-        > **Study Tip**: Remember to practice regularly for better understanding!
+        - Use headers (# H1, ## H2, ### H3) to structure content.
+        - Use **bold** for key terms and *italics* for emphasis.
+        - Use lists (- or 1.) for steps or items.
+        - Use `inline code` for formulas/terms.
+        - Use blockquotes (>) for tips/notes.
+        - Use triple backticks for code/examples.
+        - Use Markdown tables for comparisons.
         
         ### Educational Content Structure:
         When explaining concepts, structure responses as:
-        
-        ## {topic if topic else "Topic"}
-        
-        Hi {student_name}! Let me help you understand this concept.
-        
+        ## {topic}
+        Hi {student_name}! [Intro]
         ### What You Need to Know
-        * **Key Point 1** - Clear explanation
-        * **Key Point 2** - Clear explanation  
-        * **Key Point 3** - Clear explanation
+        * **Key Point 1**
+        * **Key Point 2**
         
         ### Step-by-Step Guide
-        1. **Step 1**: Detailed instruction
-        2. **Step 2**: Clear next action
-        3. **Step 3**: Final step with example
+        1. **Step 1**: [Instruction]
+        2. **Step 2**: [Instruction]
         
         ### Practice Questions
-        Try these to test your understanding:
-        - Question about concept 1
-        - Question about concept 2
+        - [Question 1]
         
-        > **Encouragement**: You're doing great! Keep practicing and you'll master this topic.
+        > **Encouragement**: [Message]
         
-        ### Assignment Connection
-        {f"This relates to your pending assignment: {assignments_text.split('- ')[1].split(' (due:')[0] if assignments_text != 'No pending assignments logged.' else ''}" if assignments_text != "No pending assignments logged." else ""}
+        ### Assignment/Progress Connection
+        [Link to assignments if relevant]
         
-        ### Recent Progress
-        {f"Great work on completing your recent assignments! This shows your dedication to learning." if completed_assignments_text != "No recently completed assignments." else "Keep up the great work!"}
-        
-        ALWAYS use this Markdown formatting to ensure content renders beautifully and is easy to read.
+        ALWAYS use this Markdown formatting to ensure content renders beautifully.
     </instructions>
 </study_buddy_request>
 """

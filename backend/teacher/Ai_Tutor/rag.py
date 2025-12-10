@@ -247,7 +247,7 @@ async def intelligent_document_selection(
 """
 
     try:
-        llm = get_llm("openai/gpt-oss-120b",0.5)
+        llm = get_llm("openai/gpt-oss-120b",0.9)
         response = await llm.ainvoke([HumanMessage(content=classification_prompt)])
         
         content = response.content.strip()
@@ -355,7 +355,7 @@ async def rag_node(state: GraphState) -> GraphState:
                             teacher_id=teacher_id,
                             session_id=session_id,
                             query=query,
-                            top_k=4,
+                            top_k=3,
                             score_threshold=0.3,
                             filter_doc_url=target_url
                         ))
@@ -366,12 +366,12 @@ async def rag_node(state: GraphState) -> GraphState:
             elif doc_url:
                 user_docs = await retrieve_relevant_documents(
                     teacher_id=teacher_id, session_id=session_id, query=query,
-                    top_k=6, score_threshold=0.3, filter_doc_url=doc_url
+                    top_k=4, score_threshold=0.3, filter_doc_url=doc_url
                 )
             else:
                 user_docs = await retrieve_relevant_documents(
                     teacher_id=teacher_id, session_id=session_id, query=query,
-                    top_k=6, score_threshold=0.35, filter_doc_url=None
+                    top_k=4, score_threshold=0.35, filter_doc_url=None
                 )
         except Exception as e:
             print(f"[RAG] ❌ Retrieval failed: {e}")

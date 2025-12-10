@@ -175,7 +175,7 @@ async def store_documents(
         
         embeddings = await embed_chunks_parallel(
             all_chunks,
-            batch_size=200,
+            batch_size=500,
             dimensions=VECTOR_SIZE,
         )
         
@@ -189,15 +189,17 @@ async def store_documents(
                 )
             )
         
-        # Batch Upsert with wait=True to ensure indexing completes
-        for i in range(0, len(points), QDRANT_UPSERT_BATCH_SIZE):
-            batch = points[i:i + QDRANT_UPSERT_BATCH_SIZE]
-            await asyncio.to_thread(
+        # Parallel Batch Upsert for faster storage
+        upsert_batches = [points[i:i + QDRANT_UPSERT_BATCH_SIZE] for i in range(0, len(points), QDRANT_UPSERT_BATCH_SIZE)]
+        upsert_tasks = [
+            asyncio.to_thread(
                 QDRANT_CLIENT.upsert,
                 collection_name=collection_name,
-                points=batch,
-                wait=True
+                points=batch
             )
+            for batch in upsert_batches
+        ]
+        await asyncio.gather(*upsert_tasks)
         
         print(f"[Qdrant] ✅ Stored {len(points)} chunks in {collection_name}")
         return True
