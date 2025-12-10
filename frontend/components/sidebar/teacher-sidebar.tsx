@@ -11,6 +11,7 @@ import {
   Bot,
   History,
   Settings,
+  Calendar,
 } from "lucide-react";
 import { AppSidebar } from "./app-sidebar";
 
@@ -44,6 +45,11 @@ const teacherNavItems = [
     title: "Class Grouping",
     url: "/teacher/class-grouping",
     icon: Users,
+  },
+  {
+    title: "Attendance Management",
+    url: "/teacher/attendance-management",
+    icon: Calendar,
   },
   {
     title: "AI Tutor",

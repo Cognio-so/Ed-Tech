@@ -9,28 +9,76 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
+import type { LibraryContent } from "@/data/get-library-content"
 
-const chartData = [
-  { month: "January", desktop: 186, mobile: 80 },
-  { month: "February", desktop: 305, mobile: 200 },
-  { month: "March", desktop: 237, mobile: 120 },
-  { month: "April", desktop: 73, mobile: 190 },
-  { month: "May", desktop: 209, mobile: 130 },
-  { month: "June", desktop: 214, mobile: 140 },
-]
+interface ChartAreaInteractiveProps {
+  data?: LibraryContent[];
+}
 
-const chartConfig = {
-  desktop: {
-    label: "Desktop",
-    color: "hsl(var(--chart-1))",
-  },
-  mobile: {
-    label: "Mobile",
-    color: "hsl(var(--chart-2))",
-  },
-} satisfies ChartConfig
+export function ChartAreaInteractive({ data = [] }: ChartAreaInteractiveProps) {
+  const chartData = React.useMemo(() => {
+    const months = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ];
 
-export function ChartAreaInteractive() {
+    const currentMonth = new Date().getMonth();
+    const last6Months = months.slice(
+      Math.max(0, currentMonth - 5),
+      currentMonth + 1
+    );
+
+    const monthlyData = last6Months.map((month) => {
+      const monthIndex = months.indexOf(month);
+      const year = new Date().getFullYear();
+      const startDate = new Date(year, monthIndex, 1);
+      const endDate = new Date(year, monthIndex + 1, 0);
+
+      const contentCount = data.filter((item) => {
+        const itemDate = new Date(item.createdAt);
+        return itemDate >= startDate && itemDate <= endDate;
+      }).length;
+
+      const assessmentCount = data.filter((item) => {
+        const itemDate = new Date(item.createdAt);
+        return (
+          item.type === "assessment" &&
+          itemDate >= startDate &&
+          itemDate <= endDate
+        );
+      }).length;
+
+      return {
+        month,
+        content: contentCount,
+        assessments: assessmentCount,
+      };
+    });
+
+    return monthlyData;
+  }, [data]);
+
+  const chartConfig = {
+    content: {
+      label: "Content",
+      color: "hsl(var(--chart-1))",
+    },
+    assessments: {
+      label: "Assessments",
+      color: "hsl(var(--chart-2))",
+    },
+  } satisfies ChartConfig
+
   return (
     <ChartContainer config={chartConfig} className="h-[300px] w-full">
       <AreaChart
@@ -62,19 +110,19 @@ export function ChartAreaInteractive() {
           content={<ChartTooltipContent indicator="dot" />}
         />
         <Area
-          dataKey="mobile"
+          dataKey="content"
           type="natural"
-          fill="var(--color-mobile)"
-          fillOpacity={0.6}
-          stroke="var(--color-mobile)"
+          fill="var(--color-content)"
+          fillOpacity={0.4}
+          stroke="var(--color-content)"
           stackId="a"
         />
         <Area
-          dataKey="desktop"
+          dataKey="assessments"
           type="natural"
-          fill="var(--color-desktop)"
+          fill="var(--color-assessments)"
           fillOpacity={0.4}
-          stroke="var(--color-desktop)"
+          stroke="var(--color-assessments)"
           stackId="a"
         />
       </AreaChart>

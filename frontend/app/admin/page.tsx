@@ -1,21 +1,14 @@
-import { ChartAreaInteractive } from "@/components/sidebar/chart-area-interactive"
-import { DataTable } from "@/components/sidebar/data-table"
-import { SectionCards } from "@/components/sidebar/section-cards"
-import { Suspense } from "react"
-import {
-  SectionCardsSkeleton,
-  ChartSkeleton,
-  DataTableSkeleton,
-} from "./_components/loading-skeletons"
-
-import data from "./data.json"
+import { SectionCards } from "@/components/sidebar/section-cards";
+import { Suspense } from "react";
+import { SectionCardsSkeleton } from "./_components/loading-skeletons";
+import { UsersServer } from "@/app/admin/users/_components/users-server";
 
 export default function Page() {
   return (
     <div className="flex flex-1 flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
+          <h1 className="text-3xl font-bold text-primary">Admin Dashboard</h1>
           <p className="text-muted-foreground">
             Welcome to the Admin Dashboard
           </p>
@@ -27,18 +20,23 @@ export default function Page() {
           <Suspense fallback={<SectionCardsSkeleton />}>
             <SectionCards />
           </Suspense>
-          
+
           <div className="px-4 lg:px-6">
-            <Suspense fallback={<ChartSkeleton />}>
-              <ChartAreaInteractive />
-            </Suspense>
+            <div className="rounded-lg border bg-card">
+              <div className="p-6">
+                <h2 className="text-2xl font-bold tracking-tight mb-4">
+                  Recent Users
+                </h2>
+                <Suspense
+                  fallback={<div className="p-4">Loading users...</div>}
+                >
+                  <UsersServer roleFilter="all" searchQuery="" />
+                </Suspense>
+              </div>
+            </div>
           </div>
-          
-          <Suspense fallback={<DataTableSkeleton />}>
-            <DataTable data={data} />
-          </Suspense>
         </div>
       </div>
     </div>
-  )
+  );
 }

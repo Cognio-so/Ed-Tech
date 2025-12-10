@@ -8,6 +8,7 @@ import {
   Bot,
   History,
   Settings,
+  MessageSquare,
 } from "lucide-react";
 import { AppSidebar } from "./app-sidebar";
 
@@ -31,6 +32,11 @@ const studentNavItems = [
     title: "AI Assistant",
     url: "/student/ai-assistant",
     icon: Bot,
+  },
+  {
+    title: "Feedback",
+    url: "/student/feedback",
+    icon: MessageSquare,
   },
   {
     title: "History",

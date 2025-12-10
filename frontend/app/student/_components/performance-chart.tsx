@@ -70,21 +70,21 @@ export function LearningActivityChart() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                  <XAxis
-                    dataKey="month"
+                <XAxis
+                  dataKey="month"
                     axisLine={false}
-                    tickLine={false}
+                  tickLine={false}
                     tick={{ fill: "#9ca3af", fontSize: 12 }}
                     dy={10}
-                  />
-                  <YAxis
+                />
+                <YAxis
                     axisLine={false}
-                    tickLine={false}
+                  tickLine={false}
                     tick={{ fill: "#9ca3af", fontSize: 12 }}
-                    domain={[0, 100]}
+                  domain={[0, 100]}
                     ticks={[0, 20, 40, 60, 80, 100]}
                     tickFormatter={(value) => Math.floor(value).toString()}
-                  />
+                />
                   <ChartTooltip 
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null;
@@ -113,13 +113,13 @@ export function LearningActivityChart() {
                     fill="url(#colorMaterials)"
                   />
                   <Area
-                    type="monotone"
+                  type="monotone"
                     dataKey="exams"
                     stroke="#FF754C"
-                    strokeWidth={3}
+                  strokeWidth={3}
                     fillOpacity={1}
                     fill="url(#colorExams)"
-                  />
+                />
                 </AreaChart>
             </ResponsiveContainer>
           </ChartContainer>

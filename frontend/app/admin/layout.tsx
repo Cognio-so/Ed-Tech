@@ -11,6 +11,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <SidebarProvider
+      defaultOpen={true}
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
@@ -18,7 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" />
+      <AppSidebar variant="inset" basePath="/admin" />
       <SidebarInset>
         <div className="flex flex-1 flex-col gap-4 p-4 pt-4 rounded-3xl">
           {children}

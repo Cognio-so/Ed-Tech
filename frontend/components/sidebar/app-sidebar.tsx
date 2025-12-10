@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { type LucideIcon } from "lucide-react";
+import { Calendar, type LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -36,26 +36,15 @@ const defaultNavItems = [
     url: "/admin/users",
     icon: Users,
   },
+  
+  
+  
   {
-    title: "Teams",
-    url: "/admin/teams",
-    icon: Users,
+    title: "View Attendance",
+    url: "/admin/view-attendance",
+    icon: Calendar,
   },
-  {
-    title: "Tools",
-    url: "/admin/tools",
-    icon: Wrench,
-  },
-  {
-    title: "KnowledgeBase",
-    url: "/admin/knowledgebase",
-    icon: Database,
-  },
-  {
-    title: "History",
-    url: "/admin/history",
-    icon: History,
-  },
+  
   {
     title: "Settings",
     url: "/admin/settings",
@@ -77,12 +66,24 @@ export function AppSidebar({ navItems = defaultNavItems, basePath, ...props }: A
   const pathname = usePathname();
 
   // Add isActive property based on current pathname
-  const navMain = navItems.map((item) => ({
-    ...item,
-    isActive: basePath
-      ? pathname === item.url || (item.url !== basePath && pathname.startsWith(item.url))
-      : pathname === item.url || (item.url !== "/admin" && pathname.startsWith(item.url)),
-  }));
+  const navMain = navItems.map((item) => {
+    // Exact match always takes priority
+    if (pathname === item.url) {
+      return { ...item, isActive: true };
+    }
+    
+    // If this is the basePath item (like /admin), only match exactly
+    // Don't match it when we're on child routes like /admin/users
+    if (basePath && item.url === basePath) {
+      return { ...item, isActive: pathname === basePath };
+    }
+    
+    // For other routes, check if pathname starts with the item URL
+    // This handles nested routes like /admin/users/123
+    const isActive = pathname.startsWith(`${item.url}/`);
+    
+    return { ...item, isActive };
+  });
 
   return (
     <Sidebar collapsible="icon" {...props}>
