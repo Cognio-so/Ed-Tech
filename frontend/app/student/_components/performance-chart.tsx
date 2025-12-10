@@ -2,78 +2,127 @@
 
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { TrendingUp } from "lucide-react";
 
-interface PerformanceChartProps {
-  productivityPercentage?: number;
-}
-
-const performanceData = [
-  { month: "Jan", score: 65 },
-  { month: "Feb", score: 72 },
-  { month: "Mar", score: 68 },
-  { month: "Apr", score: 80 },
-  { month: "May", score: 85 },
-  { month: "Jun", score: 90 },
+const data = [
+  { month: "Aug", materials: 50, exams: 30 },
+  { month: "Sept", materials: 40, exams: 70 },
+  { month: "Oct", materials: 70, exams: 40 },
+  { month: "Nov", materials: 60, exams: 35 },
+  { month: "Dec", materials: 90, exams: 20 },
+  { month: "Jan", materials: 70, exams: 30 },
 ];
 
 const chartConfig = {
-  score: {
-    label: "Performance",
-    color: "hsl(var(--chart-1))",
+  materials: {
+    label: "Materials",
+    color: "#8884d8",
+  },
+  exams: {
+    label: "Exams",
+    color: "#ff84d8",
   },
 } satisfies ChartConfig;
 
-export function PerformanceChart({
-  productivityPercentage = 40,
-}: PerformanceChartProps) {
+export function LearningActivityChart() {
   return (
     <motion.div
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.5 }}
       className="h-full"
     >
-      <Card className="border-2 h-full flex flex-col">
-        <CardHeader>
-          <CardTitle>Performance</CardTitle>
+      <Card className="border-none shadow-sm h-full">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-xl font-bold text-slate-900 dark:text-white">Learning activity</CardTitle>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-[#6C5DD3]" />
+                <span className="text-slate-500">Materials</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-[#FF754C]" />
+                <span className="text-slate-500">Exams</span>
+              </div>
+            </div>
+            <select className="text-sm border-none bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-1 text-slate-500 cursor-pointer outline-none">
+              <option>3rd semester</option>
+              <option>2nd semester</option>
+              <option>1st semester</option>
+            </select>
+          </div>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col">
-          <ChartContainer config={chartConfig} className="h-[200px] w-full mb-4 flex-shrink-0">
+        <CardContent>
+          <div className="h-[280px] w-full">
+            <ChartContainer config={chartConfig} className="h-full w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={performanceData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="month"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  domain={[0, 100]}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Line
-                  type="monotone"
-                  dataKey="score"
-                  stroke="var(--color-score)"
-                  strokeWidth={3}
-                  dot={false}
-                />
-              </LineChart>
+                <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorMaterials" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6C5DD3" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#6C5DD3" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorExams" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#FF754C" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#FF754C" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="month"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "#9ca3af", fontSize: 12 }}
+                    dy={10}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "#9ca3af", fontSize: 12 }}
+                    domain={[0, 100]}
+                    ticks={[0, 20, 40, 60, 80, 100]}
+                    tickFormatter={(value) => Math.floor(value).toString()}
+                  />
+                  <ChartTooltip 
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      return (
+                        <div className="rounded-lg border bg-white dark:bg-slate-800 p-2 shadow-md">
+                          {payload.map((entry, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <div 
+                                className="h-3 w-3 rounded-full" 
+                                style={{ backgroundColor: entry.color }}
+                              />
+                              <span className="text-sm font-medium">{entry.name}:</span>
+                              <span className="text-sm font-bold">{Math.floor(Number(entry.value))}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="materials"
+                    stroke="#6C5DD3"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#colorMaterials)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="exams"
+                    stroke="#FF754C"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#colorExams)"
+                  />
+                </AreaChart>
             </ResponsiveContainer>
           </ChartContainer>
-          <div className="flex items-center gap-2 p-4 rounded-lg bg-muted/50">
-            <TrendingUp className="h-5 w-5 text-green-600" />
-            <p className="text-sm">
-              <span className="font-semibold">{productivityPercentage}%</span> Your productivity is{" "}
-              {productivityPercentage}% higher compared to last month
-            </p>
           </div>
         </CardContent>
       </Card>

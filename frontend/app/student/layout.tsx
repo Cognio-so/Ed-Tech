@@ -19,8 +19,8 @@ export default async function StudentLayout({
       }
     >
       <StudentSidebar variant="inset" />
-      <SidebarInset>
-        <div className="flex flex-1 flex-col gap-4 p-4 pt-4 rounded-3xl">
+      <SidebarInset className="bg-[#F5F5F7] dark:bg-[#0D0D0F]">
+        <div className="flex flex-1 flex-col h-full">
           {children}
         </div>
       </SidebarInset>
