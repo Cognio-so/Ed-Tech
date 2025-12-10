@@ -243,6 +243,11 @@ async def simple_llm_node(state: GraphState) -> GraphState:
     teacher_data = state.get("teacher_data", {})
     content_type = state.get("content_type")
     language = state.get("language", "English")
+    
+    # If subject is Hindi and language is English (default), switch to Hindi
+    if subject and subject.strip().lower() == "hindi" and language == "English":
+        language = "Hindi"
+        
     model = state.get("model")  
     chunk_callback = state.get("chunk_callback")
     student_context = format_student_data(student_data)
