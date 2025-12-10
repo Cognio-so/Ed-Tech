@@ -7,7 +7,7 @@ QDRANT_URL = os.getenv("QDRANT_URL", ":memory:")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_TIMEOUT = float(os.getenv("QDRANT_TIMEOUT", "60"))
 VECTOR_SIZE = int(os.getenv("QDRANT_VECTOR_SIZE", "1024"))
-QDRANT_UPSERT_BATCH_SIZE = int(os.getenv("QDRANT_UPSERT_BATCH_SIZE", "64"))
+QDRANT_UPSERT_BATCH_SIZE = int(os.getenv("QDRANT_UPSERT_BATCH_SIZE", "100"))
 
 _QDRANT_CLIENT: Optional[QdrantClient] = None
 _QDRANT_USING_IN_MEMORY: bool = QDRANT_URL == ":memory:"
