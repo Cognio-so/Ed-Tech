@@ -1,11 +1,18 @@
+"""
+comic_generation.py
+Generates comic prompts using LLM and images using Replicate, 
+then overlays the story text directly onto the images.
+"""
 import openai
 import os
-import requests
 import asyncio
-from PIL import Image, ImageDraw, ImageFont
-from io import BytesIO
-import base64
+import re
+import requests
+import io
 import textwrap
+from PIL import Image, ImageDraw, ImageFont
+import cloudinary
+import cloudinary.uploader
 from dotenv import load_dotenv
 from replicate_image_gen import generate_image_with_replicate
 
@@ -13,66 +20,48 @@ load_dotenv()
 
 # --- API Clients Initialization ---
 
-# 1. Initialize OpenRouter Client for LLM (Story Generation)
+# 1. Initialize OpenRouter Client for LLM
 try:
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
-    if not openrouter_key:
-        print("Warning: OPENROUTER_API_KEY not found. LLM generation may fail.")
-    
     llm_client = openai.OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=openrouter_key,
         default_headers={
-            "HTTP-Referer": "https://localhost:8000", # Optional: Update with your actual site URL
-            "X-Title": "Comic Generator Script"         # Optional: Update with your app name
+            "HTTP-Referer": "https://localhost:8000", 
+            "X-Title": "Comic Generator Script"
         }
     )
 except Exception as e:
     print(f"Error initializing OpenRouter client: {e}")
-    exit()
 
-# 2. Initialize Replicate for Image Generation
-# Replicate API key is automatically read from REPLICATE_API_KEY environment variable
+# 2. Initialize Replicate
 try:
     replicate_api_key = os.getenv("REPLICATE_API_KEY")
     if not replicate_api_key:
         print("Warning: REPLICATE_API_KEY not found. Image generation will fail.")
     else:
-        # Set the API token for replicate
         os.environ["REPLICATE_API_TOKEN"] = replicate_api_key
-        print("Replicate initialized successfully for image generation.")
 except Exception as e:
     print(f"Error initializing Replicate: {e}")
 
-def get_user_input():
-    """
-    Gets the comic book topic, target audience, and number of panels from the user.
-    """
-    print("Welcome to the AI Comic Generator!")
-    instructions = input("What educational topic would you like to make a comic about? (e.g., 'The water cycle')\n> ")
-    student_class = input("What grade level is this for? (e.g., '3rd grade')\n> ")
-    language = input("What language should the comic be in? (e.g., 'English')\n> ")
-    while True:
-        try:
-            num_panels = int(input("How many panels should the comic have? (e.g., 4)\n> "))
-            if num_panels > 0:
-                break
-            else:
-                print("Please enter a positive number for the panels.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
-    return instructions, student_class, num_panels, language
+# 3. Initialize Cloudinary (Required for hosting the edited images)
+try:
+    cloudinary.config(
+        cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+        api_key=os.getenv("CLOUDINARY_API_KEY"),
+        api_secret=os.getenv("CLOUDINARY_API_SECRET")
+    )
+except Exception as e:
+    print(f"Error initializing Cloudinary: {e}")
 
 def create_comical_story_prompt(instructions, student_class, num_panels, language):
     """
     Uses OpenRouter (GPT-4o) to create a comic story with separate visual prompts and footer text.
-    Enhanced to maintain character consistency across panels.
     """
     print("\nTurning your idea into a fun comic story using OpenRouter...")
     try:
-        # Using llm_client (OpenRouter) here
         response = llm_client.chat.completions.create(
-            model="openai/gpt-4o-mini", # OpenRouter model ID
+            model="openai/gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -138,7 +127,7 @@ def create_comical_story_prompt(instructions, student_class, num_panels, languag
         )
         story_prompts = response.choices[0].message.content
         return story_prompts
-    except openai.APIError as e:
+    except Exception as e:
         print(f"An error occurred with the OpenRouter API: {e}")
         return None
 
@@ -147,181 +136,145 @@ def parse_story_panels(story_text: str):
     Parses the generated story to extract visual prompts and footer text for each panel.
     """
     panels = []
-    current_panel = {}
-    for line in story_text.strip().split('\n'):
-        line = line.strip()
-        if not line:
+    
+    # Normalize text
+    clean_text = re.sub(r'\*\*(Panel_Prompt|Footer_Text|Footer|Caption)\*\*', r'\1', story_text, flags=re.IGNORECASE)
+    
+    # Split by "Panel_Prompt:"
+    segments = re.split(r'(?i)(?:^|\n)[\d\.\-\s]*Panel_Prompt:', clean_text)
+    
+    for segment in segments:
+        segment = segment.strip()
+        if not segment: 
             continue
         
-        if line.split('.')[0].isdigit() and 'Panel_Prompt:' in line:
-            if current_panel:
-                panels.append(current_panel)
-            current_panel = {}
-
-        if 'Panel_Prompt:' in line:
-            current_panel['prompt'] = line.split('Panel_Prompt:')[1].strip()
-        elif 'Footer_Text:' in line:
-            current_panel['footer'] = line.split('Footer_Text:')[1].strip()
-
-    if current_panel:
-        panels.append(current_panel)
+        parts = re.split(r'(?i)(?:Footer_Text|Footer|Caption):', segment, maxsplit=1)
         
-    return [p for p in panels if 'prompt' in p and 'footer' in p]
+        if len(parts) == 2:
+            prompt_text = parts[0].strip()
+            footer_text = parts[1].strip()
+            
+            if prompt_text and footer_text:
+                panels.append({
+                    'prompt': prompt_text,
+                    'footer_text': footer_text
+                })
+    
+    return panels
 
-
-def add_footer_text_to_image(image_base64: str, text: str, language: str = 'English') -> str:
+def add_footer_text_to_image(image_url: str, text: str) -> bytes:
     """
-    Adds a styled footer with text to a base64 encoded image.
-    Handles text wrapping and centering.
+    Downloads the image, adds a white footer with the text, and returns the image bytes.
     """
     try:
-        img_data = base64.b64decode(image_base64)
-        img = Image.open(BytesIO(img_data))
+        # 1. Download Image
+        response = requests.get(image_url, timeout=10)
+        response.raise_for_status()
+        img = Image.open(io.BytesIO(response.content))
+        
+        # 2. Setup Font
+        # Try to load a nice font, fallback to default if not found
+        try:
+            # Using a large size for better quality
+            font = ImageFont.truetype("arial.ttf", 24)
+        except IOError:
+            font = ImageFont.load_default()
 
-        footer_height = int(img.height * 0.20)
-        new_img = Image.new('RGB', (img.width, img.height + footer_height), 'white')
+        # 3. Calculate Text Layout
+        img_w, img_h = img.size
+        
+        # Determine footer height based on text wrapping
+        # Approximate char width for wrapping (adjust based on font)
+        avg_char_width = 14 
+        chars_per_line = int(img_w / avg_char_width)
+        wrapper = textwrap.TextWrapper(width=chars_per_line)
+        word_list = wrapper.wrap(text=text)
+        
+        # Padding and line height
+        padding = 20
+        line_height = 30  # Adjust based on font size
+        footer_height = (len(word_list) * line_height) + (padding * 2)
+        
+        # 4. Create New Canvas (Original Image + Footer)
+        new_h = img_h + footer_height
+        new_img = Image.new('RGB', (img_w, new_h), color='white')
+        
+        # Paste original image
         new_img.paste(img, (0, 0))
         
+        # 5. Draw Text
         draw = ImageDraw.Draw(new_img)
-
-        footer_box = [0, img.height, new_img.width, new_img.height]
-        draw.rectangle(footer_box, fill="#f0f0f0", outline="black", width=2)
+        current_h = img_h + padding
         
-        # Font settings
-        font_path = "arial.ttf" # A common font on Windows
-        font_size = int(footer_height / 4.5)
-        try:
-            # On Windows, fonts are usually in C:/Windows/Fonts
-            font = ImageFont.truetype(font_path, font_size)
-        except IOError:
-            print(f"Warning: Font '{font_path}' not found. Using default font.")
+        for line in word_list:
+            # Center text
             try:
-                # Fallback for non-Windows or if Arial is missing
-                font = ImageFont.truetype("DejaVuSans.ttf", font_size)
-            except IOError:
-                 font = ImageFont.load_default()
-
-        # Text wrapping
-        margin = 40
-        text_box_width = new_img.width - 2 * margin
-        wrapped_lines = textwrap.wrap(text, width=int(text_box_width / (font_size * 0.5)))
-
-        # Calculate text position for centering
-        # Use getbbox for more accurate line height
-        try:
-            line_height = draw.textbbox((0, 0), "A", font=font)[3] + 5
-        except Exception:
-            line_height = font_size + 5 # Fallback
-            
-        total_text_height = len(wrapped_lines) * line_height
-        y_text = img.height + (footer_height - total_text_height) / 2
-        
-        # Draw each line centered
-        for line in wrapped_lines:
-            try:
-                # Use textlength for Pillow >= 9.2.0, or textsize for older versions
-                 line_width = draw.textlength(line, font=font)
+                # Pillow >= 8.0.0
+                bbox = draw.textbbox((0, 0), line, font=font)
+                text_w = bbox[2] - bbox[0]
             except AttributeError:
-                 line_width, _ = draw.textsize(line, font=font)
-
-            x_text = (new_img.width - line_width) / 2
+                # Older Pillow
+                text_w, _ = draw.textsize(line, font=font)
+                
+            x_pos = (img_w - text_w) / 2
+            draw.text((x_pos, current_h), line, font=font, fill="black")
+            current_h += line_height
             
-            draw.text((x_text, y_text), line, font=font, fill="black")
-            y_text += line_height
-
-        # Encode the final image back to base64
-        buffered = BytesIO()
-        new_img.save(buffered, format="PNG")
-        final_image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        
-        return final_image_base64
+        # 6. Save to Bytes
+        img_byte_arr = io.BytesIO()
+        new_img.save(img_byte_arr, format='JPEG', quality=90)
+        img_byte_arr.seek(0)
+        return img_byte_arr.getvalue()
 
     except Exception as e:
         print(f"Error adding footer text: {e}")
-        return image_base64 # Return original image on failure
-
+        return None
 
 async def generate_comic_image(prompt, panel_number, footer_text="", language='English'):
     """
-    Uses the central Replicate image generation function to create comic panel images.
-    Optionally adds footer text to the generated image.
+    Generates an image via Replicate, then overlays the footer text using PIL, 
+    and uploads the final result to Cloudinary.
     """
     print(f"Generating image for panel {panel_number}...")
     
     try:
-        # Use the central Replicate image generation function
-        image_url = await generate_image_with_replicate(prompt)
+        # 1. Generate Base Image
+        raw_image_url = await generate_image_with_replicate(prompt)
         
-        if not image_url:
+        if not raw_image_url:
             return None
-        
-        # Download the image from URL and convert to base64
-        response = requests.get(image_url, timeout=30)
-        response.raise_for_status()
-        
-        # Convert to base64
-        image_base64 = base64.b64encode(response.content).decode("utf-8")
-        
-        # Add footer text if provided
-        if image_base64 and footer_text:
-            print(f"Adding footer text to panel {panel_number}...")
-            final_image_base64 = add_footer_text_to_image(image_base64, footer_text, language)
-            return final_image_base64
             
-        return image_base64
+        if not footer_text:
+            return raw_image_url
+            
+        print(f"   Overlaying text for panel {panel_number}...")
+        
+        # 2. Add Text Overlay
+        # Run synchronous PIL operations in a thread executor to avoid blocking async loop
+        final_image_bytes = await asyncio.to_thread(
+            add_footer_text_to_image, 
+            raw_image_url, 
+            footer_text
+        )
+        
+        if not final_image_bytes:
+            print("   Failed to overlay text, returning raw image.")
+            return raw_image_url
+
+        # 3. Upload to Cloudinary
+        print(f"   Uploading processed panel {panel_number} to Cloudinary...")
+        upload_result = await asyncio.to_thread(
+            cloudinary.uploader.upload,
+            final_image_bytes,
+            resource_type="image",
+            folder="comic_panels"
+        )
+        
+        final_url = upload_result.get('secure_url')
+        print(f"✅ Final Image URL: {final_url}")
+        return final_url
         
     except Exception as e:
-        print(f"❌ Error in image generation: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-async def main_async():
-    """
-    Async main function to run the comic generator.
-    """
-    instructions, student_class, num_panels, language = get_user_input()
-    if not instructions:
-        print("No instructions provided. Exiting.")
-        return
-
-    comical_story_prompts_text = create_comical_story_prompt(instructions, student_class, num_panels, language)
-    if not comical_story_prompts_text:
-        print("Could not generate a story. Exiting.")
-        return
-
-    print("\n--- Your Comic Story Prompts ---\n")
-    print(comical_story_prompts_text)
-    print("\n--- Generating Comic Panel Images ---\n")
-
-    panel_data = parse_story_panels(comical_story_prompts_text)
-    
-    if not panel_data:
-        print("Could not parse the story panels. Please check the output from the story generation.")
-        return
-        
-    if len(panel_data) != num_panels:
-        print(f"Warning: The AI generated {len(panel_data)} panels, but {num_panels} were requested. Proceeding with the generated panels.")
-
-    for i, panel in enumerate(panel_data):
-        panel_number = i + 1
-        print(f"\n--- Panel {panel_number} ---")
-        
-        visual_prompt = panel['prompt']
-        footer_text = panel['footer']
-        
-        final_image_base64 = await generate_comic_image(visual_prompt, panel_number, footer_text, language)
-        
-        if final_image_base64:
-            print(f"Comic Panel {panel_number} (b64_json):\n{final_image_base64[:100]}...")
-        else:
-            print("Failed to generate image for this panel.")
-
-def main():
-    """
-    Main function to run the comic generator (wrapper for async function).
-    """
-    asyncio.run(main_async())
-
-if __name__ == "__main__":
-    main()
+        print(f"❌ Error in image generation/processing: {e}")
+        # Fallback to the raw URL if something in the post-processing fails
+        return raw_image_url if 'raw_image_url' in locals() else None
