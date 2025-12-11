@@ -23,6 +23,7 @@ from models import (
     ContentGenerationRequest,
     WebSearchSchemaRequest,
     AssessmentRequest,
+    ExamAssessmentRequest,
     ComicsSchema,
     PresentationSchema,
     TeacherVoiceSchema,
@@ -48,6 +49,7 @@ from teacher.Content_generation.presentation import generate_presentation
 from teacher.Content_generation.Quizz import generate_quizz
 from teacher.Content_generation.worksheet import generate_worksheet
 from teacher.Assessment.assessment import generate_assessment
+from teacher.Assessment.exam_assessment import generate_exam_assessment
 from teacher.Ai_Tutor.graph import create_ai_tutor_graph
 from teacher.Ai_Tutor.graph_type import GraphState
 from langchain_core.messages import HumanMessage, AIMessage
@@ -809,6 +811,114 @@ async def create_assessment(
         "type": "assessment",
         "content": raw_output,
     }
+
+@app.post("/api/teacher/{teacher_id}/session/{session_id}/Exam_Assessment")
+async def create_exam_assessment(
+    teacher_id: str,
+    session_id: str,
+    payload: ExamAssessmentRequest,
+    stream: bool = False,
+) -> Dict[str, Any]:
+    """
+    Generate an exam assessment with multiple topics and question types.
+    Supports optional streaming using Server-Sent Events.
+    Only generates questions without overview, learning objectives, or teacher notes.
+    """
+
+    current_session_id = await SessionManager.create_session(teacher_id, session_id)
+    request_payload = payload.model_dump(mode="json")
+
+    async def invoke_generator(
+        chunk_callback: Optional[Callable[[str], Awaitable[None]]] = None
+    ):
+        result = generate_exam_assessment(request_payload, chunk_callback=chunk_callback)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+    if stream:
+        queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
+        full_response = ""
+
+        async def chunk_callback(chunk: str):
+            nonlocal full_response
+            full_response += chunk
+            await queue.put(
+                {
+                    "type": "content",
+                    "data": {
+                        "chunk": chunk,
+                        "full_response": full_response,
+                        "is_complete": False,
+                    },
+                }
+            )
+
+        async def run_and_store():
+            try:
+                raw_output = await invoke_generator(chunk_callback=chunk_callback)
+                metadata = {
+                    "session_id": current_session_id,
+                    "teacher_id": teacher_id,
+                    "type": "exam_assessment",
+                    "content": raw_output,
+                }
+                await queue.put(
+                    {
+                        "type": "content",
+                        "data": {
+                            "chunk": "",
+                            "full_response": raw_output,
+                            "is_complete": True,
+                        },
+                    }
+                )
+                await queue.put({"type": "metadata", "data": metadata})
+            except Exception as exc:
+                await queue.put(
+                    {"type": "error", "data": {"message": str(exc)}}
+                )
+            finally:
+                await queue.put(None)
+
+        asyncio.create_task(run_and_store())
+
+        async def stream_output():
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield f"data: {json.dumps(chunk)}\n\n"
+
+        headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Session-Id": current_session_id,
+            "X-Teacher-Id": teacher_id,
+            "X-Content-Type": "exam_assessment",
+        }
+        return StreamingResponse(
+            stream_output(),
+            media_type="text/event-stream",
+            headers=headers,
+        )
+
+    try:
+        raw_output = await invoke_generator()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "session_id": current_session_id,
+        "teacher_id": teacher_id,
+        "type": "exam_assessment",
+        "content": raw_output,
+    }
+
 @app.post("/api/teacher/{teacher_id}/session/{session_id}/image_generation")
 async def image_generation_endpoint(
     teacher_id: str,
