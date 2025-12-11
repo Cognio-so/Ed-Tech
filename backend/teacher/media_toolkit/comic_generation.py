@@ -72,7 +72,7 @@ def create_comical_story_prompt(instructions, student_class, num_panels, languag
     try:
         # Using llm_client (OpenRouter) here
         response = llm_client.chat.completions.create(
-            model="openai/gpt-4o", # OpenRouter model ID
+            model="openai/gpt-4o-mini", # OpenRouter model ID
             messages=[
                 {
                     "role": "system",
