@@ -32,7 +32,6 @@ from models import (
     AITutorRequest,
     StudentVoiceSchema,
     AddDocumentsRequest,
-    parse_enhanced_story_panels,
     generate_video_background,
     VoiceConnectionManager,
     teacher_voice_manager,
@@ -41,7 +40,8 @@ from models import (
 
 from teacher.media_toolkit.websearch_schema import run_search_agent
 from teacher.media_toolkit.image_gen import ImageGenerator
-from teacher.media_toolkit.comic_generation import create_comical_story_prompt, generate_comic_image
+# Updated import to include parse_story_panels
+from teacher.media_toolkit.comic_generation import create_comical_story_prompt, generate_comic_image, parse_story_panels
 from teacher.media_toolkit.slide_generation import AsyncSlideSpeakGenerator, SlideSpeakError, SlideSpeakAuthError, SlideSpeakTimeoutError
 from teacher.media_toolkit.video_generation import CloudinaryStorage, PPTXToHeyGenVideo
 from teacher.Content_generation.lesson_plan import generate_lesson_plan
@@ -84,10 +84,6 @@ GENERATOR_MAP: Dict[str, Callable[..., Awaitable[str]]] = {
     "quizz": generate_quizz,
     "worksheet": generate_worksheet,
 }
-
-
-
-
 
 video_generation_tasks: Dict[str, Dict[str, Any]] = {}
 cloudinary_storage_manager: Optional[CloudinaryStorage] = None
@@ -263,7 +259,6 @@ async def generate_video_presentation(
             detail="Cloudinary storage is not configured on the server."
         )
     
-    # Validate file type
     if not pptx_file.filename.lower().endswith(".pptx"):
         raise HTTPException(
             status_code=400, 
@@ -273,13 +268,8 @@ async def generate_video_presentation(
     try:
         task_id = str(uuid4())
         logger.info(f"Received video request. Task ID: {task_id}, File: {pptx_file.filename}")
-
-        # Read file content into memory to pass to background task
-        # Note: For extremely large files, stream processing might be needed, 
-        # but PPTX files are usually manageable in memory.
         content = await pptx_file.read()
 
-        # Initialize Task State
         video_generation_tasks[task_id] = {
             "session_id": session_id,
             "teacher_id": teacher_id,
@@ -290,7 +280,6 @@ async def generate_video_presentation(
             "error": None
         }
 
-        # Start Background Task
         asyncio.create_task(generate_video_background(
             task_id=task_id,
             pptx_bytes=content,
@@ -330,7 +319,6 @@ async def check_video_generation_status(
 
     task_info = video_generation_tasks[task_id]
 
-    # simple auth check to ensure task belongs to this session/teacher
     if task_info.get("teacher_id") != teacher_id:
         raise HTTPException(status_code=403, detail="Unauthorized access to this task.")
 
@@ -349,12 +337,10 @@ async def check_video_generation_status(
             "completed_at": task_info.get("completed_at")
         })
         
-        # Optional: Save to session history if not already done
         session = await SessionManager.get_session(session_id)
         if "generated_videos" not in session:
             session["generated_videos"] = []
         
-        # Avoid duplicates
         if not any(v.get("video_id") == task_info.get("video_id") for v in session["generated_videos"]):
             session["generated_videos"].append(response)
             await SessionManager.update_session(session_id, session)
@@ -385,7 +371,6 @@ async def connect_voice_agent(
         if not api_key:
             raise HTTPException(status_code=500, detail="OpenAI API Key not configured")
 
-        # 1. Initialize the Bridge
         bridge = VoiceAgentBridge(api_key=api_key)
         
         context_data = {
@@ -394,14 +379,12 @@ async def connect_voice_agent(
             "instructions": payload.instructions
         }
         
-        # 2. Connect (WebRTC Handshake)
         answer_sdp = await bridge.connect(
             offer_sdp=payload.sdp, 
             context_data=context_data,
             voice=payload.voice
         )
         
-        # 3. Register securely with the Manager
         await teacher_voice_manager.register_connection(session_id, bridge)
         
         return {
@@ -419,14 +402,10 @@ async def disconnect_voice_agent(
     teacher_id: str,
     session_id: str
 ) -> Dict[str, str]:
-    # 1. Use the manager to disconnect
     was_disconnected = await teacher_voice_manager.disconnect_session(session_id)
-    
     if was_disconnected:
         return {"status": "disconnected", "message": "Voice agent disconnected."}
     else:
-        # If user A is connected, and user B (invalid session) calls this, 
-        # User A is safe because session_id won't match.
         return {"status": "not_found", "message": "No active voice session found for this session ID."}
 
 @app.post("/api/student/{student_id}/session/{session_id}/voice_agent/connect")
@@ -447,7 +426,6 @@ async def connect_student_voice_agent(
 
         bridge = StudyBuddyBridge(api_key=api_key)
         
-        # Format Context
         pending_str = "None"
         if payload.pending_assignments:
             pending_str = ", ".join(
@@ -475,7 +453,6 @@ async def connect_student_voice_agent(
             voice=payload.voice
         )
         
-        # Register with STUDENT Manager
         await student_voice_manager.register_connection(session_id, bridge)
         
         return {
@@ -493,9 +470,7 @@ async def disconnect_student_voice_agent(
     student_id: str,
     session_id: str
 ) -> Dict[str, str]:
-    # Use the student manager
     was_disconnected = await student_voice_manager.disconnect_session(session_id)
-    
     if was_disconnected:
         return {"status": "disconnected", "message": "Study Buddy disconnected."}
     else:
@@ -937,11 +912,13 @@ async def image_generation_endpoint(
         
         logger.info(f"Generating {schema_dict['preferred_visual_type']} for topic: {schema_dict['topic']}")
         
-        image_b64 = generator.generate_image_from_schema(schema_dict)
-        if not image_b64:
+        image_url = await generator.generate_image_from_schema(schema_dict)
+        
+        if not image_url:
             raise HTTPException(status_code=500, detail="Image generation failed.")
-        data_url = f"data:image/png;base64,{image_b64}"
-        return {"image_url": data_url}
+        
+        return {"image_url": image_url}
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -962,14 +939,9 @@ async def generate_slidespeak_presentation(
     await SessionManager.create_session(teacher_id, session_id)
     
     try:
-        # 2. Initialize Generator
-        # Note: API Key is fetched from os.getenv("SLIDESPEAK_API_KEY") inside the class
         generator = AsyncSlideSpeakGenerator()
-        
         logger.info(f"Generating SlideSpeak presentation for session {session_id}. Topic: {schema.plain_text}")
 
-        # 3. Generate Presentation (Direct Await)
-        # We map the schema fields to the generator's arguments
         result = await generator.generate_presentation(
             plain_text=schema.plain_text,
             custom_user_instructions=schema.custom_user_instructions,
@@ -981,12 +953,10 @@ async def generate_slidespeak_presentation(
             template=schema.template
         )
 
-        # 4. Handle Response
         if result.get("task_status") == "SUCCESS":
             download_url = result.get("task_result", {}).get("url")
             logger.info(f"Presentation generated successfully: {download_url}")
             
-            # Optional: Store in session content history
             await SessionManager.update_session(session_id, {
                 "last_generated_presentation": download_url
             })
@@ -1020,7 +990,6 @@ async def generate_slidespeak_presentation(
         raise HTTPException(status_code=500, detail=str(e))
         
     except ValueError as e:
-        # Usually raised if API key is missing entirely
         logger.error(f"Configuration Error: {e}")
         raise HTTPException(status_code=500, detail="Server configuration error (API Key missing).")
         
@@ -1037,9 +1006,8 @@ async def comics_stream_endpoint(
 ) -> StreamingResponse:
     """
     Generates a comic story and images based on instructions.
-    Streams results via SSE (Server-Sent Events).
+    Streams results via SSE (Server-Sent Events) with Image URLs.
     """
-    # Ensure session exists
     await SessionManager.create_session(teacher_id, session_id)
     
     async def event_stream():
@@ -1068,11 +1036,8 @@ async def comics_stream_endpoint(
 
             logger.info("Story prompts generated successfully")
             
-            # Don't send the full story text with character descriptions and prompts
-            # Only send the parsed panels with images and footer text
-            
-            # 2) Parse enhanced story prompts to get panel/footer pairs
-            panels = parse_enhanced_story_panels(story_prompts)
+            # 2) Parse enhanced story prompts using the robust parser from comic_generation.py
+            panels = parse_story_panels(story_prompts)
             if not panels:
                 error_msg = "No panel prompts could be parsed from the generated story"
                 logger.error(error_msg)
@@ -1083,7 +1048,6 @@ async def comics_stream_endpoint(
 
             logger.info(f"Parsed {len(panels)} panels successfully")
             
-            # Send panel count info
             async for chunk in send({
                 "type": "panels_info", 
                 "total_panels": len(panels),
@@ -1091,12 +1055,10 @@ async def comics_stream_endpoint(
             }):
                 yield chunk
 
-            # 3) Generate images WITHOUT footer text for each panel
-            # We limit processing to the requested number of panels if parsing found more
+            # 3) Generate images (get URLs) for each panel
             limit = schema.num_panels
             
             for i, panel_data in enumerate(panels[:limit]):
-                # Check if client disconnected
                 if await request.is_disconnected():
                     logger.info("Client disconnected, stopping comics generation")
                     break
@@ -1107,51 +1069,41 @@ async def comics_stream_endpoint(
                 
                 logger.info(f"Processing panel {panel_index}/{len(panels)}")
                 
-                # Don't send panel_info with prompts - only send the final image with footer text
-
                 try:
-                    # Generate panel image WITHOUT footer text (passing empty string for footer arg)
-                    # Since generate_comic_image is async, we await it directly
                     logger.info(f"Generating image for panel {panel_index}...")
-                    image_b64 = await generate_comic_image(
+                    
+                    # This function puts the text INTO the image pixels
+                    image_url = await generate_comic_image(
                         prompt_text, 
                         panel_index,
-                        "",  # We pass empty string so the python script doesn't bake text into the image
+                        footer_text, 
                         schema.language
                     )
                     
-                    # Check for disconnection again
                     if await request.is_disconnected():
                         logger.info("Client disconnected after image generation")
                         break
                     
-                    if image_b64:
-                        # Create data URL for the image
-                        image_data_url = f"data:image/png;base64,{image_b64}"
+                    if image_url:
+                        logger.info(f"Sending panel {panel_index} URL to frontend immediately...")
                         
-                        # Send only the image and footer text (2-3 lines max)
-                        # Limit footer text to 2-3 lines for cleaner display
-                        footer_lines = footer_text.split('\n')[:3]  # Max 3 lines
-                        clean_footer = '\n'.join(footer_lines).strip()
-                        
-                        # Send image immediately after generation
-                        logger.info(f"Sending panel {panel_index} image to frontend immediately...")
+                        # --- FIX START ---
+                        # We send an empty string for footer_text because the text 
+                        # is already visible inside the generated image.
                         async for chunk in send({
                             "type": "panel_image",
                             "index": panel_index,
-                            "url": image_data_url,
-                            "footer_text": clean_footer,
-                            "has_footer": bool(clean_footer)
+                            "url": image_url,
+                            "footer_text": "",      # Clear text so frontend doesn't render it separately
+                            "has_footer": False     # Tell frontend there is no external footer
                         }):
                             yield chunk
+                        # --- FIX END ---
                             
                         logger.info(f"Panel {panel_index} completed successfully and sent to frontend")
                         
-                        # Add delay to respect Replicate rate limits (6 requests/min)
-                        # Only sleep if there are more panels to process
                         if i < limit - 1:
-                            logger.info("Waiting 10s to respect rate limits...")
-                            await asyncio.sleep(10)
+                            await asyncio.sleep(2) 
                             
                     else:
                         error_msg = f"Failed to generate image for panel {panel_index}"
@@ -1173,7 +1125,6 @@ async def comics_stream_endpoint(
                     }):
                         yield chunk
 
-            # Send completion signal (only if not disconnected)
             if not await request.is_disconnected():
                 logger.info("Comics generation completed successfully")
                 async for chunk in send({"type": "done", "message": "Comic generation completed!", "session_id": session_id}):
@@ -1200,14 +1151,9 @@ async def comics_stream_endpoint(
         headers=headers
     )
 
-
 @app.get("/api/sessions/{session_id}", tags=["Session"])
 async def get_session_details(session_id: str) -> Dict[str, Any]:
     return await SessionManager.get_session(session_id)
-
-
-
-
 
 @app.post("/api/teacher/{teacher_id}/session/{session_id}/add-documents")
 async def add_documents_by_url(
@@ -1669,9 +1615,9 @@ async def ai_tutor_stream_chat(
                     "is_complete": True,
                     "full_response": response or full_response,
                     "image_result": state.get("image_result"),
-                    "img_urls": state.get("img_urls", []),  # ✅ NEW
+                    "img_urls": state.get("img_urls", []),
                     "token_usage": token_usage,
-                    "route_taken": state.get("tasks", []),  # ✅ NEW
+                    "route_taken": state.get("tasks", []),
                     "error_message": stream_error_message
                 }
             }
@@ -1686,7 +1632,6 @@ async def ai_tutor_stream_chat(
             if state.get("context", {}).get("session", {}).get("last_route"):
                 session["last_route"] = state["context"]["session"]["last_route"]
             
-            # ✅ FIX: Update last_route from executed tasks, ignoring "end"
             tasks = state.get("tasks", [])
             if tasks:
                 session["last_route"] = tasks[-1]
