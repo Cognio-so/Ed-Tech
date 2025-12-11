@@ -958,10 +958,9 @@ async def comics_stream_endpoint(
 
             logger.info("Story prompts generated successfully")
             
-            # Send the full story text first
-            async for chunk in send({"type": "story_prompts", "content": story_prompts}):
-                yield chunk
-
+            # Don't send the full story text with character descriptions and prompts
+            # Only send the parsed panels with images and footer text
+            
             # 2) Parse enhanced story prompts to get panel/footer pairs
             panels = parse_enhanced_story_panels(story_prompts)
             if not panels:
@@ -998,21 +997,13 @@ async def comics_stream_endpoint(
                 
                 logger.info(f"Processing panel {panel_index}/{len(panels)}")
                 
-                # Emit the panel information with separate text
-                async for chunk in send({
-                    "type": "panel_info",
-                    "index": panel_index,
-                    "prompt": prompt_text,
-                    "footer_text": footer_text,
-                    "has_footer": bool(footer_text)
-                }):
-                    yield chunk
+                # Don't send panel_info with prompts - only send the final image with footer text
 
                 try:
                     # Generate panel image WITHOUT footer text (passing empty string for footer arg)
+                    # Since generate_comic_image is async, we await it directly
                     logger.info(f"Generating image for panel {panel_index}...")
-                    image_b64 = await run_in_threadpool(
-                        generate_comic_image, 
+                    image_b64 = await generate_comic_image(
                         prompt_text, 
                         panel_index,
                         "",  # We pass empty string so the python script doesn't bake text into the image
@@ -1028,18 +1019,28 @@ async def comics_stream_endpoint(
                         # Create data URL for the image
                         image_data_url = f"data:image/png;base64,{image_b64}"
                         
-                        # Send the image and text separately
+                        # Send only the image and footer text (2-3 lines max)
+                        # Limit footer text to 2-3 lines for cleaner display
+                        footer_lines = footer_text.split('\n')[:3]  # Max 3 lines
+                        clean_footer = '\n'.join(footer_lines).strip()
+                        
                         async for chunk in send({
                             "type": "panel_image",
                             "index": panel_index,
                             "url": image_data_url,
-                            "footer_text": footer_text,
-                            "has_footer": bool(footer_text),
-                            "prompt_used": prompt_text[:100] + "..." if len(prompt_text) > 100 else prompt_text
+                            "footer_text": clean_footer,
+                            "has_footer": bool(clean_footer)
                         }):
                             yield chunk
                             
                         logger.info(f"Panel {panel_index} completed successfully")
+                        
+                        # Add delay to respect Replicate rate limits (6 requests/min)
+                        # Only sleep if there are more panels to process
+                        if i < limit - 1:
+                            logger.info("Waiting 10s to respect rate limits...")
+                            await asyncio.sleep(10)
+                            
                     else:
                         error_msg = f"Failed to generate image for panel {panel_index}"
                         logger.error(error_msg)
