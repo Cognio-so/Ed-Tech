@@ -1,6 +1,3 @@
-"""
-LangGraph definition for Student AI Tutor.
-"""
 import sys
 from pathlib import Path
 
@@ -29,9 +26,6 @@ except ImportError:
 
 
 def create_student_ai_tutor_graph():
-    """
-    Create and compile the Student AI Tutor LangGraph.
-    """
     graph = StateGraph(StudentGraphState)
 
     graph.add_node("orchestrator", trace_node(orchestrator_node, "student_orchestrator"))
@@ -60,5 +54,3 @@ def create_student_ai_tutor_graph():
     graph.add_edge("image", "orchestrator")
 
     return graph.compile()
-
-

@@ -1,7 +1,3 @@
-"""
-RAG node for Student AI Tutor with Intelligent Document Selection.
-Retrieves documents from Qdrant with session scoping, intelligent filtering, and automatic cleanup.
-"""
 import sys
 from pathlib import Path
 backend_path = Path(__file__).resolve().parents[3]
@@ -36,7 +32,6 @@ USER_DOC_TTL_SECONDS = int(24 * 60 * 60)
 
 
 def _format_last_turns(messages, k=3):
-    """Format last k messages for context, truncating long responses."""
     if not messages:
         return "(no previous conversation)"
     
@@ -52,7 +47,6 @@ def _format_last_turns(messages, k=3):
         if not content:
             continue
         
-        # Truncate very long messages to save tokens (approx 150 words)
         if len(content) > 800:
             content = content[:800] + "... (truncated)"
         
@@ -63,10 +57,6 @@ def _format_last_turns(messages, k=3):
 
 
 async def cleanup_expired_documents(student_id: str, session_id: str) -> bool:
-    """
-    Delete document embeddings if they have expired (older than 24 hours).
-    Returns True if cleanup was performed.
-    """
     try:
         collection_name = get_collection_name(student_id, session_id)
         exists = await asyncio.to_thread(QDRANT_CLIENT.collection_exists, collection_name=collection_name)
@@ -105,10 +95,6 @@ async def cleanup_expired_documents(student_id: str, session_id: str) -> bool:
 
 
 async def get_all_session_documents(student_id: str, session_id: str) -> List[Dict[str, Any]]:
-    """
-    Get all documents in the session from Qdrant with their metadata.
-    Returns list of document metadata dictionaries.
-    """
     try:
         collection_name = get_collection_name(student_id, session_id)
         
@@ -159,21 +145,6 @@ async def intelligent_document_selection(
     conversation_history: Optional[List[Any]] = None,
     llm_model: str = "x-ai/grok-4.1-fast"
 ) -> Dict[str, Any]:
-    """
-    Use LLM to intelligently decide which documents to use based on:
-    - User query
-    - Newly uploaded documents
-    - All available documents in session
-    - Conversation history
-    
-    Returns:
-        {
-            "use_new_docs_only": bool,
-            "selected_doc_ids": List[str],
-            "selected_doc_indices": List[int],
-            "reasoning": str
-        }
-    """
     new_docs = [doc for doc in newly_uploaded_docs_metadata if doc.get("file_type") != "image"]
     new_doc_ids = [doc.get("id") for doc in new_docs if doc.get("id")]
     
@@ -309,16 +280,12 @@ async def intelligent_document_selection(
 
 
 def _escape_xml(text: str) -> str:
-    """Helper to ensure text content doesn't break XML structure."""
     if not text:
         return ""
     return html.escape(str(text))
 
 
 async def rag_node(state: StudentGraphState) -> StudentGraphState:
-    """
-    RAG node with Intelligent Document Selection and XML-Structured Prompting for students.
-    """
     messages = state.get("messages", [])
     student_id = state.get("student_id", "")
     session_id = state.get("session_id")
@@ -361,9 +328,7 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
     if student_id and session_id:
         try:
             if selected_doc_ids:
-                # Build doc_map from both all_available_docs and newly_uploaded_docs
                 doc_map = {d["id"]: d for d in all_available_docs if d.get("id")}
-                # Also add newly uploaded docs to the map
                 for doc in newly_uploaded_docs:
                     if doc.get("id"):
                         doc_map[doc["id"]] = doc
@@ -378,7 +343,6 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
                         target_url = doc_info.get("file_url") or doc_info.get("url")
                         if target_url:
                             print(f"[Student RAG] 🔍 Retrieving for doc_id={doc_id}, url={target_url}")
-                            # Increase top_k for detailed queries to ensure sufficient content coverage
                             is_detailed_query = any(word in query.lower() for word in ["detail", "explain", "tell me", "what is", "how does", "describe", "elaborate"])
                             top_k_value = 5 if is_detailed_query else 3
                             
@@ -387,7 +351,7 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
                                 session_id=session_id,
                                 query=query,
                                 top_k=top_k_value,
-                                score_threshold=0.35, # Slightly higher threshold to prefer quality
+                                score_threshold=0.35,
                                 filter_doc_url=target_url
                             ))
                         else:
@@ -404,7 +368,6 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
                     print(f"[Student RAG] ⚠️ No valid tasks created from selected_doc_ids")
             elif doc_url:
                 print(f"[Student RAG] 🔍 Using doc_url directly: {doc_url}")
-                # Increase top_k for detailed queries
                 is_detailed_query = any(word in query.lower() for word in ["detail", "explain", "tell me", "what is", "how does", "describe", "elaborate"])
                 top_k_value = 6 if is_detailed_query else 4
                 
@@ -415,7 +378,6 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
                 print(f"[Student RAG] ✅ Retrieved {len(user_docs)} document chunks using doc_url")
             else:
                 print(f"[Student RAG] 🔍 Retrieving without filter (all documents)")
-                # Increase top_k for detailed queries
                 is_detailed_query = any(word in query.lower() for word in ["detail", "explain", "tell me", "what is", "how does", "describe", "elaborate"])
                 top_k_value = 6 if is_detailed_query else 4
                 
@@ -469,9 +431,7 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
         s_info = _escape_xml(student_data)
         xml_student = f"<student_profile>\n{s_info}\n</student_profile>"
 
-    # Define variables for prompt template
     student_name = student_profile.get("name") or student_profile.get("student_name") or "Student"
-    # Use topic if available, otherwise fall back to the user's query for the header
     topic_from_query = topic if topic else query
 
     system_prompt = f"""You are a supportive AI Study Buddy. Your goal is to answer the student's question accurately using ONLY the provided XML context.

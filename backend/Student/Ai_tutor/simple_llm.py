@@ -1,7 +1,3 @@
-"""
-Simple LLM + KBRAG node for Student AI Tutor.
-Uses a simple LLM with knowledge base RAG.
-"""
 import sys
 from pathlib import Path
 backend_path = Path(__file__).resolve().parents[3]
@@ -23,11 +19,9 @@ except ImportError:
 
 
 def _format_last_turns(messages, k=4):
-    """Format last k messages (2-4 messages) for context."""
     if not messages:
         return "(no previous conversation)"
     
-    # Use last 2-4 messages (1-2 conversation turns)
     num_messages = min(k, len(messages))
     recent_messages = messages[-num_messages:] if num_messages > 0 else []
     
@@ -50,7 +44,6 @@ def _format_last_turns(messages, k=4):
 
 
 def _format_assignments(pending_assignments):
-    """Format pending assignments for context."""
     if not pending_assignments:
         return "No pending assignments logged."
     formatted = []
@@ -63,7 +56,6 @@ def _format_assignments(pending_assignments):
 
 
 def _format_completed_assignments(completed_assignments):
-    """Format completed assignments for context."""
     if not completed_assignments:
         return "No recently completed assignments."
     formatted = []
@@ -80,23 +72,19 @@ def _format_completed_assignments(completed_assignments):
 
 
 def _is_greeting(text: str) -> bool:
-    """Detect simple greeting messages to use a lightweight prompt."""
     if not text:
         return False
     t = text.strip().lower()
     
-    # Educational request keywords - if these are present, it's NOT a greeting
     educational_keywords = [
         "explain", "teach", "help", "what is", "what are", "how does", "why does",
         "tell me about", "describe", "define", "show me", "learn", "study",
         "understand", "example", "examples", "question", "questions"
     ]
     
-    # If it contains educational keywords, it's NOT a greeting
     if any(keyword in t for keyword in educational_keywords):
         return False
     
-    # Only check for greetings if it's not an educational request
     greetings = [
         "hi",
         "hello",
@@ -112,10 +100,6 @@ def _is_greeting(text: str) -> bool:
 
 
 def _get_low_score_assessments(completed_assignments, threshold=60):
-    """
-    Extract assessments with scores below threshold.
-    Returns list of dicts with title, score, and extracted topic.
-    """
     if not completed_assignments:
         return []
     
@@ -124,10 +108,8 @@ def _get_low_score_assessments(completed_assignments, threshold=60):
         score = assignment.get("score")
         assignment_type = assignment.get("type", "").lower()
         
-        # Only check assessment-type assignments
         if assignment_type == "assessment" and score is not None and score < threshold:
             title = assignment.get("title") or assignment.get("name") or "Assessment"
-            # Try to extract topic from title (e.g., "Assessment - Chemical reactions" -> "Chemical reactions")
             topic = title
             if " - " in title:
                 topic = title.split(" - ", 1)[1]
@@ -144,14 +126,12 @@ def _get_low_score_assessments(completed_assignments, threshold=60):
 
 
 def _format_achievements(achievements):
-    """Format achievements for context."""
     if not achievements:
         return "No recent achievements noted."
     return "\n".join(f"- {achievement}" for achievement in achievements[:5])
 
 
 def format_student_profile(student_profile: Any) -> str:
-    """Format student profile for context."""
     if not student_profile:
         return "No student profile provided."
     
@@ -176,10 +156,6 @@ def format_student_profile(student_profile: Any) -> str:
 
 
 async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
-    """
-    Simple LLM + KBRAG node for students.
-    Uses a simple LLM with knowledge base context, student profile, and assignments.
-    """
     messages = state.get("messages", [])
     topic = state.get("user_query", "")
     subject = state.get("subject", "")
@@ -231,17 +207,16 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
                 import traceback
                 traceback.print_exc()
                 kb_retrieved_contexts = []
-    else:
-        missing = []
-        if not grade:
-            missing.append("grade")
-        if not subject:
-            missing.append("subject")
-        if not language:
-            missing.append("language")
-        print(f"[Student SimpleLLM KB] ⚠️ Skipping KB search - missing: {', '.join(missing)}")
+        else:
+            missing = []
+            if not grade:
+                missing.append("grade")
+            if not subject:
+                missing.append("subject")
+            if not language:
+                missing.append("language")
+            print(f"[Student SimpleLLM KB] ⚠️ Skipping KB search - missing: {', '.join(missing)}")
     
-    # Format KB context - this is the curriculum knowledge base content
     formatted_kb_context = ""
     has_kb_context = False
     if kb_retrieved_contexts:
@@ -253,7 +228,6 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
     completed_assignments_text = _format_completed_assignments(completed_assignments)
     achievements_text = _format_achievements(achievements)
     
-    # Check for low-scoring assessments (< 60%)
     low_score_assessments = _get_low_score_assessments(completed_assignments, threshold=60)
     low_score_context = ""
     if low_score_assessments:
@@ -279,24 +253,19 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
             <message>No low-scoring assessments detected.</message>
         </low_performance_alert>"""
     
-    # Format conversation history and add debug logging
     conversation_history = _format_last_turns(messages, k=4)
     print(f"[STUDENT SIMPLE_LLM] 📜 Total messages in state: {len(messages)}")
     print(f"[STUDENT SIMPLE_LLM] 📝 Conversation history:\n{conversation_history}")
     print(f"[STUDENT SIMPLE_LLM] 📝 Current user query: '{topic}'")
 
-    # Check if this is an educational request (should NOT show student data)
     is_educational_request = any(keyword in topic.lower() for keyword in [
         "explain", "teach", "what is", "what are", "help with", "describe", "define", 
         "show me", "learn", "study", "understand", "tell me about", "how does", "why does"
     ])
     print(f"[STUDENT SIMPLE_LLM] 🎓 Is educational request: {is_educational_request}")
 
-    # Lightweight path for first-turn greetings to reduce token usage
-    # ONLY use this if it's a greeting AND NOT an educational request
     last_user_text = topic
     if messages:
-        # Find last human/user message content if available
         for m in reversed(messages):
             role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
             if role in ("human", "user") and getattr(m, "content", None):
@@ -304,9 +273,7 @@ async def simple_llm_node(state: StudentGraphState) -> StudentGraphState:
                 break
 
     is_first_turn = len(messages) <= 1
-    # Only use greeting path if it's actually a greeting AND not an educational request
     if _is_greeting(last_user_text) and is_first_turn and not is_educational_request:
-        # Build a much smaller prompt focused only on greeting + student info
         greeting_prompt = f"""
 You are a supportive AI study buddy.
 
@@ -367,9 +334,7 @@ Use concise Markdown with at most two headings and a few bullet points.
             state["response"] = f"Error: {str(e)}"
         return state
 
-    # Build concise prompt based on request type
     if is_educational_request:
-        # Minimal prompt for educational requests - no student data
         if has_kb_context:
             kb_section = f"""
 <curriculum_knowledge_base>
@@ -490,7 +455,6 @@ As you can see, the cycle repeats continuously...
 </instructions>
 """
     else:
-        # Full prompt for greetings/follow-ups with student data
         if has_kb_context:
             kb_section = f"""
 <curriculum_knowledge_base>
@@ -625,19 +589,12 @@ As you can see, the cycle repeats continuously...
     model_name = state.get("model") if state.get("model") else "x-ai/grok-4.1-fast"
     llm = get_llm(model_name, temperature=0.55)
     
-    # Build LLM messages: System message with XML prompt, then conversation history
     llm_messages = [
         SystemMessage(content="You are a supportive AI study buddy. Process the following XML request and provide helpful, educational responses. When explaining processes, systems, or complex concepts, always include Mermaid.js diagrams in markdown code blocks labeled 'mermaid'.")
     ]
     
-    # Add the XML prompt as a human message (contains all context including conversation history)
     llm_messages.append(HumanMessage(content=xml_prompt))
     
-    # IMPORTANT: The conversation history is already in the XML prompt's <recent_conversation> section
-    # We don't need to add messages again here - that would duplicate the context
-    # The current user query is in <current_user_query> section of the XML prompt
-    
-    # Await the async LLM streaming operation
     try:
         full_response, token_usage = await stream_with_token_tracking(
             llm,
@@ -649,11 +606,9 @@ As you can see, the cycle repeats continuously...
         state["simple_llm_response"] = full_response
         state["response"] = full_response
         
-        # Update token usage in state if available
         if token_usage:
             current_usage = state.get("token_usage", {})
             if isinstance(current_usage, dict):
-                # Merge token usage
                 for key, value in token_usage.items():
                     current_usage[key] = current_usage.get(key, 0) + value
                 state["token_usage"] = current_usage
@@ -667,7 +622,6 @@ As you can see, the cycle repeats continuously...
         print(f"[Student SimpleLLM] ❌ Error during LLM streaming: {e}")
         import traceback
         traceback.print_exc()
-        # Set error response in state
         state["simple_llm_response"] = f"Error: {str(e)}"
         state["response"] = f"Error: {str(e)}"
     

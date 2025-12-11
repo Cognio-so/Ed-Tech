@@ -1,13 +1,13 @@
 import openai
 import os
 import requests
-import replicate
 import asyncio
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 import base64
 import textwrap
 from dotenv import load_dotenv
+from replicate_image_gen import generate_image_with_replicate
 
 load_dotenv()
 
@@ -243,67 +243,19 @@ def add_footer_text_to_image(image_base64: str, text: str, language: str = 'Engl
 
 async def generate_comic_image(prompt, panel_number, footer_text="", language='English'):
     """
-    Uses Replicate to generate a comic book panel image and optionally adds footer text.
-    Based on the pattern from Student AI Tutor image generation.
+    Uses the central Replicate image generation function to create comic panel images.
+    Optionally adds footer text to the generated image.
     """
     print(f"Generating image for panel {panel_number}...")
     
-    replicate_api_key = os.getenv("REPLICATE_API_KEY") or os.getenv("REPLICATE_API_TOKEN")
-    if not replicate_api_key:
-        print("Warning: REPLICATE_API_KEY not found. Skipping image generation.")
-        return None
-    
     try:
-        # Use Replicate with Flux model (same as student AI tutor)
-        model = "black-forest-labs/flux-schnell"
-        print(f"   Using Model: {model}")
-        print(f"   Prompt: {prompt[:200]}...")
+        # Use the central Replicate image generation function
+        image_url = await generate_image_with_replicate(prompt)
         
-        # Generate image using Replicate (async) with retry for rate limits
-        max_retries = 3
-        retry_delay = 10
-        output = None
-        
-        for attempt in range(max_retries):
-            try:
-                output = await replicate.async_run(
-                    model,
-                    input={"prompt": prompt}
-                )
-                break
-            except Exception as e:
-                error_str = str(e).lower()
-                if "429" in error_str or "throttled" in error_str or "rate limit" in error_str:
-                    if attempt < max_retries - 1:
-                        print(f"⚠️ Rate limit hit. Retrying in {retry_delay}s... (Attempt {attempt+1}/{max_retries})")
-                        await asyncio.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
-                    else:
-                        print("❌ Rate limit retries exhausted.")
-                        raise e
-                else:
-                    raise e
-        
-        # Extract image URL from output (following pattern from student image.py)
-        if isinstance(output, list):
-            first = output[0]
-            if hasattr(first, "url"):
-                image_url = first.url
-            else:
-                image_url = str(first)
-        elif hasattr(output, "url"):
-            image_url = output.url
-        else:
-            image_url = str(output)
-        
-        print(f"✅ Generated image URL: {image_url}")
-        
-        # Download the image from URL and convert to base64
         if not image_url:
-            print("❌ No image URL returned from Replicate")
             return None
         
-        # Download image
+        # Download the image from URL and convert to base64
         response = requests.get(image_url, timeout=30)
         response.raise_for_status()
         
