@@ -1024,6 +1024,8 @@ async def comics_stream_endpoint(
                         footer_lines = footer_text.split('\n')[:3]  # Max 3 lines
                         clean_footer = '\n'.join(footer_lines).strip()
                         
+                        # Send image immediately after generation
+                        logger.info(f"Sending panel {panel_index} image to frontend immediately...")
                         async for chunk in send({
                             "type": "panel_image",
                             "index": panel_index,
@@ -1033,7 +1035,7 @@ async def comics_stream_endpoint(
                         }):
                             yield chunk
                             
-                        logger.info(f"Panel {panel_index} completed successfully")
+                        logger.info(f"Panel {panel_index} completed successfully and sent to frontend")
                         
                         # Add delay to respect Replicate rate limits (6 requests/min)
                         # Only sleep if there are more panels to process

@@ -1,7 +1,3 @@
-"""
-Qdrant utilities for AI Tutor.
-Adapted to support Session-Scoped collections and robust filtering.
-"""
 import sys
 from pathlib import Path
 import uuid
@@ -13,7 +9,6 @@ from typing import List, Dict, Any, Optional
 import re
 import json
 
-# Safely import Pydantic
 try:
     from pydantic.v1 import BaseModel as PydanticBaseModel
 except ImportError:
@@ -24,7 +19,6 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
-# Adjust these imports to match your project structure
 try:
     from backend.embedding import embed_chunks_parallel, embed_query
     from backend.qdrant_service import (
@@ -43,26 +37,17 @@ except ImportError:
 QDRANT_CLIENT = get_qdrant_client()
 
 def tokenize(text: str):
-    """Tokenize text for BM25 (Hybrid Search prep)."""
     if not text:
         return []
     tokens = re.findall(r"\w+", text.lower())
     return [t for t in tokens if t not in ENGLISH_STOP_WORDS]
 
 def get_collection_name(student_id: str, session_id: str) -> str:
-    """
-    Generate collection name strictly scoped to Student AND Session.
-    Format: student_{student_id}_{session_id}
-    """
     safe_student = re.sub(r'[^a-zA-Z0-9_-]', '_', str(student_id))
     safe_session = re.sub(r'[^a-zA-Z0-9_-]', '_', str(session_id))
     return f"student_{safe_student}_{safe_session}"
 
 async def ensure_collection(collection_name: str):
-    """
-    Ensure collection exists and creates ALL required indexes.
-    Crucial for avoiding 400 Bad Request errors during filtering.
-    """
     try:
         exists = await asyncio.to_thread(QDRANT_CLIENT.collection_exists, collection_name=collection_name)
         
@@ -73,15 +58,14 @@ async def ensure_collection(collection_name: str):
                 vectors_config=models.VectorParams(size=VECTOR_SIZE, distance=models.Distance.COSINE),
             )
             
-            # Create indices for fast filtering
             fields = [
                 "doc_id", 
                 "filename", 
                 "file_type", 
-                "source_url", # Used by LangChain loaders
-                "file_url",   # Used by your custom logic
-                "url",        # Generic URL
-                "source",     # Generic source
+                "source_url",
+                "file_url",
+                "url",
+                "source",
                 "timestamp"
             ]
             
@@ -100,7 +84,6 @@ async def store_student_documents(
     student_id: str,
     session_id: str,
     documents: List[Document],
-    # Restored arguments to match main.py calls:
     collection_type: str = "user_docs", 
     is_hybrid: bool = False,
     clear_existing: bool = False,
@@ -108,10 +91,6 @@ async def store_student_documents(
     chunk_overlap: int = 200,
     metadata: Optional[Dict[str, Any]] = None
 ) -> bool:
-    """
-    Store documents in the session-specific collection for students.
-    Accepts legacy arguments (collection_type, is_hybrid, clear_existing) for compatibility.
-    """
     if not documents or not session_id:
         return False
     
@@ -119,7 +98,6 @@ async def store_student_documents(
         collection_name = get_collection_name(student_id, session_id)
         
         if clear_existing:
-             # Optional: Clear existing collection if requested
              try:
                  await asyncio.to_thread(QDRANT_CLIENT.delete_collection, collection_name=collection_name)
                  print(f"[Qdrant] Cleared existing collection: {collection_name}")
@@ -149,7 +127,6 @@ async def store_student_documents(
             
             base_meta["timestamp"] = current_time
             
-            # Normalize URL fields to ensure filtering works regardless of key name
             if "file_url" in base_meta:
                 base_meta["source_url"] = base_meta["file_url"]
                 base_meta["url"] = base_meta["file_url"]
@@ -183,7 +160,6 @@ async def store_student_documents(
                 )
             )
         
-        # Parallel Batch Upsert for faster storage
         upsert_batches = [points[i:i + QDRANT_UPSERT_BATCH_SIZE] for i in range(0, len(points), QDRANT_UPSERT_BATCH_SIZE)]
         upsert_tasks = [
             asyncio.to_thread(
@@ -204,7 +180,6 @@ async def store_student_documents(
         traceback.print_exc()
         return False
 
-# Alias for backward compatibility
 async def store_documents(
     student_id: str,
     session_id: str,
@@ -216,7 +191,6 @@ async def store_documents(
     chunk_overlap: int = 200,
     metadata: Optional[Dict[str, Any]] = None
 ) -> bool:
-    """Alias for store_student_documents for backward compatibility."""
     return await store_student_documents(
         student_id=student_id,
         session_id=session_id,
@@ -233,37 +207,29 @@ async def retrieve_relevant_documents(
     student_id: str,
     session_id: str,
     query: str,
-    # Restored arguments for compatibility:
     collection_type: str = "user_docs", 
     is_hybrid: bool = False,
     top_k: int = 5,
     score_threshold: float = 0.45,
     filter_doc_url: Optional[str] = None
 ) -> List[Document]:
-    """
-    Retrieve documents with robust filtering for specific URLs.
-    Includes fallback for HTTP if client version is old.
-    """
     try:
         collection_name = get_collection_name(student_id, session_id)
         
-        # 1. Check existence
         try:
             exists = await asyncio.to_thread(QDRANT_CLIENT.collection_exists, collection_name=collection_name)
             if not exists:
                 print(f"[Qdrant] Collection {collection_name} not found.")
                 return []
         except Exception:
-            pass # Proceed to attempt search, might be network glitch handled by fallback
+            pass
         
         query_embedding = await embed_query(query, dimensions=VECTOR_SIZE)
         
-        # 2. Build Filter
         query_filter = None
         if filter_doc_url:
             filter_doc_url = filter_doc_url.strip()
             print(f"[Qdrant] 🔍 Filtering search for doc_url: {filter_doc_url}")
-            # Match against multiple possible metadata keys to be safe
             query_filter = models.Filter(
                 should=[
                     models.FieldCondition(key="source_url", match=models.MatchValue(value=filter_doc_url)),
@@ -273,7 +239,6 @@ async def retrieve_relevant_documents(
                 ]
             )
 
-        # 3. Search (Modern Client or HTTP Fallback)
         search_result = []
         try:
             if hasattr(QDRANT_CLIENT, 'search'):
@@ -287,15 +252,12 @@ async def retrieve_relevant_documents(
                     with_payload=True
                 )
             else:
-                raise AttributeError("Old Client")
+                    raise AttributeError("Old Client")
         except (AttributeError, Exception):
-            # HTTP Fallback
             search_result = await _http_search_fallback(
                 collection_name, query_embedding, query_filter, top_k, score_threshold
-            )
+                )
 
-        # 4. Robust Fallback Logic
-        # 4a. If no results, retry with score_threshold=0.0 (Relaxed Score)
         if not search_result:
             print(f"[Qdrant] ⚠️ Search returned 0 results with threshold {score_threshold}. Retrying with threshold 0.0...")
             try:
@@ -306,7 +268,7 @@ async def retrieve_relevant_documents(
                         query_vector=query_embedding,
                         query_filter=query_filter,
                         limit=top_k,
-                        score_threshold=0.0, # Relaxed
+                        score_threshold=0.0,
                         with_payload=True
                     )
                 else:
@@ -319,10 +281,8 @@ async def retrieve_relevant_documents(
             if search_result:
                  print(f"[Qdrant] ✅ Found {len(search_result)} results with relaxed threshold (0.0).")
 
-        # 4b. If STILL no results and we had a filter, try removing the filter (Metadata Mismatch Fallback)
         if not search_result and filter_doc_url:
             print(f"[Qdrant] ⚠️ Filtered search returned 0 results. Checking if ANY docs exist in {collection_name}...")
-            # Perform a quick unfiltered check to distinguish "no data" vs "bad filter"
             unfiltered_result = await _http_search_fallback(
                 collection_name, query_embedding, None, 1, 0.0
             )
@@ -331,8 +291,6 @@ async def retrieve_relevant_documents(
                 if unfiltered_result[0].payload:
                     print(f"[Qdrant] 🐛 Sample Payload from DB: {json.dumps(unfiltered_result[0].payload, default=str)}")
                 
-                # FALLBACK: Return unfiltered results since filter is failing
-                # CRITICAL: Use score_threshold=0.0 to ensure we get results
                 print(f"[Qdrant] 🔄 Using unfiltered results as fallback (filter not working properly)")
                 search_result = await _http_search_fallback(
                     collection_name, query_embedding, None, top_k, 0.0
@@ -340,7 +298,6 @@ async def retrieve_relevant_documents(
             else:
                 print(f"[Qdrant] ℹ️ Collection is effectively empty.")
 
-        # 5. Process Results
         documents = []
         for hit in search_result:
             payload = hit.payload or {}
@@ -356,7 +313,6 @@ async def retrieve_relevant_documents(
         return []
 
 async def _http_search_fallback(collection_name, vector, query_filter, limit, score_threshold):
-    """Helper for raw HTTP search if client fails."""
     print("[Qdrant] ⚠️ Using HTTP fallback for retrieval")
     qdrant_url = os.getenv("QDRANT_URL")
     api_key = os.getenv("QDRANT_API_KEY")
@@ -377,7 +333,6 @@ async def _http_search_fallback(collection_name, vector, query_filter, limit, sc
     }
     
     if query_filter:
-        # Pydantic serialization for filter
         if hasattr(query_filter, 'dict'):
              payload["filter"] = query_filter.dict(exclude_none=True)
         elif hasattr(query_filter, 'model_dump'):
@@ -404,7 +359,6 @@ async def _http_search_fallback(collection_name, vector, query_filter, limit, sc
         ]
 
 async def delete_student_session_collection(student_id: str, session_id: str):
-    """Deletes the entire collection for a specific student session."""
     try:
         collection_name = get_collection_name(student_id, session_id)
         await asyncio.to_thread(QDRANT_CLIENT.delete_collection, collection_name=collection_name)
@@ -413,5 +367,4 @@ async def delete_student_session_collection(student_id: str, session_id: str):
         print(f"[Qdrant] Error deleting collection: {e}")
 
 async def clear_session_documents(student_id: str, session_id: str):
-    """Alias for consistency"""
     await delete_student_session_collection(student_id, session_id)

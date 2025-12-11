@@ -1,6 +1,3 @@
-"""
-Image generation node for Student AI Tutor.
-"""
 import sys
 from pathlib import Path
 backend_path = Path(__file__).resolve().parents[3]
@@ -24,15 +21,6 @@ except ImportError:
 
 
 def _get_visual_type_instructions(visual_type: str) -> str:
-    """
-    Get specific instructions based on the visual type for educational images.
-    
-    Args:
-        visual_type: The type of visual (diagram, chart, image, illustration)
-        
-    Returns:
-        String with specific XML instructions for the visual type
-    """
     instructions = {
         'diagram': (
             """<Diagram_Requirements>
@@ -88,19 +76,8 @@ def _get_visual_type_instructions(visual_type: str) -> str:
 
 
 def _detect_visual_type(query: str, subject: str = "") -> str:
-    """
-    Detect the visual type from the user query.
-    
-    Args:
-        query: User's image generation query
-        subject: Subject context if available
-        
-    Returns:
-        Visual type: 'diagram', 'chart', 'image', or 'illustration'
-    """
     query_lower = query.lower()
     
-    # Check for explicit visual type mentions
     if any(word in query_lower for word in ['diagram', 'schematic', 'structure', 'process flow', 'system']):
         return 'diagram'
     elif any(word in query_lower for word in ['chart', 'graph', 'plot', 'data visualization', 'bar chart', 'pie chart']):
@@ -108,7 +85,6 @@ def _detect_visual_type(query: str, subject: str = "") -> str:
     elif any(word in query_lower for word in ['illustration', 'drawing', 'picture', 'scene']):
         return 'illustration'
     else:
-        # Default based on subject
         if subject:
             subject_lower = subject.lower()
             if subject_lower in ['science', 'biology', 'chemistry', 'physics']:
@@ -123,15 +99,10 @@ async def _enhance_prompt_with_context(
     conversation: List[Dict[str, Any]],
     state: StudentGraphState = None,
 ) -> str:
-    """
-    Uses an LLM to generate an enhanced, detailed educational prompt for image generation
-    based on the conversation history, current user query, and student context.
-    Uses XML-structured prompts for educational image generation.
-    """
     print("✨ Enhancing prompt with conversation context and educational focus...")
 
     history_str = ""
-    for m in (conversation or [])[-6:]:  # Last 6 messages for context
+    for m in (conversation or [])[-6:]:
         if hasattr(m, "content"):
             role = (getattr(m, "type", None) or getattr(m, "role", None) or "").lower()
             content = getattr(m, "content", "")
@@ -141,7 +112,6 @@ async def _enhance_prompt_with_context(
         speaker = "User" if role in ("human", "user") else "Assistant"
         history_str += f"{speaker}: {content}\n"
 
-    # Extract student context for age-appropriate image generation
     student_profile = state.get("student_profile") or {} if state else {}
     grade = ""
     subject = ""
@@ -155,20 +125,16 @@ async def _enhance_prompt_with_context(
     if not language:
         language = state.get("language", "English") if state else "English"
     
-    # Also check state directly for subject if not in profile
     if not subject and state:
         subject = state.get("subject", "")
     
-    # Detect visual type from query
     visual_type = _detect_visual_type(query, subject)
     visual_type_instructions = _get_visual_type_instructions(visual_type)
     
-    # Check if user explicitly references a previous prompt
     reference_keywords = ["above prompt", "previous prompt", "that prompt", "based on what I said", 
                          "the one before", "generate image based on", "create image from", "same as before"]
     is_reference = any(keyword in query.lower() for keyword in reference_keywords)
     
-    # Build XML-structured prompt (similar to teacher's image_gen.py)
     xml_prompt = f"""
 <InstructionPrompt>
     <Role>
@@ -236,7 +202,7 @@ Your output must be ONLY the final image generation prompt text - no explanation
         groq_api_key = os.getenv("GROQ_API_KEY")
         llm_kwargs = {
             "model": "llama-3.1-8b-instant",
-            "temperature": 0.5  # Higher temperature for creativity
+            "temperature": 0.5
         }
         if groq_api_key:
             llm_kwargs["groq_api_key"] = groq_api_key
@@ -248,15 +214,11 @@ Your output must be ONLY the final image generation prompt text - no explanation
         )
         enhanced_prompt = (response.content or "").strip()
         
-        # Remove any quotes, XML tags, or markdown that might wrap the prompt
         enhanced_prompt = enhanced_prompt.strip('"\'`')
-        # Remove XML tags if present
         enhanced_prompt = re.sub(r'<[^>]+>', '', enhanced_prompt)
-        # Remove markdown code blocks if present
         enhanced_prompt = re.sub(r'```[a-z]*\n?', '', enhanced_prompt)
         enhanced_prompt = enhanced_prompt.strip()
         
-        # If the prompt is too short or seems incomplete, enhance it with educational context
         if len(enhanced_prompt.split()) < 10 and not is_reference:
             if grade and subject:
                 enhanced_prompt = f"An educational {visual_type} about {query} for {grade} grade {subject} students. {enhanced_prompt} All labels must be in {language} with clear, readable text in white callout boxes."
@@ -269,7 +231,6 @@ Your output must be ONLY the final image generation prompt text - no explanation
     except Exception as e:
         print(f"❌ Error in _enhance_prompt_with_context: {e}")
         print(f"✨ Fallback: Creating basic educational prompt from query")
-        # Create a basic educational prompt as fallback
         if grade and subject:
             return f"An educational {visual_type} about {query} for {grade} grade {subject} students. Clear, age-appropriate visual with labels in {language}."
         else:
@@ -282,10 +243,6 @@ async def _check_edit_intent(
     conversation: List[Dict[str, Any]],
     state: StudentGraphState,
 ) -> bool:
-    """
-    Uses an LLM to decide if the user query is an edit
-    request or a new image generation request.
-    """
     print("🕵️ Checking for image edit intent...")
     history_str = ""
     for m in (conversation or [])[-2:]:
@@ -404,20 +361,16 @@ async def image_node(state: StudentGraphState) -> StudentGraphState:
 
         print("✅ Generated image URL:", image_url)
         
-        # Store image URL in separate state
         img_urls = state.get("img_urls", [])
         if not img_urls:
             img_urls = []
         img_urls.append(image_url)
         state["img_urls"] = img_urls
         
-        # Store in image_result for consistency with other nodes
         state["image_result"] = image_url
         
-        # Also store in response for backward compatibility
         state["response"] = f"Image generated successfully! URL: {image_url}"
         
-        # Add message to conversation history (using BaseMessage format if needed)
         from langchain_core.messages import AIMessage
         messages = state.get("messages", [])
         messages.append(AIMessage(content=f"Generated image: {image_url}"))

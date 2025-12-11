@@ -1,6 +1,3 @@
-"""
-Web search node for Student AI Tutor.
-"""
 import sys
 from pathlib import Path
 
