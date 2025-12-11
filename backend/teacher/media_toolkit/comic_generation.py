@@ -1,6 +1,8 @@
 import openai
 import os
 import requests
+import replicate
+import asyncio
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 import base64
@@ -29,17 +31,18 @@ except Exception as e:
     print(f"Error initializing OpenRouter client: {e}")
     exit()
 
-# 2. Initialize OpenAI Client for Image Generation (DALL-E)
+# 2. Initialize Replicate for Image Generation
+# Replicate API key is automatically read from REPLICATE_API_KEY environment variable
 try:
-    # We keep the standard OpenAI client for images as OpenRouter primarily focuses on LLMs
-    openai_key = os.getenv("OPENAI_API_KEY")
-    if not openai_key:
-        print("Warning: OPENAI_API_KEY not found. Image generation will fail.")
-        
-    image_client = openai.OpenAI(api_key=openai_key)
+    replicate_api_key = os.getenv("REPLICATE_API_KEY")
+    if not replicate_api_key:
+        print("Warning: REPLICATE_API_KEY not found. Image generation will fail.")
+    else:
+        # Set the API token for replicate
+        os.environ["REPLICATE_API_TOKEN"] = replicate_api_key
+        print("Replicate initialized successfully for image generation.")
 except Exception as e:
-    print(f"Error initializing OpenAI client: {e}")
-    image_client = None
+    print(f"Error initializing Replicate: {e}")
 
 def get_user_input():
     """
@@ -238,39 +241,92 @@ def add_footer_text_to_image(image_base64: str, text: str, language: str = 'Engl
         return image_base64 # Return original image on failure
 
 
-def generate_comic_image(prompt, panel_number, footer_text="", language='English'):
+async def generate_comic_image(prompt, panel_number, footer_text="", language='English'):
     """
-    Uses OpenAI (DALL-E 3) to generate a comic book panel image and optionally adds footer text.
+    Uses Replicate to generate a comic book panel image and optionally adds footer text.
+    Based on the pattern from Student AI Tutor image generation.
     """
     print(f"Generating image for panel {panel_number}...")
-    if image_client is None:
-        print("Image client is not initialized. Skipping image generation.")
+    
+    replicate_api_key = os.getenv("REPLICATE_API_KEY") or os.getenv("REPLICATE_API_TOKEN")
+    if not replicate_api_key:
+        print("Warning: REPLICATE_API_KEY not found. Skipping image generation.")
         return None
-        
+    
     try:
-        # Using image_client (OpenAI) here
-        response = image_client.images.generate(
-            model="gpt-image-1", # Change to "dall-e-3" if "gpt-image-1" is not your actual model alias
-            prompt=prompt,
-            size="1024x1024",
-            quality="high",
-            n=1,
-        )
-        image_base64 = response.data[0].b64_json
+        # Use Replicate with Flux model (same as student AI tutor)
+        model = "black-forest-labs/flux-schnell"
+        print(f"   Using Model: {model}")
+        print(f"   Prompt: {prompt[:200]}...")
         
+        # Generate image using Replicate (async) with retry for rate limits
+        max_retries = 3
+        retry_delay = 10
+        output = None
+        
+        for attempt in range(max_retries):
+            try:
+                output = await replicate.async_run(
+                    model,
+                    input={"prompt": prompt}
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if "429" in error_str or "throttled" in error_str or "rate limit" in error_str:
+                    if attempt < max_retries - 1:
+                        print(f"⚠️ Rate limit hit. Retrying in {retry_delay}s... (Attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        print("❌ Rate limit retries exhausted.")
+                        raise e
+                else:
+                    raise e
+        
+        # Extract image URL from output (following pattern from student image.py)
+        if isinstance(output, list):
+            first = output[0]
+            if hasattr(first, "url"):
+                image_url = first.url
+            else:
+                image_url = str(first)
+        elif hasattr(output, "url"):
+            image_url = output.url
+        else:
+            image_url = str(output)
+        
+        print(f"✅ Generated image URL: {image_url}")
+        
+        # Download the image from URL and convert to base64
+        if not image_url:
+            print("❌ No image URL returned from Replicate")
+            return None
+        
+        # Download image
+        response = requests.get(image_url, timeout=30)
+        response.raise_for_status()
+        
+        # Convert to base64
+        image_base64 = base64.b64encode(response.content).decode("utf-8")
+        
+        # Add footer text if provided
         if image_base64 and footer_text:
             print(f"Adding footer text to panel {panel_number}...")
             final_image_base64 = add_footer_text_to_image(image_base64, footer_text, language)
             return final_image_base64
             
         return image_base64
-    except openai.APIError as e:
-        print(f"An error occurred with the image generation API: {e}")
+        
+    except Exception as e:
+        print(f"❌ Error in image generation: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
-def main():
+async def main_async():
     """
-    Main function to run the comic generator.
+    Async main function to run the comic generator.
     """
     instructions, student_class, num_panels, language = get_user_input()
     if not instructions:
@@ -302,12 +358,18 @@ def main():
         visual_prompt = panel['prompt']
         footer_text = panel['footer']
         
-        final_image_base64 = generate_comic_image(visual_prompt, panel_number, footer_text, language)
+        final_image_base64 = await generate_comic_image(visual_prompt, panel_number, footer_text, language)
         
         if final_image_base64:
-            print(f"Comic Panel {panel_number} (b64_json):\n{final_image_base64}")
+            print(f"Comic Panel {panel_number} (b64_json):\n{final_image_base64[:100]}...")
         else:
             print("Failed to generate image for this panel.")
+
+def main():
+    """
+    Main function to run the comic generator (wrapper for async function).
+    """
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
