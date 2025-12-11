@@ -54,6 +54,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from doument_processor import extract_text_from_pdf, extract_text_from_docx, extract_text_from_txt, extract_text_from_json
 from teacher.Ai_Tutor.qdrant_utils import store_documents
 from teacher.Ai_Tutor.cleanup_scheduler import start_cleanup_scheduler
+from Student.Ai_tutor.cleanup_scheduler import start_cleanup_scheduler as start_student_cleanup_scheduler
 import httpx
 from teacher.voice_agent.voice_agent_webrtc import VoiceAgentBridge
 from Student.Ai_tutor.graph import create_student_ai_tutor_graph
@@ -229,9 +230,13 @@ async def create_student_session(
 @app.on_event("startup")
 async def startup_event():
     """Initialize background tasks on application startup."""
-    # Start the document cleanup scheduler (runs every hour)
+    # Start the teacher document cleanup scheduler (runs every hour)
     asyncio.create_task(start_cleanup_scheduler())
-    logger.info("🚀 Document cleanup scheduler started (24-hour TTL)")
+    
+    # Start the student document cleanup scheduler (runs every hour)
+    asyncio.create_task(start_student_cleanup_scheduler())
+    
+    logger.info("🚀 Document cleanup schedulers started (24-hour TTL)")
 
 @app.post("/api/teacher/{teacher_id}/session/{session_id}/video_generation/generate")
 async def generate_video_presentation(

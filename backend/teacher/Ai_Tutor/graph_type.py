@@ -11,10 +11,10 @@ class GraphState(TypedDict):
     teacher_data: Optional[Dict[str, Any]]
     topic: Optional[str]
     subject: Optional[str]
-    content_type: Optional[Any]  # Can be string or list of content items
+    content_type: Optional[Any]  
     doc_url: Optional[str]
     language: Optional[str]
-    model: Optional[str]  # Selected AI model (e.g., "deepseek-v3.1")
+    model: Optional[str]  
     context: Optional[Dict[str, Any]]
     should_continue: bool
     chunk_callback: Optional[Any]
@@ -31,11 +31,11 @@ class GraphState(TypedDict):
     current_task: Optional[str]
     resolved_query: Optional[str]
     intermediate_results: Optional[List[Dict[str, Any]]]
-    uploaded_doc: Optional[bool]  # Flag indicating if new document was just uploaded
-    new_uploaded_docs: Optional[List[Dict[str, Any]]]  # List of newly uploaded documents with metadata
-    active_docs: Optional[List[Dict[str, Any]]]  # Currently active documents in session
-    is_image: Optional[bool]  # Flag for image generation/editing intent
-    edit_img_urls: Optional[List[str]]  # Image URLs for editing
-    img_urls: Optional[List[str]]  # Generated or processed image URLs
-    next_node: Optional[str]  # Next node to route to
+    uploaded_doc: Optional[bool]
+    new_uploaded_docs: Optional[List[Dict[str, Any]]]  
+    active_docs: Optional[List[Dict[str, Any]]]  
+    is_image: Optional[bool]  
+    edit_img_urls: Optional[List[str]] 
+    img_urls: Optional[List[str]]
+    next_node: Optional[str]  
 

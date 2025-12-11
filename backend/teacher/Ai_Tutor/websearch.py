@@ -16,9 +16,11 @@ from langchain_tavily import TavilySearch
 try:
     from backend.llm import get_llm, stream_with_token_tracking
     from backend.teacher.Ai_Tutor.graph_type import GraphState
+    from backend.teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
 except ImportError:
     from llm import get_llm, stream_with_token_tracking
     from teacher.Ai_Tutor.graph_type import GraphState
+    from teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
 
 
 async def _web_search(topic: str, subject: str, grade: str, language: str) -> str:
@@ -39,8 +41,6 @@ async def _web_search(topic: str, subject: str, grade: str, language: str) -> st
         
         query = f"{topic} {subject} grade {grade} {language}"
         results = await tavily_tool.ainvoke(query)
-        
-        # Format results
         if isinstance(results, list):
             formatted_results = []
             for result in results[:5]:
@@ -58,13 +58,33 @@ async def _web_search(topic: str, subject: str, grade: str, language: str) -> st
         return f"Web search error: {str(e)}"
 
 
-async def _retrieve_kb_information(topic: str, subject: str, grade: str) -> str:
+async def _retrieve_kb_information(query: str, subject: str, grade: str, language: str) -> str:
     """
-    Retrieve knowledge base information.
-    This is a placeholder - implement actual KB retrieval logic.
+    Retrieve knowledge base information using vector search.
     """
-    # TODO: Implement actual KB retrieval
-    return f"KB information for {topic} in {subject} for grade {grade}"
+    if not query or not subject or not grade:
+        return ""
+        
+    try:
+        subject_normalized = subject.lower().replace(" ", "_")
+        lang_code = LANGUAGES.get(language, language).lower()
+        collection_name = f"kb_grad_{grade}_sub_{subject_normalized}_lang_{lang_code}"
+        
+        print(f"[WEBSEARCH KB] 🔍 Searching collection '{collection_name}' for query: {query[:50]}...")
+        kb_contexts = await retrieve_kb_context(collection_name, query, top_k=3)
+        
+        if kb_contexts:
+            # Limit to top 3 chunks
+            kb_contexts = kb_contexts[:3]
+            print(f"[WEBSEARCH KB] ✅ Retrieved {len(kb_contexts)} context chunk(s)")
+            return "\n\n".join(kb_contexts)
+        else:
+            print(f"[WEBSEARCH KB] ⚠️ No context found")
+            return ""
+            
+    except Exception as e:
+        print(f"[WEBSEARCH KB] ❌ Error: {str(e)}")
+        return ""
 
 
 async def websearch_node(state: GraphState) -> GraphState:
@@ -77,14 +97,15 @@ async def websearch_node(state: GraphState) -> GraphState:
     student_data = state.get("student_data", {})
     teacher_data = state.get("teacher_data", {})
     grade = student_data.get("grade", "") if isinstance(student_data, dict) else ""
-    
-    # Extract grade from teacher_data if not in student_data
     if not grade and isinstance(teacher_data, dict):
         grades = teacher_data.get("grades", [])
         if grades and isinstance(grades, list) and len(grades) > 0:
             grade = str(grades[0])
     
     language = state.get("language", "English")
+    if subject and subject.strip().lower() == "hindi" and language == "English":
+        language = "Hindi"
+    
     chunk_callback = state.get("chunk_callback")
     
     # Get user query from state
@@ -93,25 +114,50 @@ async def websearch_node(state: GraphState) -> GraphState:
     print(f"[WEBSEARCH] 🔍 Query: {user_query}")
     print(f"[WEBSEARCH] 📚 Grade: {grade}, Subject: {subject}")
     
-    # Run web search and KB retrieval in parallel
-    # Use user_query for search instead of just topic
+    # Run web search and KB retrieval in parallel using asyncio.gather
+    # Both tasks execute concurrently for better performance
     search_query = user_query if user_query else f"{topic} {subject} grade {grade}"
-    websearch_task = _web_search(search_query, subject, grade, language)
-    kb_task = _retrieve_kb_information(topic, subject, grade)
     
+    # Create both async tasks (they don't execute until awaited)
+    websearch_task = _web_search(search_query, subject, grade, language)
+    kb_task = _retrieve_kb_information(search_query, subject, grade, language)
+    
+    # Execute both tasks in parallel - they run concurrently
     websearch_results, kb_information = await asyncio.gather(
         websearch_task,
         kb_task
     )
     
-    # Combine results
-    combined_context = f"""
-    Web Search Results:
-    {websearch_results}
+    # Determine if KB has relevant information
+    has_kb_info = bool(kb_information and kb_information.strip())
     
-    Knowledge Base Information:
-    {kb_information}
-    """
+    if has_kb_info:
+        combined_context = f"""<knowledge_base priority="primary" authority="verified_curriculum">
+<description>Verified curriculum content for Grade {grade}, Subject: {subject}, Language: {language}</description>
+<instruction>MUST use this information to answer the user's question</instruction>
+<content>
+{kb_information}
+</content>
+</knowledge_base>
+
+<web_search priority="secondary" condition="only_if_kb_insufficient">
+<description>Real-time web search results</description>
+<instruction>Only refer to these if the Knowledge Base above does not contain the answer</instruction>
+<content>
+{websearch_results}
+</content>
+</web_search>"""
+    else:
+        combined_context = f"""<knowledge_base status="not_found">
+<message>No relevant information found in Knowledge Base for this query</message>
+</knowledge_base>
+
+<web_search priority="primary">
+<description>Real-time web search results</description>
+<content>
+{websearch_results}
+</content>
+</web_search>"""
     
     # Get the latest user message
     messages = state.get("messages", [])
@@ -119,78 +165,182 @@ async def websearch_node(state: GraphState) -> GraphState:
     if messages:
         user_message = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
     
-    system_prompt = f"""You are an expert AI tutor. You have access to:
-    1. Real-time web search results
-    2. Knowledge base information
+    if has_kb_info:
+        system_prompt = f"""<ai_tutor_instruction>
+<role>Expert AI Tutor</role>
+<context>
+    <grade>{grade}</grade>
+    <subject>{subject}</subject>
+    <language>{language}</language>
+    <sources>
+        <source type="primary">Knowledge Base - Verified Curriculum Content</source>
+        <source type="secondary">Web Search - Current Information</source>
+    </sources>
+</context>
+
+<source_priority>
+    <primary_source>
+        <name>Knowledge Base Information</name>
+        <description>Verified curriculum content for Grade {grade}, Subject: {subject}, Language: {language}</description>
+        <authority>Authoritative source for curriculum-related questions</authority>
+        <usage_rule>MUST use ONLY Knowledge Base information if it contains the answer</usage_rule>
+        <restriction>DO NOT use web search results if Knowledge Base has the answer</restriction>
+    </primary_source>
     
-    Synthesize the information from both sources to provide comprehensive, up-to-date responses.
-    
-    Language: {language}
-    Grade Level: {grade}
-    
-    CRITICAL: Format ALL responses using proper Markdown syntax following these guidelines:
-    
-    ## Markdown Formatting Requirements:
-    
-    ### Headers:
-    - Use # for main topics (H1)
-    - Use ## for subtopics (H2) 
-    - Use ### for sections/activities (H3)
-    - Use #### for details/subsections (H4)
-    
-    ### Lists:
-    - Use * or - for unordered lists (bullet points)
-    - Use 1. 2. 3. for ordered lists (numbered)
-    - Ensure proper spacing between list items
-    
-    ### Emphasis:
-    - Use **bold text** for important concepts, key terms, or emphasis
-    - Use *italic text* for definitions or subtle emphasis
-    - Use `inline code` for technical terms, formulas, or specific instructions
-    
-    ### Code Blocks:
-    - Use triple backticks with language specification for code examples:
-    ```python
-    def example():
-        return "formatted code"
-    ```
-    
-    ### Tables:
-    - Use proper Markdown table syntax with | separators
-    - Include header row with alignment indicators
-    
-    ### Blockquotes:
-    - Use > for important notes, tips, or quotes
-    > **Latest Update**: This information is current as of today.
-    
-    ### Web Search Results Structure:
-    When presenting web search results, structure responses as:
-    
-    ## Current Information: [Topic]
-    
-    Based on the latest web search results and knowledge base:
-    
-    ### Recent Developments
-    * **Update 1** - From [source]
-    * **Update 2** - From [source]
-    * **Update 3** - Cross-referenced information
-    
-    ### Key Facts
-    [Comprehensive analysis with proper formatting]
-    
-    ### Educational Context
-    [How this relates to curriculum and teaching]
-    
-    > **Sources**: Information compiled from recent web searches and knowledge base
-    
-    ALWAYS use this Markdown formatting to ensure content renders beautifully in the frontend interface.
-    """
+    <secondary_source>
+        <name>Web Search Results</name>
+        <description>Real-time web information</description>
+        <usage_conditions>
+            <condition>Knowledge Base does NOT contain the answer to the specific question</condition>
+            <condition>Knowledge Base information is incomplete or irrelevant to the query</condition>
+        </usage_conditions>
+        <verification>Verify relevance to Grade {grade} and Subject {subject}</verification>
+    </secondary_source>
+</source_priority>
+
+<response_guidelines>
+    <answer_format>
+        <from_kb>State clearly that you're using curriculum content</from_kb>
+        <from_web>State that you're using current web information</from_web>
+    </answer_format>
+    <formatting>
+        <requirement>Format ALL responses using proper Markdown syntax</requirement>
+        <headers>
+            <h1># for main topics</h1>
+            <h2>## for subtopics</h2>
+            <h3>### for sections/activities</h3>
+            <h4>#### for details/subsections</h4>
+        </headers>
+        <lists>
+            <unordered>* or - for bullet points</unordered>
+            <ordered>1. 2. 3. for numbered lists</ordered>
+            <spacing>Ensure proper spacing between list items</spacing>
+        </lists>
+        <emphasis>
+            <bold>**bold text** for important concepts, key terms, or emphasis</bold>
+            <italic>*italic text* for definitions or subtle emphasis</italic>
+            <code>`inline code` for technical terms, formulas, or specific instructions</code>
+        </emphasis>
+        <code_blocks>
+            <format>Triple backticks with language specification</format>
+            <example>```python
+def example():
+    return "formatted code"
+```</example>
+        </code_blocks>
+        <tables>
+            <format>Proper Markdown table syntax with | separators</format>
+            <requirement>Include header row with alignment indicators</requirement>
+        </tables>
+        <blockquotes>
+            <format>> for important notes, tips, or quotes</format>
+            <example>> **Important**: This is a key concept to remember.</example>
+        </blockquotes>
+    </formatting>
+</response_guidelines>
+
+<critical_rule>
+    The Knowledge Base contains the answer to curriculum-related questions. Use it first!
+</critical_rule>
+</ai_tutor_instruction>"""
+    else:
+        system_prompt = f"""<ai_tutor_instruction>
+<role>Expert AI Tutor</role>
+<context>
+    <grade>{grade}</grade>
+    <subject>{subject}</subject>
+    <language>{language}</language>
+    <sources>
+        <source type="primary">Web Search - Current Information</source>
+    </sources>
+</context>
+
+<instructions>
+    <task>Use Web Search Results to answer the user's question</task>
+    <verification>Verify information is relevant to Grade {grade} and Subject {subject}</verification>
+    <formatting>Format responses using proper Markdown syntax</formatting>
+</instructions>
+
+<response_structure>
+    <when_using_web_search>
+        <header>## Current Information: [Topic]</header>
+        <introduction>Based on the latest web search results:</introduction>
+        <sections>
+            <section name="Recent Developments">
+                <format>* **Update 1** - From [source]</format>
+                <format>* **Update 2** - From [source]</format>
+                <format>* **Update 3** - Cross-referenced information</format>
+            </section>
+            <section name="Key Facts">Comprehensive analysis with proper formatting</section>
+            <section name="Educational Context">How this relates to curriculum and teaching</section>
+        </sections>
+        <footer>> **Sources**: Information compiled from recent web searches</footer>
+    </when_using_web_search>
+</response_structure>
+
+<formatting>
+    <headers>
+        <h1># for main topics</h1>
+        <h2>## for subtopics</h2>
+        <h3>### for sections/activities</h3>
+        <h4>#### for details/subsections</h4>
+    </headers>
+    <lists>
+        <unordered>* or - for bullet points</unordered>
+        <ordered>1. 2. 3. for numbered lists</ordered>
+        <spacing>Ensure proper spacing between list items</spacing>
+    </lists>
+    <emphasis>
+        <bold>**bold text** for important concepts, key terms, or emphasis</bold>
+        <italic>*italic text* for definitions or subtle emphasis</italic>
+        <code>`inline code` for technical terms, formulas, or specific instructions</code>
+    </emphasis>
+    <code_blocks>
+        <format>Triple backticks with language specification</format>
+        <example>```python
+def example():
+    return "formatted code"
+```</example>
+    </code_blocks>
+    <tables>
+        <format>Proper Markdown table syntax with | separators</format>
+        <requirement>Include header row with alignment indicators</requirement>
+    </tables>
+    <blockquotes>
+        <format>> for important notes, tips, or quotes</format>
+        <example>> **Latest Update**: This information is current as of today.</example>
+    </blockquotes>
+</formatting>
+</ai_tutor_instruction>"""
     
     llm = get_llm("x-ai/grok-4.1-fast", temperature=0.7)
     
+    if has_kb_info:
+        user_message_content = f"""<query_request>
+<priority_instruction>
+    Answer the user's question using the Knowledge Base information below. 
+    Only use Web Search if the KB doesn't contain the answer.
+    Remember: Use Knowledge Base information first!
+</priority_instruction>
+
+<context>
+{combined_context}
+</context>
+
+<user_question>{user_query}</user_question>
+</query_request>"""
+    else:
+        user_message_content = f"""<query_request>
+<context>
+{combined_context}
+</context>
+
+<user_question>{user_query}</user_question>
+</query_request>"""
+    
     llm_messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Context:\n{combined_context}\n\nUser Question: {user_query}")
+        HumanMessage(content=user_message_content)
     ]
     
     # Stream response
@@ -207,4 +357,3 @@ async def websearch_node(state: GraphState) -> GraphState:
     state["kb_information"] = kb_information
     
     return state
-
