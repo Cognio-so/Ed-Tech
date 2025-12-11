@@ -98,6 +98,49 @@ class AssessmentRequest(BaseModel):
             raise ValueError("At least one question type must be enabled.")
         return values
 
+class TopicQuestionConfig(BaseModel):
+    """Configuration for question types per topic."""
+    topic_name: str = Field(..., min_length=1, description="Name of the topic")
+    long_answer_count: int = Field(default=0, ge=0, description="Number of long form written answer questions")
+    short_answer_count: int = Field(default=0, ge=0, description="Number of short form written answer questions")
+    mcq_count: int = Field(default=0, ge=0, description="Number of Multiple Choice Questions")
+    true_false_count: int = Field(default=0, ge=0, description="Number of True/False questions")
+
+    @model_validator(mode="after")
+    def validate_at_least_one_question(cls, values: "TopicQuestionConfig") -> "TopicQuestionConfig":
+        total = (
+            values.long_answer_count +
+            values.short_answer_count +
+            values.mcq_count +
+            values.true_false_count
+        )
+        if total <= 0:
+            raise ValueError(f"At least one question type must be specified for topic '{values.topic_name}'.")
+        return values
+
+class ExamAssessmentRequest(BaseModel):
+    """Request schema for exam assessment generation."""
+    organisation_name: str = Field(..., min_length=1, description="Name of the organisation")
+    exam_name: str = Field(..., description="Type of exam: Annual / Unit test / Half yearly / class test")
+    duration: str = Field(..., min_length=1, description="Duration of the exam")
+    topics: List[TopicQuestionConfig] = Field(..., min_length=1, description="List of topics with question configurations")
+    grade: str = Field(..., min_length=1, description="Grade level")
+    language: str = Field(..., min_length=1, description="Language for the exam")
+    subject: str = Field(..., min_length=1, description="Subject of the exam")
+    difficulty_level: str = Field(..., min_length=1, description="Difficulty level of the exam")
+    custom_prompt: Optional[str] = Field("", description="Custom instructions for exam generation")
+
+    @validator("language")
+    def normalize_language(cls, value: str) -> str:
+        return value.capitalize()
+
+    @validator("exam_name")
+    def validate_exam_name(cls, value: str) -> str:
+        valid_exam_types = ["Annual", "Unit test", "Half yearly", "class test"]
+        if value not in valid_exam_types:
+            raise ValueError(f"exam_name must be one of: {', '.join(valid_exam_types)}")
+        return value
+
 class ComicsSchema(BaseModel):
     instructions: str = Field(..., description="Educational story/topic, e.g., Water cycle")
     grade_level: str = Field(..., description="Grade level string, e.g., '5' or 'Grade 5'")
