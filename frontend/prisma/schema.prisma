@@ -41,6 +41,7 @@ model User {
   achievements  StudentAchievement[]
   feedbacks     StudentFeedback[]
   attendances   Attendance[]
+  exams         Exam[]
 
   @@unique([email])
   @@map("user")
@@ -417,4 +418,28 @@ model Attendance {
   @@index([date])
   @@index([teacherId])
   @@map("attendance")
+}
+
+model Exam {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisationName String  @map("organisation_name")
+  examName        String   @map("exam_name")
+  duration        String
+  grade           String?
+  subject         String?
+  language        String?
+  difficultyLevel String?  @map("difficulty_level")
+  topics          String   @db.Text
+  customPrompt    String?  @map("custom_prompt") @db.Text
+  content         String   @db.Text
+  title           String
+  metadata        String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("exam")
 }

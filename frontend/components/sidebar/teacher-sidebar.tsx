@@ -12,6 +12,7 @@ import {
   History,
   Settings,
   Calendar,
+  ScrollText,
 } from "lucide-react";
 import { AppSidebar } from "./app-sidebar";
 
@@ -30,6 +31,11 @@ const teacherNavItems = [
     title: "Assessment Generation",
     url: "/teacher/assessment-generation",
     icon: ClipboardList,
+  },
+  {
+    title: "Exam Generator",
+    url: "/teacher/exam-generator",
+    icon: ScrollText,
   },
   {
     title: "Media Toolkit",
