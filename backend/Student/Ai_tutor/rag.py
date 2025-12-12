@@ -24,9 +24,17 @@ except ImportError:
 try:
     from backend.Student.Ai_tutor.qdrant_utils import retrieve_relevant_documents, get_collection_name, QDRANT_CLIENT
     from backend.Student.Ai_tutor.simple_llm import format_student_profile
+    from backend.utils.dsa_utils import merge_sorted_results
 except ImportError:
     from Student.Ai_tutor.qdrant_utils import retrieve_relevant_documents, get_collection_name, QDRANT_CLIENT
     from Student.Ai_tutor.simple_llm import format_student_profile
+    try:
+        from utils.dsa_utils import merge_sorted_results
+    except ImportError:
+        # Simple fallback
+        def merge_sorted_results(lists, key_func, reverse=True, limit=10):
+            import heapq
+            return heapq.nlargest(limit, [x for l in lists for x in l], key=key_func)
 
 USER_DOC_TTL_SECONDS = int(24 * 60 * 60)
 
@@ -361,9 +369,16 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
                 
                 if tasks:
                     results = await asyncio.gather(*tasks)
-                    for res in results:
-                        user_docs.extend(res)
-                    print(f"[Student RAG] ✅ Retrieved {len(user_docs)} document chunks from {len(tasks)} document(s)")
+                    
+                    # Optimization: Merge sorted lists using Heap to get true top-k
+                    user_docs = merge_sorted_results(
+                        results,
+                        key_func=lambda d: d.metadata.get("score", 0),
+                        reverse=True,
+                        limit=8  # Combined limit
+                    )
+                    
+                    print(f"[Student RAG] ✅ Retrieved {len(user_docs)} document chunks from {len(tasks)} document(s) (merged & ranked)")
                 else:
                     print(f"[Student RAG] ⚠️ No valid tasks created from selected_doc_ids")
             elif doc_url:
@@ -471,21 +486,22 @@ async def rag_node(state: StudentGraphState) -> StudentGraphState:
     [Directly define/explain the main concept using the document text]
 
     ### Detailed Explanation
-    [Provide the "very details" requested. Break down how it works, mechanisms, or deeper layers found in the text.]
-    * **Key Aspect 1**: [Explanation]
-    * **Key Aspect 2**: [Explanation]
+    [Provide a VERY DETAILED explanation. Do not summarize briefly. Expand on the mechanisms, processes, or deeper layers found in the text. Aim for a thorough, multi-paragraph explanation that covers all nuances found in the retrieved chunks.]
+    * **Key Aspect 1**: [Detailed Explanation]
+    * **Key Aspect 2**: [Detailed Explanation]
+    * **Key Aspect 3**: [Detailed Explanation]
 
     ### Key Insights from Your Documents
-    [Synthesize specific points found in the chunks]
-    * From [Document A]: [Insight]
-    * From [Document B]: [Insight]
+    [Synthesize specific points found in the chunks. Be specific.]
+    * From [Document A]: [Insight with context]
+    * From [Document B]: [Insight with context]
 
     ### Practice/Application
     [If applicable, list examples or questions found in the text]
 
     > **Note**: [Relevant study tip from the content]
 
-    ALWAYS use this Markdown formatting to ensure content renders beautifully.
+    ALWAYS use this Markdown formatting to ensure content renders beautifully. Prioritize DEPTH and DETAIL over brevity.
  </instructions>
 
 <current_student_query>

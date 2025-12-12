@@ -17,10 +17,22 @@ try:
     from backend.llm import get_llm, stream_with_token_tracking
     from backend.teacher.Ai_Tutor.graph_type import GraphState
     from backend.teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
+    from backend.utils.dsa_utils import ContentDeduplicator
 except ImportError:
     from llm import get_llm, stream_with_token_tracking
     from teacher.Ai_Tutor.graph_type import GraphState
     from teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
+    try:
+        from utils.dsa_utils import ContentDeduplicator
+    except ImportError:
+        class ContentDeduplicator:
+            def __init__(self): self.seen_hashes = set()
+            def is_duplicate(self, t): 
+                import hashlib
+                h = hashlib.sha256(t.strip().encode('utf-8')).hexdigest()
+                if h in self.seen_hashes: return True
+                self.seen_hashes.add(h)
+                return False
 
 
 async def _web_search(topic: str, subject: str, grade: str, language: str) -> str:
@@ -74,10 +86,17 @@ async def _retrieve_kb_information(query: str, subject: str, grade: str, languag
         kb_contexts = await retrieve_kb_context(collection_name, query, top_k=3)
         
         if kb_contexts:
-            # Limit to top 3 chunks
-            kb_contexts = kb_contexts[:3]
-            print(f"[WEBSEARCH KB] ✅ Retrieved {len(kb_contexts)} context chunk(s)")
-            return "\n\n".join(kb_contexts)
+            # Optimization: Content Deduplication
+            deduplicator = ContentDeduplicator()
+            unique_contexts = []
+            for text in kb_contexts:
+                if text and not deduplicator.is_duplicate(text):
+                    unique_contexts.append(text)
+            
+            # Limit to top 3 unique chunks
+            final_contexts = unique_contexts[:3]
+            print(f"[WEBSEARCH KB] ✅ Retrieved {len(final_contexts)} unique context chunk(s)")
+            return "\n\n".join(final_contexts)
         else:
             print(f"[WEBSEARCH KB] ⚠️ No context found")
             return ""

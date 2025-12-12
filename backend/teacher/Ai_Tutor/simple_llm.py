@@ -15,10 +15,22 @@ try:
     from backend.llm import get_llm, stream_with_token_tracking
     from backend.teacher.Ai_Tutor.graph_type import GraphState
     from backend.teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
+    from backend.utils.dsa_utils import ContentDeduplicator
 except ImportError:
     from llm import get_llm, stream_with_token_tracking
     from teacher.Ai_Tutor.graph_type import GraphState
     from teacher.Content_generation.lesson_plan import retrieve_kb_context, LANGUAGES
+    try:
+        from utils.dsa_utils import ContentDeduplicator
+    except ImportError:
+        class ContentDeduplicator:
+            def __init__(self): self.seen_hashes = set()
+            def is_duplicate(self, t): 
+                import hashlib
+                h = hashlib.sha256(t.strip().encode('utf-8')).hexdigest()
+                if h in self.seen_hashes: return True
+                self.seen_hashes.add(h)
+                return False
 
 
 def _format_last_turns(messages, k=3):
@@ -282,8 +294,18 @@ async def simple_llm_node(state: GraphState) -> GraphState:
             try:
                 print(f"[SimpleLLM KB] 🔍 Searching collection '{collection_name}' for query: {user_query[:120]}...")
                 kb_retrieved_contexts = await retrieve_kb_context(collection_name, user_query, top_k=5)
+                
+                # Optimization: Content Deduplication
                 if kb_retrieved_contexts:
-                    print(f"[SimpleLLM KB] ✅ Retrieved {len(kb_retrieved_contexts)} context chunk(s) from knowledge base")
+                    deduplicator = ContentDeduplicator()
+                    unique_contexts = []
+                    for text in kb_retrieved_contexts:
+                        if text and not deduplicator.is_duplicate(text):
+                            unique_contexts.append(text)
+                    kb_retrieved_contexts = unique_contexts
+
+                if kb_retrieved_contexts:
+                    print(f"[SimpleLLM KB] ✅ Retrieved {len(kb_retrieved_contexts)} unique context chunk(s) from knowledge base")
                 else:
                     print(f"[SimpleLLM KB] ⚠️ No knowledge base context found for collection '{collection_name}'")
             except asyncio.CancelledError:

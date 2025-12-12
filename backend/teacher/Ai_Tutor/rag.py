@@ -27,9 +27,17 @@ except ImportError:
 try:
     from backend.teacher.Ai_Tutor.qdrant_utils import retrieve_relevant_documents, get_collection_name, QDRANT_CLIENT
     from backend.teacher.Ai_Tutor.simple_llm import format_teacher_data, format_student_data
+    from backend.utils.dsa_utils import merge_sorted_results
 except ImportError:
     from teacher.Ai_Tutor.qdrant_utils import retrieve_relevant_documents, get_collection_name, QDRANT_CLIENT
     from teacher.Ai_Tutor.simple_llm import format_teacher_data, format_student_data
+    try:
+        from utils.dsa_utils import merge_sorted_results
+    except ImportError:
+        # Simple fallback
+        def merge_sorted_results(lists, key_func, reverse=True, limit=10):
+            import heapq
+            return heapq.nlargest(limit, [x for l in lists for x in l], key=key_func)
 
 USER_DOC_TTL_SECONDS = int(24 * 60 * 60)  
 def _format_last_turns(messages, k=3):
@@ -361,8 +369,13 @@ async def rag_node(state: GraphState) -> GraphState:
                         ))
                 if tasks:
                     results = await asyncio.gather(*tasks)
-                    for res in results:
-                        user_docs.extend(res)
+                    # Optimization: Merge sorted results efficiently using Heap
+                    user_docs = merge_sorted_results(
+                        results,
+                        key_func=lambda d: d.metadata.get("score", 0),
+                        reverse=True,
+                        limit=8  # Combined limit
+                    )
             elif doc_url:
                 user_docs = await retrieve_relevant_documents(
                     teacher_id=teacher_id, session_id=session_id, query=query,
@@ -478,14 +491,17 @@ async def rag_node(state: GraphState) -> GraphState:
    * **Finding 3** - Cross-referenced from multiple sources
 
    ### Detailed Analysis
-   [Comprehensive analysis with proper formatting]
+   [Provide a comprehensive, in-depth analysis of the query based on the retrieved chunks. DO NOT be brief. Elaborate on every key point found in the documents. If multiple documents mention a topic, synthesize them into a cohesive detailed explanation. Aim for at least 3-4 paragraphs of detailed content here. Ensure you cover nuances, exceptions, and specific details mentioned in the text.]
+
+   ### Supporting Evidence
+   [Quote or paraphrase specific relevant sections from the documents to support your analysis]
 
    ### Summary
    [Concise summary with actionable insights]
 
    > **Source**: Information compiled from [list document names]
 
-   ALWAYS use this Markdown formatting to ensure content renders beautifully in the frontend interface.
+   ALWAYS use this Markdown formatting to ensure content renders beautifully in the frontend interface. Provide DETAILED responses.
 </instructions>
 
 <current_user_query>
