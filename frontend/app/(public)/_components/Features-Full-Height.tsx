@@ -148,8 +148,10 @@ export default function FeaturesSection() {
                 {/* TEXT BLOCK */}
                 <div className={isEven ? "lg:order-1" : "lg:order-2"}>
                   <h3 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white leading-tight">
-                    {f.title}{" "}
-                    <span className="text-[#FF6B2C] italic">{f.highlight}</span>
+                    {f.title}{"\u00A0"}
+                    <span className="text-[#FF6B2C] italic whitespace-nowrap">
+                      {f.highlight}
+                    </span>
                   </h3>
 
                   <p className="mt-4 sm:mt-6 text-sm sm:text-base text-gray-300 max-w-lg leading-relaxed">
