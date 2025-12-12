@@ -3,9 +3,16 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Save, Download, Loader2 } from "lucide-react"
+import { Save, Download, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { uploadMultipleToCloudinary } from "@/lib/cloudinary"
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel"
 
 interface ComicPanel {
   index: number
@@ -161,7 +168,7 @@ export function ComicPreview({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="!w-[800px] !max-w-[800px] max-w-[95vw] !h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>Comic Preview</span>
@@ -195,7 +202,7 @@ export function ComicPreview({
             </div>
           </DialogTitle>
         </DialogHeader>
-        <div className="mt-4 space-y-4">
+        <div className="mt-4 space-y-4 flex-1 overflow-y-auto">
           {content.story && (
             <div className="border rounded-lg p-4 bg-muted/50">
               <h3 className="font-semibold mb-2">Story</h3>
@@ -203,70 +210,83 @@ export function ComicPreview({
             </div>
           )}
           {content.panels && content.panels.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {content.panels.map((panel) => {
-                const hasImageUrl = panel.url && panel.url.length > 0;
-                const isBase64 = hasImageUrl && panel.url.startsWith("data:image");
-                
-                return (
-                  <div key={panel.index} className="border rounded-lg p-4 bg-muted/50">
-                    {hasImageUrl ? (
-                      <div className="relative">
-                        <img
-                          src={panel.url}
-                          alt={`Panel ${panel.index + 1}`}
-                          className="w-full h-auto rounded-lg mb-2 object-contain bg-white"
-                          loading="lazy"
-                          onError={(e) => {
-                            console.error("Image load error for panel", panel.index, {
-                              urlLength: panel.url?.length,
-                              urlPreview: panel.url?.substring(0, 100),
-                              isBase64: isBase64
-                            });
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            // Show error message
-                            const parent = target.parentElement;
-                            if (parent) {
-                              const errorDiv = document.createElement('div');
-                              errorDiv.className = 'w-full h-48 bg-muted rounded-lg mb-2 flex items-center justify-center';
-                              errorDiv.innerHTML = '<p class="text-muted-foreground text-sm">Failed to load image</p>';
-                              parent.appendChild(errorDiv);
-                            }
-                          }}
-                          onLoad={(e) => {
-                            // Ensure image is visible when loaded
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'block';
-                            console.log("Panel image loaded successfully:", panel.index);
-                          }}
-                        />
-                        {isBase64 && (
-                          <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                            Base64 Image
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="w-full h-48 bg-muted rounded-lg mb-2 flex items-center justify-center">
-                        <div className="text-center">
-                          <p className="text-muted-foreground">Generating panel {panel.index + 1}...</p>
-                          {panel.prompt && (
-                            <p className="text-xs text-muted-foreground mt-2 max-w-xs truncate">
-                              {panel.prompt.substring(0, 100)}...
+            <div className="relative w-full">
+              <Carousel className="w-full">
+                <CarouselContent>
+                  {content.panels.map((panel) => {
+                    const hasImageUrl = panel.url && panel.url.length > 0;
+                    const isBase64 = hasImageUrl && panel.url.startsWith("data:image");
+                    
+                    return (
+                      <CarouselItem key={panel.index}>
+                        <div className="border rounded-lg p-4 bg-muted/50">
+                          {hasImageUrl ? (
+                            <div className="relative">
+                              <img
+                                src={panel.url}
+                                alt={`Panel ${panel.index + 1}`}
+                                className="w-full h-auto rounded-lg mb-2 object-contain bg-white max-h-[60vh]"
+                                loading="lazy"
+                                onError={(e) => {
+                                  console.error("Image load error for panel", panel.index, {
+                                    urlLength: panel.url?.length,
+                                    urlPreview: panel.url?.substring(0, 100),
+                                    isBase64: isBase64
+                                  });
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent) {
+                                    const errorDiv = document.createElement('div');
+                                    errorDiv.className = 'w-full h-48 bg-muted rounded-lg mb-2 flex items-center justify-center';
+                                    errorDiv.innerHTML = '<p class="text-muted-foreground text-sm">Failed to load image</p>';
+                                    parent.appendChild(errorDiv);
+                                  }
+                                }}
+                                onLoad={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'block';
+                                  console.log("Panel image loaded successfully:", panel.index);
+                                }}
+                              />
+                              {isBase64 && (
+                                <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                                  Base64 Image
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="w-full h-48 bg-muted rounded-lg mb-2 flex items-center justify-center">
+                              <div className="text-center">
+                                <p className="text-muted-foreground">Generating panel {panel.index + 1}...</p>
+                                {panel.prompt && (
+                                  <p className="text-xs text-muted-foreground mt-2 max-w-xs truncate">
+                                    {panel.prompt.substring(0, 100)}...
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {panel.footer_text && (
+                            <p className="text-sm text-muted-foreground mt-2">
+                              {panel.footer_text}
                             </p>
                           )}
+                          <div className="text-xs text-muted-foreground mt-2 text-center">
+                            Panel {panel.index + 1} of {content.panels?.length || 0}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {panel.footer_text && (
-                      <p className="text-sm text-muted-foreground mt-2">
-                        {panel.footer_text}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
+                      </CarouselItem>
+                    );
+                  })}
+                </CarouselContent>
+                <CarouselPrevious className="absolute left-2 top-1/2 -translate-y-1/2 z-10">
+                  <ChevronLeft className="h-4 w-4" />
+                </CarouselPrevious>
+                <CarouselNext className="absolute right-2 top-1/2 -translate-y-1/2 z-10">
+                  <ChevronRight className="h-4 w-4" />
+                </CarouselNext>
+              </Carousel>
             </div>
           ) : (
             <div className="border rounded-lg p-4 bg-muted/50 text-center">
