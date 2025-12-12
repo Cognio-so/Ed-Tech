@@ -175,6 +175,25 @@ export async function addToLesson(formData: FormData) {
         };
         break;
       }
+      case "exam": {
+        originalContent = await prisma.exam.findUnique({
+          where: { id: contentId },
+        });
+        if (!originalContent || originalContent.userId !== session.user.id) {
+          throw new Error("Content not found or unauthorized");
+        }
+        lessonItemData = {
+          ...lessonItemData,
+          title: originalContent.title,
+          content: originalContent.content,
+          grade: originalContent.grade,
+          subject: originalContent.subject,
+          language: originalContent.language,
+          difficultyLevel: originalContent.difficultyLevel,
+          metadata: originalContent.metadata,
+        };
+        break;
+      }
       default:
         throw new Error(`Unsupported content type: ${contentType}`);
     }

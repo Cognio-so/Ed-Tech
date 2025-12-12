@@ -16,8 +16,10 @@ import { toast } from "sonner";
 import { deleteMediaContent } from "@/app/teacher/media-toolkit/action";
 import { deleteAssessment } from "@/app/teacher/assessment-generation/action";
 import { deleteContent } from "@/app/teacher/content-generation/action";
+import { deleteExam } from "@/app/teacher/exam-generator/action";
 import { addToLesson } from "@/app/teacher/library/action";
 import { useRouter } from "next/navigation";
+import { ExamFormPreview } from "@/app/teacher/exam-generator/_components/exam-form-preview";
 
 interface AllTabsProps {
   content: LibraryContent[];
@@ -44,6 +46,9 @@ export function AllTabs({ content }: AllTabsProps) {
   const assessmentContent = localContent.filter(
     (item) => item.type === "assessment"
   );
+  const examContent = localContent.filter(
+    (item) => item.type === "exam"
+  );
 
   const counts = {
     all: localContent.length,
@@ -57,6 +62,7 @@ export function AllTabs({ content }: AllTabsProps) {
     videos: mediaToolkitContent.filter((item) => item.contentType === "video")
       .length,
     assessments: assessmentContent.length,
+    exams: examContent.length,
     webSearch: mediaToolkitContent.filter((item) => item.contentType === "web")
       .length,
   };
@@ -116,6 +122,8 @@ export function AllTabs({ content }: AllTabsProps) {
         await deleteAssessment(item.id);
       } else if (item.type === "content-generation") {
         await deleteContent(item.id);
+      } else if (item.type === "exam") {
+        await deleteExam(item.id);
       } else {
         toast.error("Delete functionality not available for this content type");
         return;
@@ -165,6 +173,17 @@ export function AllTabs({ content }: AllTabsProps) {
         <AssessmentPreview
           content={content}
           topic={previewItem.topic || previewItem.title}
+          onSave={handleClosePreview}
+          onClose={handleClosePreview}
+        />
+      );
+    }
+
+    if (contentType === "exam") {
+      return (
+        <ExamFormPreview
+          content={content}
+          title={previewItem.title}
           onSave={handleClosePreview}
           onClose={handleClosePreview}
         />
@@ -316,6 +335,9 @@ export function AllTabs({ content }: AllTabsProps) {
             <TabsTrigger value="assessments">
               Assessments ({counts.assessments})
             </TabsTrigger>
+            <TabsTrigger value="exams">
+              Exams ({counts.exams})
+            </TabsTrigger>
             <TabsTrigger value="webSearch">
               Web Search ({counts.webSearch})
             </TabsTrigger>
@@ -356,6 +378,10 @@ export function AllTabs({ content }: AllTabsProps) {
 
         <TabsContent value="assessments" className="mt-6">
           {renderContentGrid(assessmentContent)}
+        </TabsContent>
+
+        <TabsContent value="exams" className="mt-6">
+          {renderContentGrid(examContent)}
         </TabsContent>
 
         <TabsContent value="webSearch" className="mt-6">

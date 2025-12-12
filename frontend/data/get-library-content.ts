@@ -6,7 +6,7 @@ import prisma from "@/lib/prisma";
 
 export interface LibraryContent {
   id: string;
-  type: "media-toolkit" | "content-generation" | "assessment";
+  type: "media-toolkit" | "content-generation" | "assessment" | "exam";
   contentType: string;
   title: string;
   content: string;
@@ -31,7 +31,7 @@ export async function getLibraryContent(): Promise<LibraryContent[]> {
 
     const userId = session.user.id;
 
-    const [contentItems, slides, images, webSearches, comics, videos] =
+    const [contentItems, slides, images, webSearches, comics, videos, exams] =
       await Promise.all([
         prisma.content.findMany({
           where: { userId },
@@ -56,6 +56,13 @@ export async function getLibraryContent(): Promise<LibraryContent[]> {
         prisma.video.findMany({
           where: { userId },
           orderBy: { createdAt: "desc" },
+        }),
+        prisma.exam.findMany({
+          where: { userId },
+          orderBy: { createdAt: "desc" },
+        }).catch((error) => {
+          console.error("Error fetching exams:", error);
+          return [];
         }),
       ]);
 
@@ -152,6 +159,21 @@ export async function getLibraryContent(): Promise<LibraryContent[]> {
       updatedAt: item.updatedAt,
     }));
 
+    const transformedExams = (exams || []).map((item) => ({
+      id: item.id,
+      type: "exam" as const,
+      contentType: "exam",
+      title: item.title,
+      content: item.content,
+      grade: item.grade,
+      subject: item.subject,
+      topic: null,
+      language: item.language,
+      metadata: item.metadata,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    }));
+
     const allContent = [
       ...transformedContent,
       ...transformedSlides,
@@ -159,6 +181,7 @@ export async function getLibraryContent(): Promise<LibraryContent[]> {
       ...transformedWebSearches,
       ...transformedComics,
       ...transformedVideos,
+      ...transformedExams,
     ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     return allContent;
