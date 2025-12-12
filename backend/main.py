@@ -367,12 +367,12 @@ async def connect_voice_agent(
     await SessionManager.create_session(teacher_id, session_id)
     
     try:
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
-            raise HTTPException(status_code=500, detail="OpenAI API Key not configured")
+            raise HTTPException(status_code=500, detail="Gemini API Key not configured (GEMINI_API_KEY or GOOGLE_API_KEY)")
 
         bridge = VoiceAgentBridge(api_key=api_key)
-        
+        print(f"payload: {payload}")
         context_data = {
             "teacher_name": payload.teacher_name,
             "grade": payload.grade,
@@ -420,9 +420,9 @@ async def connect_student_voice_agent(
     await StudentSessionManager.create_session(student_id, session_id)
 
     try:
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
-            raise HTTPException(status_code=500, detail="OpenAI API Key not configured")
+            raise HTTPException(status_code=500, detail="Gemini API Key not configured")
 
         bridge = StudyBuddyBridge(api_key=api_key)
         
@@ -446,7 +446,7 @@ async def connect_student_voice_agent(
             "pending_assignments": pending_str,
             "instructions": f"The student has completed: {completed_str}. Focus on pending: {pending_str}."
         }
-        
+        print(f"context_data: {context_data}")
         answer_sdp = await bridge.connect(
             offer_sdp=payload.sdp, 
             context_data=context_data,
