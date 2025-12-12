@@ -11,6 +11,7 @@ export interface VoiceStreamConfig {
   subject?: string;
   instructions?: string;
   voice?: "alloy" | "echo" | "shimmer";
+  language?: string;
   onTranscription?: (text: string, role: "user" | "assistant") => void;
 }
 
@@ -31,6 +32,9 @@ export function useVoiceStream() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const configRef = useRef<VoiceStreamConfig | null>(null);
+  
+  // NEW: Ref for Speech Recognition
+  const recognitionRef = useRef<any>(null);
 
   // Initialize remote audio element
   useEffect(() => {
@@ -55,7 +59,44 @@ export function useVoiceStream() {
       setError(null);
       configRef.current = config;
 
-      // Get user microphone
+      // 1. Setup Speech Recognition (Browser Native)
+      // This fills the gap because Gemini Live doesn't return user text
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        
+        // CHANGE THIS: Use the user's system language automatically
+        // This supports 'en-US', 'hi-IN', 'es-ES', etc. based on their browser settings
+        recognition.lang = navigator.language || 'en-US'; 
+
+        // recognition.onresult = (event: any) => {
+        //   let finalTranscript = '';
+        //   for (let i = event.resultIndex; i < event.results.length; ++i) {
+        //     if (event.results[i].isFinal) {
+        //       finalTranscript += event.results[i][0].transcript;
+        //     }
+        //   }
+          
+        //   if (finalTranscript && config.onTranscription) {
+        //     console.log("🗣️ User (Local):", finalTranscript);
+        //     // We disable local transcription because it doesn't support auto-language detection well.
+        //     // We rely on the Backend (Gemini) for the "True" user transcript in the correct language.
+        //     // config.onTranscription(finalTranscript, "user"); 
+        //   }
+        // };
+
+        recognition.onerror = (event: any) => {
+          console.warn("Speech recognition error:", event.error);
+        };
+
+        recognitionRef.current = recognition;
+      } else {
+        console.warn("Browser does not support Speech Recognition");
+      }
+
+      // 2. Get user microphone
       console.log("🎙️ Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -68,7 +109,7 @@ export function useVoiceStream() {
 
       localStreamRef.current = stream;
 
-      // Create peer connection
+      // 3. Create peer connection
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
       });
@@ -117,6 +158,17 @@ export function useVoiceStream() {
         console.log("✅ Data channel opened - Connection ready!");
         setStatus("connected");
         setIsRecording(true);
+        
+        // START Speech Recognition when connected
+        if (recognitionRef.current) {
+            try {
+                recognitionRef.current.start();
+                console.log("🗣️ Local Speech Recognition Started");
+            } catch (e) {
+                console.error("Failed to start speech recognition:", e);
+            }
+        }
+        
         toast.success("Voice agent connected");
       };
 
@@ -124,29 +176,33 @@ export function useVoiceStream() {
         try {
           const data = JSON.parse(event.data);
           console.log("📩 Received event:", data.type);
-
-          // Handle transcriptions if needed
+          
+          // Only handle ASSISTANT transcription from backend
+          // We ignore user transcription from backend because we do it locally now
           if (
-            data.type ===
-            "conversation.item.input_audio_transcription.completed"
+            data.type === "response.audio_transcript.chunk" ||
+            data.type === "response.audio_transcript.done"
           ) {
             const transcript = data.transcript?.trim();
             if (transcript) {
-              console.log("🗣️ Teacher:", transcript);
-              // Call transcription callback
-              if (configRef.current?.onTranscription) {
-                configRef.current.onTranscription(transcript, "user");
-              }
-            }
-          } else if (data.type === "response.audio_transcript.done") {
-            const transcript = data.transcript?.trim();
-            if (transcript) {
-              console.log("🤖 AI Agent:", transcript);
+              console.log(
+                `🤖 AI Agent (${data.type === "response.audio_transcript.chunk" ? "chunk" : "done"}):`,
+                transcript
+              );
               // Call transcription callback
               if (configRef.current?.onTranscription) {
                 configRef.current.onTranscription(transcript, "assistant");
               }
             }
+          } else if (data.type === "input.audio_transcript.done") {
+             const transcript = data.transcript?.trim();
+             if (transcript) {
+                console.log(`👤 User (Gemini Detected):`, transcript);
+                // Call transcription callback (Correction layer)
+                if (configRef.current?.onTranscription) {
+                  configRef.current.onTranscription(transcript, "user");
+                }
+             }
           } else if (data.type === "error") {
             console.error("❌ Received error event:", data);
           }
@@ -252,8 +308,13 @@ export function useVoiceStream() {
 
   const disconnect = useCallback(async () => {
     try {
-      // Stop recording
       setIsRecording(false);
+      
+      // Stop Speech Recognition
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        console.log("🛑 Local Speech Recognition Stopped");
+      }
 
       // Close data channel
       if (dataChannelRef.current) {
@@ -303,6 +364,14 @@ export function useVoiceStream() {
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
         setIsRecording(audioTrack.enabled);
+        
+        // Also toggle speech recognition
+        if (audioTrack.enabled && recognitionRef.current) {
+             try { recognitionRef.current.start(); } catch {}
+        } else if (!audioTrack.enabled && recognitionRef.current) {
+             try { recognitionRef.current.stop(); } catch {}
+        }
+        
         return audioTrack.enabled;
       }
     }
