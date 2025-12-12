@@ -251,6 +251,17 @@ const Markdown: React.FC<MarkdownProps> = ({
               </h4>
             );
           },
+          // Custom centered heading for exam headers
+          h5({ children, ...props }) {
+            return (
+              <h5
+                className="scroll-m-20 text-lg font-bold tracking-tight mt-4 mb-2 text-center w-full block"
+                {...props}
+              >
+                {children}
+              </h5>
+            );
+          },
           // Custom paragraph with proper spacing
           p({ children, ...props }) {
             return (
@@ -287,7 +298,7 @@ const Markdown: React.FC<MarkdownProps> = ({
           },
           // Custom code styling with Shadcn typography
           code({ children, className }) {
-            const match = /language-(\w+)/.exec(className || "");
+            const match = /language-([\w-]+)/.exec(className || "");
             const language = match ? match[1] : "";
 
             // Handle Mermaid diagrams
@@ -295,6 +306,45 @@ const Markdown: React.FC<MarkdownProps> = ({
               return (
                 <MermaidDiagram code={String(children).replace(/\n$/, "")} />
               );
+            }
+
+            // Handle Exam Header
+            if (language === "exam-header" || (language === "json" && String(children).includes("organisation_name"))) {
+              try {
+                const data = JSON.parse(String(children));
+                return (
+                  <div className="w-full mb-8 font-sans">
+                    <h1 className="text-3xl font-extrabold text-center uppercase tracking-wide mb-2">
+                      {data.organisation_name}
+                    </h1>
+                    <h3 className="text-xl font-bold text-center text-muted-foreground mb-6">
+                      {data.exam_name}
+                    </h3>
+                    
+                    <div className="flex justify-between items-end mb-2 px-1">
+                      <h3 className="text-lg font-semibold">
+                        Subject: <span className="font-normal">{data.subject}</span>
+                      </h3>
+                      <h3 className="text-lg font-semibold">
+                        Grade: <span className="font-normal">{data.grade}</span>
+                      </h3>
+                    </div>
+                    
+                    <div className="flex justify-between items-end px-1">
+                      <p className="text-base font-medium">
+                        Date: <span className="inline-block w-32 border-b border-black dark:border-white"></span>
+                      </p>
+                      <p className="text-base font-medium">
+                        Duration: <span className="font-normal">{data.duration}</span>
+                      </p>
+                    </div>
+                    
+                    <div className="w-full h-px bg-border mt-6 mb-8" />
+                  </div>
+                );
+              } catch (e) {
+                console.error("Exam header parsing error:", e);
+              }
             }
 
             if (language) {

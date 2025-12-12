@@ -7,8 +7,21 @@ import uuid
 from fastapi import UploadFile
 try:
     from backend.models import DocumentInfo
+    from backend.utils.dsa_utils import ContentDeduplicator
 except ImportError:
     from models import DocumentInfo
+    # Fallback if utils not in path or running as script
+    try:
+        from utils.dsa_utils import ContentDeduplicator
+    except ImportError:
+        # Simple fallback class if import fails
+        class ContentDeduplicator:
+            def __init__(self): self.seen_hashes = set()
+            def is_duplicate(self, t): 
+                h = hash(t)
+                if h in self.seen_hashes: return True
+                self.seen_hashes.add(h)
+                return False
 
 # Try to import fitz (PyMuPDF), fallback to pypdf if not available
 try:
@@ -90,6 +103,25 @@ def extract_text_from_json(file_content: bytes) -> str:
         print(f"Error reading JSON: {e}")
         return ""
 
+def cleanup_text(text: str) -> str:
+    """Clean up text by removing duplicate lines (e.g. headers/footers) using hashing"""
+    deduplicator = ContentDeduplicator()
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        stripped = line.strip()
+        # Allow empty lines to preserve some structure, but deduplicate non-empty lines
+        # We also skip very short lines to avoid aggressive filtering of common words
+        if not stripped or len(stripped) < 4:
+            cleaned_lines.append(line)
+            continue
+            
+        if not deduplicator.is_duplicate(stripped):
+            cleaned_lines.append(line)
+            
+    return '\n'.join(cleaned_lines)
+
 
 
 async def process_uploaded_files_api(uploaded_files: List[UploadFile]) -> List[DocumentInfo]:
@@ -119,6 +151,8 @@ async def process_uploaded_files_api(uploaded_files: List[UploadFile]) -> List[D
                     text = extract_text_from_txt(file_content)  
                 
                 if text.strip():
+                    # Apply DSA optimization: Deduplicate content
+                    text = cleanup_text(text)
                    
                     doc_info = DocumentInfo(
                         id=file_id,

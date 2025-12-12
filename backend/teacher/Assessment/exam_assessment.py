@@ -210,20 +210,6 @@ async def generate_exam_assessment(
             """.strip()
         )
     
-    if total_true_false > 0:
-        question_type_blocks.append(
-            f"""
-            <question_type>
-                <type>True or False</type>
-                <total_count>{total_true_false}</total_count>
-                <requirements>
-                    <follow_up>Provide a short explanation justifying the truth value.</follow_up>
-                    <distribution>Distribute questions across all topics based on their true_false_count requirements.</distribution>
-                </requirements>
-            </question_type>
-            """.strip()
-        )
-    
     if total_mcq > 0:
         question_type_blocks.append(
             f"""
@@ -234,6 +220,20 @@ async def generate_exam_assessment(
                     <options>Exactly 4 labeled options (A-D)</options>
                     <rationale>Include one-line rationale for the correct answer.</rationale>
                     <distribution>Distribute questions across all topics based on their mcq_count requirements.</distribution>
+                </requirements>
+            </question_type>
+            """.strip()
+        )
+
+    if total_true_false > 0:
+        question_type_blocks.append(
+            f"""
+            <question_type>
+                <type>True or False</type>
+                <total_count>{total_true_false}</total_count>
+                <requirements>
+                    <follow_up>Provide a short explanation justifying the truth value.</follow_up>
+                    <distribution>Distribute questions across all topics based on their true_false_count requirements.</distribution>
                 </requirements>
             </question_type>
             """.strip()
@@ -299,53 +299,90 @@ async def generate_exam_assessment(
         Each topic has its own context section. Use the appropriate topic context when generating questions for that topic. 
         Do not invent facts outside the provided context. If needed details are absent, clearly state what the knowledge base does not cover before moving on.
         
-        IMPORTANT: Generate ONLY questions. Do NOT include:
+        IMPORTANT: Follow this EXACT structure for the output:
+        
+        1.  **HEADER SECTION**:
+            - You MUST start the response with a code block of language `exam-header` containing a JSON object with the exam metadata.
+            - Do not put any text before this code block.
+            - The JSON MUST contain these exact keys: `organisation_name`, `exam_name`, `subject`, `grade`, `duration`.
+            - Example:
+              ```exam-header
+              {{
+                "organisation_name": "{organisation_name}",
+                "exam_name": "{exam_name}",
+                "subject": "{subject}",
+                "grade": "{grade}",
+                "duration": "{duration}"
+              }}
+              ```
+
+        2.  **QUESTIONS SECTION**:
+            - Generate ONLY questions in this section.
+            - Organize questions by TYPE in this specific order:
+               - "## Short Form Written Answer Questions" (if any)
+               - "## Multiple Choice Questions" (if any)
+               - "## True or False Questions" (if any)
+               - "## Long Form Written Answer Questions" (if any)
+            
+            For each question:
+            - Number them continuously (1., 2., 3., etc.).
+            - **Short Answer**: Format as `N. [Question Text]`.
+            - **MCQ**: Format as:
+              ```markdown
+              N. [Question Text]
+                 - A. [Option A]
+                 - B. [Option B]
+                 - C. [Option C]
+                 - D. [Option D]
+              ```
+            - **True/False**: Format as:
+              ```markdown
+              N. [Question Text]
+                 - True
+                 - False
+              ```
+            - **Long Answer**: Format as `N. [Question Text]`.
+            
+            **Formatting Rules**:
+            - **DO NOT** add blank lines between questions or for answer space. Start the next question on the immediate next line.
+            - **DO NOT** include the question type or topic name in the question line.
+            - **DO NOT** include the word "Answer:" or any placeholder text like "Enter your answer here".
+            - Ensure options are strictly bulleted lists so they appear on separate lines.
+
+        3.  **ANSWER KEY SECTION**:
+            - After ALL questions, add a horizontal rule and a section title: "## Answer Key".
+            - List the correct answer for every question here, matching the question numbers.
+            - **Structure**:
+              ```markdown
+              1. **Correct Answer/Option**
+                 - Rationale/Explanation: [Detailed explanation]
+                 - Steps (if calculation): 
+                   - Step 1: ...
+                   - Step 2: ...
+              ```
+            - Ensure solutions are detailed, especially for Math/Science (show steps).
+
+        Distribute questions across topics based on the counts specified in <topics_metadata>.
+        
+        IMPORTANT: Generate ONLY the exam paper and answer key. Do NOT include:
         - Assessment Overview
         - Learning Objectives
         - Teacher Notes
-        - Any introductory or summary sections
-        
-        CRITICAL OUTPUT FORMAT: Organize questions by TYPE, not by topic. Group all questions of the same type together.
-        
-        Output format requirements:
-        1. Start directly with questions, organized by QUESTION TYPE (not by topic).
-        2. Use section headings for each question type in this order:
-           - "## Short Form Written Answer Questions" (if any)
-           - "## True or False Questions" (if any)
-           - "## Multiple Choice Questions" (if any)
-           - "## Long Form Written Answer Questions" (if any)
-        3. Within each question type section, generate questions from ALL topics that require that type.
-           - For each question, indicate which topic it belongs to using: `(Topic X: [Topic Name])` after the question number.
-           - Example: "Question 1: Short Form Written Answer (Topic 1: Photosynthesis)"
-        4. Number questions continuously across all types (Question 1, Question 2, Question 3, etc.).
-        5. For each question, use this format:
-           - Start with `Question X: [Type] (Topic Y: [Topic Name])` followed by the prompt.
-           - If it is a multiple-choice item, list options A–D on their own lines and include `Correct Answer: <letter>` plus a short rationale sentence.
-           - If it is a true/false item, show the statement, the words "True / False" on a separate line, and add `Correct Answer: True` (or False) with a justification sentence.
-           - If it is a short-answer item, provide a response placeholder (e.g., "Enter your answer here...") and add `Correct Answer:` with the ideal response plus scoring notes.
-           - If it is a long-answer item, provide a response placeholder and add `Correct Answer:` with a comprehensive ideal response plus detailed scoring rubric.
-        6. Distribute questions across topics based on the counts specified in <topics_metadata>. For example, if Topic 1 requires 2 short answers and Topic 2 requires 3 short answers, generate 2 short answer questions from Topic 1 and 3 short answer questions from Topic 2, all grouped under "## Short Form Written Answer Questions".
-        7. All answers must appear inline within the corresponding question block.
-        8. Ensure the tone is appropriate for the specified difficulty level and grade.
-        9. If custom instructions are provided, integrate them naturally into question generation.
+        - Any introductory or summary sections outside the header.
+        - Do not include answers inline with questions.
         
         MARKDOWN FORMATTING REQUIREMENTS:
-        - Output your responses in proper Markdown format, adhering to Shadcn UI typography guidelines for headings, lists, code blocks, and tables.
+        - Output your responses in proper Markdown format.
         - Ensure proper spacing between list items and paragraphs.
-        - Use triple backticks for code blocks with language specification (e.g., ```python\\nprint('Hello')\\n```).
-        - Use Markdown table syntax for tabular data.
-        - Use `*` or `-` for unordered lists and `1.` for ordered lists.
+        - Use `---` for horizontal rules.
         - Use `**bold**` and `*italic*` for emphasis.
-        - Use `>` for blockquotes.
-        - Ensure headings are hierarchical (e.g., `## H2`, `### H3`).
+        - Ensure headings are hierarchical (e.g., `## H2` for sections).
         - Avoid excessive blank lines.
-        - Do not include any introductory or concluding remarks outside the question content itself.
-        - When generating content, prioritize clarity and readability for educational purposes.
     </instructions>
 </exam_assessment_generation_request>
 """.strip()
 
-    llm = get_llm("x-ai/grok-4.1-fast", temperature=0.55)
+    llm = get_llm("google/gemini-2.5-flash", temperature=0.45)
     messages = [
         SystemMessage(content="You are an expert exam question designer who creates original questions based on curriculum knowledge. You design questions that test understanding and application, not copy from textbooks. Output only questions in Markdown format."),
         HumanMessage(content=xml_prompt),

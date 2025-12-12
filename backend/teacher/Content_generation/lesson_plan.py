@@ -12,11 +12,23 @@ try:
     from backend.utils.websearch import get_youtube_links
     from backend.embedding import embed_query
     from backend.qdrant_service import get_qdrant_client
+    from backend.utils.dsa_utils import ContentDeduplicator
 except ImportError:
     from llm import get_llm, stream_with_token_tracking
     from utils.websearch import get_youtube_links
     from embedding import embed_query
     from qdrant_service import get_qdrant_client
+    try:
+        from utils.dsa_utils import ContentDeduplicator
+    except ImportError:
+        class ContentDeduplicator:
+            def __init__(self): self.seen_hashes = set()
+            def is_duplicate(self, t): 
+                import hashlib
+                h = hashlib.sha256(t.strip().encode('utf-8')).hexdigest()
+                if h in self.seen_hashes: return True
+                self.seen_hashes.add(h)
+                return False
 from langchain_core.messages import HumanMessage, SystemMessage
 from qdrant_client import models
 
@@ -56,13 +68,16 @@ async def retrieve_kb_context(collection_name: str, query_text: str, top_k: int 
         # 4. Extract points (The response object wraps the list in .points)
         results = results_response.points
         # print(f"[LessonPlan RAG] Retrieved {results} results from Qdrant")
+        
+        # Optimization: Content Deduplication
+        deduplicator = ContentDeduplicator()
         contexts: List[str] = []
         for res in results:
             text = (res.payload or {}).get("text")
-            if text:
+            if text and not deduplicator.is_duplicate(text):
                 contexts.append(text.strip())
 
-        print(f"[LessonPlan RAG] ✅ Retrieved {len(contexts)} context chunk(s) (limit {top_k})")
+        print(f"[LessonPlan RAG] ✅ Retrieved {len(contexts)} unique context chunk(s) (limit {top_k})")
         return contexts
     except Exception as exc:
         print(f"[LessonPlan RAG] Retrieval failed: {exc}")
@@ -102,6 +117,7 @@ async def generate_lesson_plan(
     rag_query = " ".join(part for part in rag_query_parts if part and part.lower() not in {"unknown topic"})
     tasks = []
     if rag_query.strip():
+        # Using retrieve_kb_context which returns a list of context strings
         tasks.append(("rag", retrieve_kb_context(collection_name, rag_query.strip())))
     if multimedia_suggestion:
         tasks.append(("websearch", get_youtube_links(topic, max_results=3)))

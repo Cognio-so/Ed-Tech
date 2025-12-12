@@ -10,7 +10,7 @@ const globalForPrisma = global as unknown as {
 };
 
 const prisma =
-  globalForPrisma.prisma ||
+  // globalForPrisma.prisma ||
   new PrismaClient({
     adapter,
   });

@@ -799,7 +799,7 @@ async def create_exam_assessment(
     Supports optional streaming using Server-Sent Events.
     Only generates questions without overview, learning objectives, or teacher notes.
     """
-
+    print("Received exam assessment request:", payload)
     current_session_id = await SessionManager.create_session(teacher_id, session_id)
     request_payload = payload.model_dump(mode="json")
 
