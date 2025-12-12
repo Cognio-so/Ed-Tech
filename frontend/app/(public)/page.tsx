@@ -1,9 +1,18 @@
 import { redirect } from "next/navigation";
 import { getUserSession } from "@/data/get-user-session";
-import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
-
-export const dynamic = 'force-dynamic';
+import Navbar from "@/components/ui/navbar";
+import Hero from "./_components/hero-section";
+import Stats from "./_components/stats";
+import RealitySection from "./_components/Reality-Section";
+import HowItWorks from "./_components/How-It-Works";
+import FeaturesFullHeight from "./_components/Features-Full-Height";
+import SwarikaSection from "./_components/Swarika";
+import ComparisonTable from "./_components/Comparison";
+import Testimonials from "./_components/testimonials";
+import MissionSection from "./_components/MissionSection";
+import CallToAction from "./_components/call-to-action";
+import Footer from "./_components/footer";
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const session = await getUserSession();
@@ -15,7 +24,7 @@ export default async function Home() {
       redirect("/admin");
     } else if (userRole === "student") {
       redirect("/student");
-    } else if(userRole === "teacher") {
+    } else if (userRole === "teacher") {
       redirect("/teacher");
     } else {
       redirect("/login");
@@ -23,11 +32,19 @@ export default async function Home() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen space-y-4">
-      <h1 className="text-4xl font-bold">Hello World</h1>
-      <Link href="/login" className={buttonVariants({
-        variant: "default",
-      })}>Login</Link>
-    </div>
+    <>
+      <Navbar />
+      <Hero />
+      <Stats />
+      <RealitySection />
+      <HowItWorks />
+      <FeaturesFullHeight />
+      <SwarikaSection />
+      <ComparisonTable />
+      <Testimonials />
+      <MissionSection />
+      <CallToAction />
+      <Footer />
+    </>
   );
 }
