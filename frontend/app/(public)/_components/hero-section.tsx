@@ -22,26 +22,12 @@ export default function Hero() {
 
       {/* Actual Hero Section (Everything stays SAME) */}
       <section className="relative w-full min-h-screen flex items-center justify-center py-6 sm:py-10 lg:py-14 z-10">
-        {/* TOP CENTER BADGE */}
-        <div className="absolute top-4 sm:top-6 lg:top-8 left-1/2 transform -translate-x-1/2 z-20 px-4">
-          <Badge className="bg-gray-100 text-[#ff5b29] text-xs sm:text-sm font-medium border-0 text-center">
-            A CSR Initiative by{" "}
-            <Link
-              href="https://cognio.so"
-              target="_blank"
-              className="text-[#07312CF2] hover:underline"
-            >
-              Cognio-Labs
-            </Link>
-          </Badge>
-        </div>
-
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12 lg:gap-16 xl:gap-20 items-center">
           {/* LEFT SIDE TEXT */}
           <div className="text-center lg:text-left">
-            <span className="inline-block px-3 sm:px-4 py-1 sm:py-2 rounded-full bg-[#FFE7D6] text-[#ff5b29] text-xs sm:text-sm font-medium">
-              ✦ AI-Powered Education for Every Child
-            </span>
+            <Badge className="inline-block px-3 sm:px-4 py-1 sm:py-2 bg-[#FFE7D6] text-[#ff5b29] text-xs sm:text-sm font-medium border-0">
+              A CSR Initiative by <Link href="https://cognio.so" target="_blank" className="text-[#07312CF2] underline animate-pulse">CognioLabs</Link>
+            </Badge>
 
             <h1 className="mt-4 sm:mt-6 text-3xl sm:text-4xl md:text-5xl lg:text-5xl xl:text-6xl font-extrabold leading-tight text-[#07312CF2] max-w-xl">
               <span className="whitespace-nowrap">Give Every Student</span>
