@@ -53,6 +53,12 @@ export default function Navbar() {
           >
             Our Mission
           </Link>
+          <Link
+            href="#impact-stories"
+            className="text-gray-700 hover:text-[#ff5b29] transition-colors whitespace-nowrap"
+          >
+            Impact Stories
+          </Link>
         </div>
 
         {/* Right - CTA */}
@@ -85,7 +91,7 @@ export default function Navbar() {
               <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
               <SheetDescription className="sr-only">
                 Main navigation menu with links to features, AI-Tutor, mission,
-                and login
+                impact stories, and login
               </SheetDescription>
 
               <div className="mt-8 flex flex-col gap-4">
@@ -111,6 +117,14 @@ export default function Navbar() {
                   className="text-lg font-medium text-gray-700 hover:text-[#ff5b29] transition-colors py-2 px-4 rounded-md hover:bg-[#FFE7D6]"
                 >
                   Our Mission
+                </Link>
+
+                <Link
+                  href="#impact-stories"
+                  onClick={() => setOpen(false)}
+                  className="text-lg font-medium text-gray-700 hover:text-[#ff5b29] transition-colors py-2 px-4 rounded-md hover:bg-[#FFE7D6]"
+                >
+                  Impact Stories
                 </Link>
 
                 <div className="pt-4 mt-4 ">

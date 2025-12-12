@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Inter } from "next/font/google";
+import { Playfair_Display, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
@@ -11,10 +11,11 @@ const playfairDisplay = Playfair_Display({
   style: ["normal", "italic"] as const,
 });
 
-const inter = Inter({
-  variable: "--font-inter",
+const sourceSans3 = Source_Sans_3({
+  variable: "--font-source-sans",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"] as const,
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
+  style: ["normal", "italic"],
 });
 
 export const metadata: Metadata = {
@@ -91,7 +92,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${playfairDisplay.variable} ${inter.variable} antialiased`}
+        className={`${playfairDisplay.variable} ${sourceSans3.variable} antialiased`}
       >
         <ThemeProvider
           attribute="class"
