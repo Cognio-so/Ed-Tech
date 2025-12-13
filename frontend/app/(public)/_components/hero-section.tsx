@@ -25,9 +25,9 @@ export default function Hero() {
 
       {/* Actual Hero Section (Everything stays SAME) */}
       <section className="relative w-full min-h-screen flex items-center justify-center py-6 sm:py-10 lg:py-14 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12 lg:gap-16 xl:gap-20 items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-8 sm:gap-12 lg:gap-16 xl:gap-20 items-center">
           {/* LEFT SIDE TEXT */}
-          <div className="text-center lg:text-left">
+          <div className="text-center lg:text-center order-2 lg:order-1 mx-auto lg:mx-auto">
             <Badge className="inline-block px-3 sm:px-4 py-1 sm:py-2 bg-[#FFE7D6] text-[#ff5b29] text-xs sm:text-sm font-medium border-0">
               A CSR Initiative by{" "}
               <Link
@@ -47,7 +47,7 @@ export default function Hero() {
               That Never Sleeps
             </h1>
 
-            <p className="mt-4 sm:mt-6 text-base sm:text-lg text-gray-600 max-w-xl mx-auto lg:mx-0">
+            <p className="mt-4 sm:mt-6 text-base sm:text-lg text-gray-600 max-w-xl mx-auto">
               VidyaLabs is an AI-powered teaching platform that gives every
               student a patient, multilingual tutor and gives every teacher 10+
               hours back each week. Built for Indian classrooms. Designed for
@@ -55,7 +55,7 @@ export default function Hero() {
             </p>
 
             {/* CTA BUTTONS */}
-            <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row justify-center lg:justify-start gap-3 sm:gap-4">
+            <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-4">
               <Button className="bg-[#ff5b29] hover:bg-[#ff4a18] text-white px-4 sm:px-6 py-3 sm:py-4 lg:py-6 xl:py-8 rounded-full text-sm sm:text-base lg:text-lg shadow-md w-full sm:w-auto">
                 Apply For NGO Access
               </Button>
@@ -71,23 +71,9 @@ export default function Hero() {
           </div>
 
           {/* RIGHT SIDE IMAGE CAROUSEL */}
-
-          <div
-  className="
-    relative
-    w-full
-    max-w-[1024px]
-    xl:max-w-[1120px]
-    2xl:max-w-[1200px]
-    aspect-[16/9]
-    bg-white
-    rounded-3xl
-    shadow-[0_40px_100px_rgba(0,0,0,0.18)]
-    overflow-hidden
-  "
->
-  <VidyaLabsImageCarousel />
-</div>
+          <div className="relative w-full aspect-[16/9] bg-white rounded-3xl shadow-[0_40px_100px_rgba(0,0,0,0.18)] overflow-hidden order-1 lg:order-2">
+            <VidyaLabsImageCarousel />
+          </div>
 
         </div>
       </section>
