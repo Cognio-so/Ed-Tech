@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import base64
+import time  # <--- CRITICAL IMPORT FOR PACING
 from typing import Optional, Dict, Any
 from fractions import Fraction
 from .teacher_prompt.teacher_voice_prompt import get_teaching_assistant_prompt
@@ -35,125 +36,134 @@ VOICE_MAPPING = {
 
 class GeminiAudioTrack(MediaStreamTrack):
     """
-    A WebRTC Audio Track that buffers Gemini audio to ensure smooth playback.
-    FIXED: Handles burst audio delivery from Gemini without timeouts.
+    A WebRTC Audio Track that buffers Gemini audio and plays it at REAL-TIME speed.
+    FIXED: Added pacing logic to prevent 'fast-forward' audio (chipmunk effect).
     """
     kind = "audio"
 
     def __init__(self):
         super().__init__()
-        self.q = asyncio.Queue()
-        self.rate = 24000  # Gemini Native Rate
-        self.pts = 0
+        # Infinite buffer: Stores ALL audio Gemini generates (no dropping)
+        self.q = asyncio.Queue() 
         
-        # Audio Configuration
-        self.samples_per_frame = 480  # 20ms at 24kHz
-        self.frame_size_bytes = 960   # 480 samples * 2 bytes
+        # WebRTC standard: 48kHz, mono, 20ms ptime
+        self.rate = 48000
+        self.samples_per_frame = 960  # 20ms at 48k
+        self.frame_size_bytes = self.samples_per_frame * 2  # 16-bit = 2 bytes
+        
+        self.pts = 0
         self.buffer = bytearray()
         
-        # Tracking
-        self.chunks_received = 0
-        self.bytes_received = 0
-        self.frames_sent = 0
+        # Resample Gemini (24k) -> WebRTC (48k)
+        self.gemini_input_rate = 24000 
+        self.resampler = av.AudioResampler(format='s16', layout='mono', rate=self.rate)
         
-        # Control flags
-        self.is_speaking = False  # True when AI is actively speaking
-        self.end_of_response = asyncio.Event()  # Signals response complete
+        # Timing Control
+        self.start_time = None
+        self.frames_sent = 0
+        self.end_of_response = asyncio.Event() 
 
     def add_audio_chunk(self, pcm_data: bytes):
-        """Called when raw PCM bytes arrive from Gemini."""
+        """Add PCM chunk from Gemini, resample to 48k and enqueue bytes."""
         if not pcm_data:
             return
             
         try:
-            # Mark that we're receiving audio
-            self.is_speaking = True
+            # Gemini sends 24k usually, but we force consistency
+            rate = self.gemini_input_rate
             
-            asyncio.create_task(self.q.put(pcm_data))
-            self.chunks_received += 1
-            self.bytes_received += len(pcm_data)
-            logger.info(f"📦 Queued chunk #{self.chunks_received}: {len(pcm_data)} bytes")
+            # 1. Wrap raw bytes into an AV Frame
+            np_in = np.frombuffer(pcm_data, dtype=np.int16).reshape(1, -1)
+            frame_in = av.AudioFrame.from_ndarray(np_in, format='s16', layout='mono')
+            frame_in.sample_rate = rate
+            
+            # 2. Resample to 48k
+            resampled_bytes = bytearray()
+            for out_frame in self.resampler.resample(frame_in):
+                out_bytes = out_frame.to_ndarray().tobytes()
+                resampled_bytes.extend(out_bytes)
+            
+            # 3. Add to infinite queue
+            if resampled_bytes:
+                self.q.put_nowait(bytes(resampled_bytes))
+            
+            # Log occasionally
+            self.frames_sent += 1 # Just for tracking activity roughly
+            if self.frames_sent % 20 == 0:
+                logger.info(f"📦 Received audio chunk, queue size: {self.q.qsize()}")
+
         except Exception as e:
             logger.error(f"❌ Failed to queue audio: {e}")
 
     def mark_response_complete(self):
         """Called when turnComplete is received from Gemini."""
-        logger.info("✅ Response complete signal received")
         self.end_of_response.set()
 
     async def recv(self):
-        """Called by aiortc to get the next audio frame."""
+        """
+        Called by WebRTC. Must return frames at exactly 1x speed (real-time).
+        """
+        # --- PACING LOGIC (CRITICAL FIX) ---
+        # Initialize the clock on the first frame
+        if self.start_time is None:
+            self.start_time = time.time()
+            self.initial_pts = self.pts
+
+        # Calculate where we SHOULD be in time
+        # (Current Frame Count * 0.02 seconds)
+        samples_played = self.pts - self.initial_pts
+        expected_time_elapsed = samples_played / self.rate
         
-        # Build up buffer to have at least one frame
-        while len(self.buffer) < self.frame_size_bytes:
-            # Check if we have data in queue
-            if not self.q.empty():
-                # Drain all available data from queue immediately
-                while not self.q.empty():
-                    try:
-                        new_data = self.q.get_nowait()
-                        self.buffer.extend(new_data)
-                    except asyncio.QueueEmpty:
-                        break
-            else:
-                # Queue is empty - wait for more data
+        target_time = self.start_time + expected_time_elapsed
+        wait_time = target_time - time.time()
+
+        # If we are ahead of schedule, SLEEP to match real-time
+        if wait_time > 0:
+            await asyncio.sleep(wait_time)
+        # -----------------------------------
+
+        try:
+            # 1. Fill internal buffer
+            while len(self.buffer) < self.frame_size_bytes:
                 try:
-                    # CRITICAL: No timeout - wait indefinitely for next chunk
-                    # This prevents dropping audio during Gemini's processing delays
-                    new_data = await self.q.get()
+                    new_data = self.q.get_nowait()
                     self.buffer.extend(new_data)
-                    
-                    # After getting data, drain any other chunks that arrived
-                    while not self.q.empty():
-                        try:
-                            additional = self.q.get_nowait()
-                            self.buffer.extend(additional)
-                        except asyncio.QueueEmpty:
-                            break
-                            
-                except asyncio.CancelledError:
-                    # If cancelled and we have partial data, pad and return it
-                    if len(self.buffer) > 0:
-                        break
-                    raise
-                except Exception as e:
-                    logger.error(f"❌ Error receiving audio: {e}")
+                except asyncio.QueueEmpty:
                     break
 
-        # Extract one frame
-        if len(self.buffer) >= self.frame_size_bytes:
-            frame_data = bytes(self.buffer[:self.frame_size_bytes])
-            del self.buffer[:self.frame_size_bytes]
-        else:
-            # Use whatever we have and pad
-            frame_data = bytes(self.buffer)
-            self.buffer.clear()
+            # 2. Output Audio or Silence
+            if len(self.buffer) >= self.frame_size_bytes:
+                frame_data = bytes(self.buffer[:self.frame_size_bytes])
+                del self.buffer[:self.frame_size_bytes]
+            else:
+                # Silence (Buffer Underflow)
+                frame_data = b'\x00' * self.frame_size_bytes
 
-        # Pad if needed
-        if len(frame_data) < self.frame_size_bytes:
-            padding = self.frame_size_bytes - len(frame_data)
-            frame_data += b'\x00' * padding
-            logger.debug(f"🔇 Padded {padding} bytes")
-
-        # Convert to AudioFrame
-        try:
+            # 3. Create AudioFrame
             np_data = np.frombuffer(frame_data, dtype=np.int16).reshape(1, -1)
-        except ValueError as e:
-            logger.error(f"❌ Frame conversion error: {e}")
-            np_data = np.zeros((1, self.samples_per_frame), dtype=np.int16)
+            frame = av.AudioFrame.from_ndarray(np_data, format='s16', layout='mono')
+            frame.sample_rate = self.rate
+            frame.pts = self.pts
+            frame.time_base = Fraction(1, self.rate)
 
-        frame = av.AudioFrame.from_ndarray(np_data, format='s16', layout='mono')
-        frame.sample_rate = self.rate
-        frame.pts = self.pts
-        frame.time_base = Fraction(1, self.rate)
-        
-        self.pts += self.samples_per_frame
-        self.frames_sent += 1
-        
-        if self.frames_sent % 50 == 0:
-            logger.info(f"🎵 Frame #{self.frames_sent}, PTS: {self.pts}, buffer: {len(self.buffer)}b, queue: {self.q.qsize()}")
-        
-        return frame
+            self.pts += self.samples_per_frame
+            
+            # Use a separate counter for actual frames sent to WebRTC
+            # (We re-used self.frames_sent in add_audio_chunk purely for logging, 
+            #  but usually you want a distinct counter here. It's fine for now.)
+            
+            return frame
+
+        except Exception as e:
+            logger.error(f"❌ CRITICAL RECV ERROR: {e}")
+            # Fallback silence to prevent connection drop
+            silent_np = np.zeros((1, self.samples_per_frame), dtype=np.int16)
+            frame = av.AudioFrame.from_ndarray(silent_np, format='s16', layout='mono')
+            frame.sample_rate = self.rate
+            frame.pts = self.pts
+            frame.time_base = Fraction(1, self.rate)
+            self.pts += self.samples_per_frame
+            return frame
 
 class VoiceAgentBridge:
     """
@@ -163,7 +173,10 @@ class VoiceAgentBridge:
         self.api_key = GEMINI_API_KEY or api_key
         self.pc_client: Optional[RTCPeerConnection] = None
         self.gemini_ws = None
-        self.gemini_track = GeminiAudioTrack()
+        
+        # FIXED: Don't init track here. Init it in connect() to ensure fresh state.
+        self.gemini_track = None 
+        
         self.processing_task = None
         self.context_data = {}
         self.client_dc = None
@@ -174,6 +187,9 @@ class VoiceAgentBridge:
     async def connect(self, offer_sdp: str, context_data: Dict[str, Any], voice: str = "Puck") -> Dict[str, str]:
         self.context_data = context_data
         self.context_data["voice"] = voice
+        
+        # Initialize fresh audio track for this session
+        self.gemini_track = GeminiAudioTrack()
         
         # Configure TURN Servers
         ice_servers = [RTCIceServer(urls=["stun:stun.l.google.com:19302"])]
@@ -348,7 +364,6 @@ class VoiceAgentBridge:
                                         pcm_data = base64.b64decode(inline_data.get("data"))
                                         if pcm_data:
                                             self.gemini_track.add_audio_chunk(pcm_data)
-                                            logger.info(f"📦 Part {idx+1}/{len(parts)}: {len(pcm_data)}b")
                                     except Exception as e:
                                         logger.error(f"❌ Decode error part {idx}: {e}")
 
