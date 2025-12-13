@@ -34,11 +34,9 @@ export function useStudentVoiceStream() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const configRef = useRef<StudentVoiceStreamConfig | null>(null);
-  
-  // Ref for Speech Recognition (disabled - we rely on backend)
-  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
+    // Initialize audio element once
     if (!remoteAudioRef.current) {
       const audio = new Audio();
       audio.autoplay = true;
@@ -46,161 +44,82 @@ export function useStudentVoiceStream() {
     }
 
     return () => {
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.pause();
-        remoteAudioRef.current.srcObject = null;
-      }
+      cleanup();
     };
+  }, []);
+
+  const cleanup = useCallback(() => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.pause();
+      remoteAudioRef.current.srcObject = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+    if (dataChannelRef.current) {
+      dataChannelRef.current.close();
+      dataChannelRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
   }, []);
 
   const connect = useCallback(async (config: StudentVoiceStreamConfig) => {
     try {
-      console.log("🎤 Starting student voice connection...", config);
+      // 1. Clean up previous sessions
+      cleanup();
+      
+      console.log("🎤 Starting optimized voice connection...", config);
       setStatus("connecting");
       setError(null);
       configRef.current = config;
 
-      // Note: We don't use browser STT for students - rely on Gemini's native transcription
-      // This ensures accurate language detection (Hindi, English, etc.)
-
-      console.log("🎙️ Requesting microphone access...");
+      // 2. Get User Media immediately
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true,
+          autoGainControl: false,
+          sampleRate: 16000, 
+          channelCount: 1,
         },
       });
-      console.log("✅ Microphone access granted");
-
       localStreamRef.current = stream;
 
+      // 3. Create Peer Connection with faster ICE config
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        iceCandidatePoolSize: 10, // Pre-fetch candidates
       });
-
       peerConnectionRef.current = pc;
 
-      console.log("➕ Adding local audio tracks to peer connection...");
-      stream.getTracks().forEach((track) => {
-        console.log("🎵 Adding track:", track.kind, track.label);
-        pc.addTrack(track, stream);
-      });
+      // 4. Add Tracks
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
+      // 5. Setup Remote Audio Handling
       pc.ontrack = (event) => {
-        console.log(
-          "📥 Received remote track:",
-          event.track.kind,
-          event.streams
-        );
         if (event.track.kind === "audio" && remoteAudioRef.current) {
           const remoteStream = new MediaStream([event.track]);
           remoteAudioRef.current.srcObject = remoteStream;
-          console.log("🔊 Remote audio connected to audio element");
+          // Force play in case of browser autoplay policies
+          remoteAudioRef.current.play().catch(e => console.log("Autoplay blocked:", e));
         }
       };
 
-      pc.oniceconnectionstatechange = () => {
-        console.log("ICE Connection State:", pc.iceConnectionState);
-        if (
-          pc.iceConnectionState === "disconnected" ||
-          pc.iceConnectionState === "failed"
-        ) {
-          setStatus("disconnected");
-          toast.error("Voice connection lost");
-        }
-      };
-
-      console.log("📡 Creating data channel...");
+      // 6. Setup Data Channel
       const dc = pc.createDataChannel("oai-events");
       dataChannelRef.current = dc;
+      setupDataChannelListeners(dc, configRef);
 
-      dc.onopen = () => {
-        console.log("✅ Data channel opened - Connection ready!");
-        setStatus("connected");
-        setIsRecording(true);
-        toast.success("Study Buddy connected");
-      };
-
-      dc.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log("📩 Received event:", data.type);
-
-          if (
-            data.type === "response.audio_transcript.chunk" ||
-            data.type === "response.audio_transcript.done"
-          ) {
-            const transcript = data.transcript?.trim();
-            if (transcript) {
-              console.log(
-                `🤖 Study Buddy (${data.type === "response.audio_transcript.chunk" ? "chunk" : "done"}):`,
-                transcript
-              );
-              // Call transcription callback
-              if (configRef.current?.onTranscription) {
-                configRef.current.onTranscription(transcript, "assistant");
-              }
-            }
-          } else if (data.type === "input.audio_transcript.done") {
-             const transcript = data.transcript?.trim();
-             if (transcript) {
-                console.log(`👤 Student (Gemini Detected):`, transcript);
-                // Call transcription callback (Correction layer from Gemini)
-                if (configRef.current?.onTranscription) {
-                  configRef.current.onTranscription(transcript, "user");
-                }
-             }
-          } else if (data.type === "rag_status") {
-            // Handle RAG status messages
-            console.log(`🔍 RAG Status: ${data.status} - ${data.message}`);
-            if (data.query) {
-              console.log(`   Query: ${data.query}`);
-            }
-            
-            // Send RAG status to frontend via transcription callback as a temporary message
-            // This will show in the chat UI
-            if (configRef.current?.onTranscription) {
-              const statusMessage = data.message || "Searching knowledge base...";
-              // Send as assistant message so it appears in chat
-              configRef.current.onTranscription(statusMessage, "assistant");
-            }
-          } else if (data.type === "status") {
-            // General status messages
-            console.log(`ℹ️ Status: ${data.message}`);
-          } else if (data.type === "error") {
-            console.error("❌ Received error event:", data);
-          }
-        } catch (err) {
-          console.error("Error parsing data channel message:", err);
-        }
-      };
-
-      dc.onerror = (err) => {
-        console.error("❌ Data channel error:", err);
-        setError("Communication error occurred");
-      };
-
-      dc.onclose = () => {
-        console.log("📪 Data channel closed");
-      };
-
+      // 7. Create Offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === "complete") {
-          resolve();
-        } else {
-          const checkState = () => {
-            if (pc.iceGatheringState === "complete") {
-              pc.removeEventListener("icegatheringstatechange", checkState);
-              resolve();
-            }
-          };
-          pc.addEventListener("icegatheringstatechange", checkState);
-        }
-      });
+      // --- KEY FIX: REMOVED "WAIT FOR ICE COMPLETE" ---
+      // We send the offer immediately. This saves 2-4 seconds.
 
       const payload = {
         sdp: pc.localDescription!.sdp,
@@ -215,34 +134,18 @@ export function useStudentVoiceStream() {
 
       const endpoint = `${BACKEND_URL}/api/student/${config.studentId}/session/${config.sessionId}/voice_agent/connect`;
 
-      console.log("🔊 Sending student voice connection request to:", endpoint);
-      console.log("📦 Payload:", payload);
-
+      // 8. Send Request
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      console.log("📡 Response status:", response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("❌ Error response:", errorText);
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { detail: errorText };
-        }
-        throw new Error(
-          errorData.detail || `Failed to connect: ${response.status}`
-        );
-      }
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       const answer = await response.json();
-      console.log("✅ Received answer from backend:", answer);
 
+      // 9. Set Remote Description
       await pc.setRemoteDescription(
         new RTCSessionDescription({
           sdp: answer.sdp,
@@ -250,64 +153,51 @@ export function useStudentVoiceStream() {
         })
       );
 
-      console.log("🎉 Student voice connection established successfully");
-    } catch (err: any) {
-      console.error("💥 Student voice connection error:", err);
-      setStatus("error");
-      setError(err.message || "Failed to connect voice agent");
-      toast.error(err.message || "Failed to connect voice agent");
+      setStatus("connected");
+      setIsRecording(true);
+      toast.success("Study Buddy connected!");
 
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
-      }
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-        peerConnectionRef.current = null;
-      }
+    } catch (err: any) {
+      console.error("Connection failed:", err);
+      setStatus("error");
+      setError(err.message);
+      toast.error("Connection failed. Please try again.");
+      cleanup();
     }
-  }, []);
+  }, [cleanup]);
+
+  const setupDataChannelListeners = (dc: RTCDataChannel, configRef: any) => {
+    dc.onopen = () => console.log("✅ Data channel open");
+    
+    dc.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Handle Assistant Transcript
+        if (data.type === "response.audio_transcript.done" || data.type === "response.audio_transcript.chunk") {
+           const text = data.transcript?.trim();
+           if(text) configRef.current?.onTranscription?.(text, "assistant");
+        } 
+        // Handle User Transcript (Correction)
+        else if (data.type === "input.audio_transcript.done") {
+           const text = data.transcript?.trim();
+           if(text) configRef.current?.onTranscription?.(text, "user");
+        }
+        // Handle RAG Status
+        else if (data.type === "rag_status") {
+           configRef.current?.onTranscription?.(data.message || "Searching...", "assistant");
+        }
+      } catch (e) {
+        console.error("DC Message Parse Error", e);
+      }
+    };
+  };
 
   const disconnect = useCallback(async () => {
-    try {
-      setIsRecording(false);
-
-      if (dataChannelRef.current) {
-        dataChannelRef.current.close();
-        dataChannelRef.current = null;
-      }
-
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
-      }
-
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-        peerConnectionRef.current = null;
-      }
-
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.pause();
-        remoteAudioRef.current.srcObject = null;
-      }
-
-      if (configRef.current) {
-        const endpoint = `${BACKEND_URL}/api/student/${configRef.current.studentId}/session/${configRef.current.sessionId}/voice_agent/disconnect`;
-        await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        }).catch(() => {
-          // Ignore disconnect errors
-        });
-      }
-
-      setStatus("disconnected");
-      toast.info("Study Buddy disconnected");
-    } catch (err) {
-      console.error("Disconnect error:", err);
-    }
-  }, []);
+    cleanup();
+    setStatus("disconnected");
+    setIsRecording(false);
+  }, [cleanup]);
 
   const toggleMute = useCallback(() => {
     if (localStreamRef.current) {
@@ -321,13 +211,5 @@ export function useStudentVoiceStream() {
     return false;
   }, []);
 
-  return {
-    status,
-    isRecording,
-    error,
-    connect,
-    disconnect,
-    toggleMute,
-  };
+  return { status, isRecording, error, connect, disconnect, toggleMute };
 }
-

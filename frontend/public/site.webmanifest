@@ -1,0 +1,22 @@
+{
+  "name": "VidyaLabs - AI-Powered Personalized Learning",
+  "short_name": "VidyaLabs",
+  "description": "VidyaLabs transforms education with AI-powered personalized learning. Give every student a personal tutor that speaks their language, adapts to their pace, and never gives up. Available 24/7 in 12+ regional languages.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "productivity"],
+  "lang": "en",
+  "dir": "ltr"
+}
+
