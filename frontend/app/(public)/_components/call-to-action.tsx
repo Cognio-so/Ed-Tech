@@ -1,9 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Check } from "lucide-react";
+import ContactFormPopup from "./contact-form-popup";
 
 export default function CallToAction() {
+  const [isContactFormOpen, setIsContactFormOpen] = useState(false);
   return (
     <section className="bg-[#FFFBF5] py-24 px-6">
       <div
@@ -44,7 +46,7 @@ export default function CallToAction() {
             "
             suppressHydrationWarning
           >
-            Start Your Free Trial
+            Apply For NGO Access
           </button>
 
           <button
@@ -58,9 +60,10 @@ export default function CallToAction() {
               transition
               text-sm
             "
+            onClick={() => setIsContactFormOpen(true)}
             suppressHydrationWarning
           >
-            Schedule a Demo
+            Contact Us
           </button>
         </div>
 
@@ -79,6 +82,11 @@ export default function CallToAction() {
           </div>
         </div>
       </div>
+
+      <ContactFormPopup
+        open={isContactFormOpen}
+        onOpenChange={setIsContactFormOpen}
+      />
     </section>
   );
 }

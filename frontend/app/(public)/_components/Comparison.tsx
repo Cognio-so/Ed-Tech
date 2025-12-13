@@ -71,7 +71,7 @@ export default function ComparisonTable() {
         {/* Table Container */}
         <div className="rounded-3xl overflow-hidden shadow-2xl border border-gray-100">
           {/* Table Header */}
-          <div className="grid grid-cols-12 bg-[#111430] text-white py-4 px-6 sm:px-10 items-center">
+          <div className="grid grid-cols-12 bg-[#07312CF2] text-white py-4 px-6 sm:px-10 items-center">
             <div className="col-span-6 sm:col-span-5 text-sm sm:text-lg font-bold">
               Capability
             </div>

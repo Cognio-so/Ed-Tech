@@ -15,23 +15,23 @@ const TESTIMONIALS: Testimonial[] = [
     quote:
       "For the first time, I can see exactly which students need help with which concepts. The AI-generated worksheets save me hours every week and they’re actually aligned with what I’m teaching.",
     badge: "Saves 8+ hours weekly",
-    name: "Ritu Sharma",
+    name: "Priyanka Upadhyay",
     title: "Science Teacher, Govt. School, Delhi",
-    initials: "RS",
+    initials: "PU",
   },
   {
     quote:
       "Swarika has been a game-changer for our students. Children who were too shy to ask questions in class now learn confidently because an AI doesn't judge them.",
     badge: "30% improvement in test scores",
-    name: "Anil Kumar",
+    name: "Ruchika Sharma",
     title: "Principal, JJSSS Partner School",
-    initials: "AK",
+    initials: "RS",
   },
   {
     quote:
       "Other platforms are complicated and built for Western schools. VidyaLabs understands Indian education the NCERT syllabus, the languages, the challenges we face.",
     badge: "Adopted across 3 campuses",
-    name: "Priya Menon",
+    name: "A.K. Jain",
     title: "Academic Director, Private School Group",
     initials: "PM",
   },

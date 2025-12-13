@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import {
-  Dialog,
-  DialogContent,
-} from "@/components/ui/dialog";
+import { X } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ContactFormPopupProps {
   open: boolean;
@@ -16,51 +14,42 @@ export default function ContactFormPopup({
   onOpenChange,
 }: ContactFormPopupProps) {
   useEffect(() => {
-    if (open) {
-      // Load the form embed script when dialog opens
-      const script = document.createElement("script");
-      script.src = "https://link.msgsndr.com/js/form_embed.js";
-      script.async = true;
-      document.body.appendChild(script);
-
-      return () => {
-        // Cleanup script on unmount
-        if (document.body.contains(script)) {
-          document.body.removeChild(script);
-        }
-      };
-    }
+    document.body.style.overflow = open ? "hidden" : "unset";
+    return () => {
+      document.body.style.overflow = "unset";
+    };
   }, [open]);
 
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl w-full p-0 border-none">
-        <div className="w-full h-[432px] rounded-lg overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={(e) => e.target === e.currentTarget && onOpenChange(false)}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+      {/* Container */}
+      <div className="relative w-full max-w-2xl h-[85vh]">
+        {/* Close Button */}
+        <button
+          onClick={() => onOpenChange(false)}
+          className="absolute -top-10 right-0 text-white hover:opacity-80"
+          aria-label="Close"
+        >
+          <X className="w-6 h-6" />
+        </button>
+
+        {/* Scroll Area */}
+        <ScrollArea className="h-full w-full rounded-xl overflow-hidden">
           <iframe
             src="https://api.leadconnectorhq.com/widget/form/ON2NAMRArsOHH2WmxsvL"
-            style={{
-              display: "block",
-              width: "100%",
-              height: "100%",
-              border: "none",
-              borderRadius: "4px",
-            }}
-            id="popup-ON2NAMRArsOHH2WmxsvL"
-            data-layout='{"id":"POPUP"}'
-            data-trigger-type="alwaysShow"
-            data-trigger-value=""
-            data-activation-type="alwaysActivated"
-            data-activation-value=""
-            data-deactivation-type="neverDeactivate"
-            data-deactivation-value=""
-            data-form-name="VidyaLabs Interest Form "
-            data-height="432"
-            data-layout-iframe-id="popup-ON2NAMRArsOHH2WmxsvL"
-            data-form-id="ON2NAMRArsOHH2WmxsvL"
-            title="VidyaLabs Interest Form "
+            title="VidyaLabs Interest Form"
+            className="w-full h-[900px] border-none bg-transparent"
           />
-        </div>
-      </DialogContent>
-    </Dialog>
+        </ScrollArea>
+      </div>
+    </div>
   );
 }
