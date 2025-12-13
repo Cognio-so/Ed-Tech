@@ -121,7 +121,7 @@ export function ChatMessageComponent({
   };
 
   return (
-    <div className={cn("w-full max-w-5xl mx-auto break-words", className)}>
+    <div className={cn("w-full max-w-5xl mx-auto break-words bg-background", className)}>
       <Message from={isUser ? "user" : "assistant"}>
         {isUser ? (
           <>
@@ -132,7 +132,7 @@ export function ChatMessageComponent({
                     {message.uploadedDocs.map((doc, index) => (
                       <div
                         key={index}
-                        className="flex items-center gap-2 bg-muted/60 border border-border rounded-lg px-2 py-1 text-xs"
+                        className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg px-2 py-1 text-xs"
                       >
                         <span className="text-sm">{getFileIcon(doc.type)}</span>
                         <div className="flex flex-col min-w-0">
@@ -383,7 +383,7 @@ export function ChatMessages({
     return (
       <div
         className={cn(
-          "flex items-center justify-center h-full px-4",
+          "flex items-center justify-center h-full px-4 bg-background",
           className
         )}
       >
@@ -397,7 +397,7 @@ export function ChatMessages({
   }
 
   return (
-    <div className={cn("space-y-0", className)}>
+    <div className={cn("space-y-0 bg-background", className)}>
       {messages.map((message, index) => {
         const isLastMessage = index === messages.length - 1;
         const isStreaming =

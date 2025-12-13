@@ -2,6 +2,7 @@
 
 import { Check } from "lucide-react";
 import { useState, useEffect } from "react";
+import Image from "next/image";
 
 type FeatureItem = {
   title: string;
@@ -13,7 +14,6 @@ type FeatureItem = {
 type TabContent = {
   id: "teacher" | "student";
   label: string;
-  tag: string;
   features: FeatureItem[];
 };
 
@@ -21,7 +21,6 @@ const TAB_CONTENT: TabContent[] = [
   {
     id: "teacher",
     label: "Teacher",
-    tag: "For Educators",
     features: [
       {
         title: "Teach More. Prepare Less.",
@@ -51,7 +50,6 @@ const TAB_CONTENT: TabContent[] = [
   {
     id: "student",
     label: "Student",
-    tag: "For Learners",
     features: [
       {
         title: "Learning That Thinks With You",
@@ -153,50 +151,84 @@ export default function FeaturesSection() {
             <h3 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#07312CF2]">
               {currentContent.label === "Teacher" ? "Teacher" : "Student"}
             </h3>
-            <span className="inline-block px-3 py-1 bg-[#07312CF2] text-white text-xs sm:text-sm font-medium rounded-full">
-              {currentContent.tag}
-            </span>
           </div>
 
-          {/* Features Grid - 2x2 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
-            {currentContent.features.map((feature, idx) => (
-              <div
-                key={idx}
-                className={`${
-                  idx < 2 ? "border-b border-gray-200 pb-6 md:pb-0 md:border-b-0" : "pb-6 md:pb-0"
-                } ${
-                  idx % 2 === 0 ? "md:border-r md:border-gray-200 md:pr-8" : "md:pl-8"
-                }`}
-              >
-                <h4 className="text-xl sm:text-2xl font-bold text-[#07312CF2] mb-2">
-                  {feature.title}
-                </h4>
-                <p className="text-base sm:text-lg text-gray-600 mb-4">
-                  {feature.description}
-                </p>
+          {/* Features - Two rows with two columns each - Show only first feature, alternating between teacher/student */}
+          <div className="bg-gray-50 rounded-xl p-6 md:p-8 lg:p-10">
+            {(() => {
+              // Get the first feature from current tab
+              const feature = currentContent.features[0];
+              // Alternate layout: teacher = image left, student = image right
+              const isImageLeft = activeTab === "teacher";
 
-                <div className="space-y-4">
-                  {feature.points.map((point, pointIdx) => {
-                    // Every even index (0, 2, 4...) is a feature name (bold)
-                    // Every odd index (1, 3, 5...) is a description
-                    const isFeatureName = pointIdx % 2 === 0;
-                    return isFeatureName ? (
-                      <div key={pointIdx} className="space-y-1">
-                        <h5 className="text-base sm:text-lg font-semibold text-[#07312CF2]">
-                          {point}
-                        </h5>
-                        {feature.points[pointIdx + 1] && (
-                          <p className="text-sm sm:text-base text-gray-600">
-                            {feature.points[pointIdx + 1]}
-                          </p>
-                        )}
+              return (
+                <>
+                  {/* Row 1: Image and Text */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 lg:gap-10 items-center mb-8 md:mb-10">
+                    {/* Image Column */}
+                    <div className={`${isImageLeft ? "md:order-1" : "md:order-2"} order-2 relative w-full h-[200px] md:h-[250px] lg:h-[270px] rounded-lg overflow-hidden bg-white shadow-md`}>
+                      <Image
+                        src={activeTab === "teacher" ? "/Vidya Labs - AI Lesson Plan.png" : "/Vidya Labs - Student Achievements.png"}
+                        alt={activeTab === "teacher" ? "AI Lesson Plan" : "Student Achievements"}
+                        fill
+                        className="object-contain "
+                        priority
+                      />
+                    </div>
+
+                    {/* Text Column */}
+                    <div className={`${isImageLeft ? "md:order-2" : "md:order-1"} order-1`}>
+                      <h4 className="text-xl sm:text-2xl md:text-3xl font-bold text-[#07312CF2] mb-3">
+                        {feature.title}
+                      </h4>
+                      <p className="text-base sm:text-lg text-gray-600 mb-4">
+                        {feature.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Text and Image (reversed) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 lg:gap-10 items-center">
+                    {/* Text Column */}
+                    <div className={`${isImageLeft ? "md:order-1" : "md:order-2"} order-1`}>
+                      <div className="space-y-4">
+                        {feature.points.map((point, pointIdx) => {
+                          // Every even index (0, 2, 4...) is a feature name (bold)
+                          // Every odd index (1, 3, 5...) is a description
+                          const isFeatureName = pointIdx % 2 === 0;
+                          return isFeatureName ? (
+                            <div key={pointIdx} className="space-y-1">
+                              <div className="flex items-start gap-2">
+                                <Check className="w-5 h-5 text-[#ff5b29] mt-0.5 flex-shrink-0" />
+                                <h5 className="text-base sm:text-lg font-semibold text-[#07312CF2]">
+                                  {point}
+                                </h5>
+                              </div>
+                              {feature.points[pointIdx + 1] && (
+                                <p className="text-sm sm:text-base text-gray-600 ml-7">
+                                  {feature.points[pointIdx + 1]}
+                                </p>
+                              )}
+                            </div>
+                          ) : null;
+                        })}
                       </div>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-            ))}
+                    </div>
+
+                    {/* Image Column */}
+                    <div className={`${isImageLeft ? "md:order-2" : "md:order-1"} order-2 relative w-full h-[200px] md:h-[250px] lg:h-[280px] rounded-lg overflow-hidden bg-white shadow-md`}>
+                      <Image
+                        src={activeTab === "teacher" ? "/Vidya Labs - Content Creation.png" : "/Vidya Labs - Student Dashboard.png"}
+                        alt={activeTab === "teacher" ? "Content Creation" : "Student Dashboard"}
+                        fill
+                        className="object-contain "
+                        priority
+                      />
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>

@@ -1,11 +1,14 @@
 "use client";
 
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import { useState } from "react";
+import ContactFormPopup from "./contact-form-popup";
+import VidyaLabsImageCarousel from "./vidyalabs-image-carousel";
 
 export default function Hero() {
+  const [isContactFormOpen, setIsContactFormOpen] = useState(false);
   return (
     <div className="min-h-screen w-full bg-white relative overflow-hidden">
       {/* Morning Haze Background */}
@@ -26,7 +29,14 @@ export default function Hero() {
           {/* LEFT SIDE TEXT */}
           <div className="text-center lg:text-left">
             <Badge className="inline-block px-3 sm:px-4 py-1 sm:py-2 bg-[#FFE7D6] text-[#ff5b29] text-xs sm:text-sm font-medium border-0">
-              A CSR Initiative by <Link href="https://cognio.so" target="_blank" className="text-[#07312CF2] underline animate-pulse">CognioLabs</Link>
+              A CSR Initiative by{" "}
+              <Link
+                href="https://cognio.so"
+                target="_blank"
+                className="text-[#07312CF2] underline animate-pulse"
+              >
+                CognioLabs
+              </Link>
             </Badge>
 
             <h1 className="mt-4 sm:mt-6 text-3xl sm:text-4xl md:text-5xl lg:text-5xl xl:text-6xl font-extrabold leading-tight text-[#07312CF2] max-w-xl">
@@ -38,10 +48,10 @@ export default function Hero() {
             </h1>
 
             <p className="mt-4 sm:mt-6 text-base sm:text-lg text-gray-600 max-w-xl mx-auto lg:mx-0">
-              VidyaLabs is an AI-powered teaching platform that gives every student
-              a patient, multilingual tutor and gives every teacher 10+ hours back
-              each week. Built for Indian classrooms. Designed for the children who
-              need it most.
+              VidyaLabs is an AI-powered teaching platform that gives every
+              student a patient, multilingual tutor and gives every teacher 10+
+              hours back each week. Built for Indian classrooms. Designed for
+              the children who need it most.
             </p>
 
             {/* CTA BUTTONS */}
@@ -53,25 +63,39 @@ export default function Hero() {
               <Button
                 variant="outline"
                 className="text-primary px-4 sm:px-6 py-3 sm:py-4 lg:py-6 xl:py-8 rounded-full text-sm sm:text-base lg:text-lg w-full sm:w-auto"
+                onClick={() => setIsContactFormOpen(true)}
               >
                 Contact Us
               </Button>
             </div>
           </div>
 
-          {/* RIGHT SIDE IMAGE */}
-          <div className="relative flex justify-center mt-8 lg:mt-0">
-            <div className="relative w-full max-w-[280px] h-[180px] sm:max-w-[360px] sm:h-[230px] md:max-w-[420px] md:h-[270px] lg:max-w-[480px] lg:h-[310px] xl:max-w-[520px] xl:h-[340px] bg-white rounded-2xl sm:rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.08)] sm:shadow-[0_20px_60px_rgba(0,0,0,0.1)] overflow-hidden">
-              <Image
-                src="/hero-illustration.png"
-                alt="VidyaLabs Dashboard"
-                fill
-                className="object-cover"
-              />
-            </div>
-          </div>
+          {/* RIGHT SIDE IMAGE CAROUSEL */}
+
+          <div
+  className="
+    relative
+    w-full
+    max-w-[1024px]
+    xl:max-w-[1120px]
+    2xl:max-w-[1200px]
+    aspect-[16/9]
+    bg-white
+    rounded-3xl
+    shadow-[0_40px_100px_rgba(0,0,0,0.18)]
+    overflow-hidden
+  "
+>
+  <VidyaLabsImageCarousel />
+</div>
+
         </div>
       </section>
+
+      <ContactFormPopup
+        open={isContactFormOpen}
+        onOpenChange={setIsContactFormOpen}
+      />
     </div>
   );
 }
