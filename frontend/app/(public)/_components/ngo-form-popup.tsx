@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Script from "next/script";
+import { useEffect } from "react";
+import { X } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface NGOFormPopupProps {
   open: boolean;
@@ -12,9 +13,6 @@ export default function NGOFormPopup({
   open,
   onOpenChange,
 }: NGOFormPopupProps) {
-  const [scriptLoaded, setScriptLoaded] = useState(false);
-
-  // Lock body scroll
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "unset";
     return () => {
@@ -25,34 +23,35 @@ export default function NGOFormPopup({
   if (!open) return null;
 
   return (
-    <>
-      {/* Load script FIRST */}
-      <Script
-        src="https://link.msgsndr.com/js/form_embed.js"
-        strategy="beforeInteractive"
-        onLoad={() => setScriptLoaded(true)}
-      />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={(e) => e.target === e.currentTarget && onOpenChange(false)}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center"
-        onClick={(e) => e.target === e.currentTarget && onOpenChange(false)}
-      >
-        {/* Backdrop */}
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      {/* Container */}
+      <div className="relative w-full max-w-2xl h-[85vh]">
+        {/* Close Button */}
+        <button
+          onClick={() => onOpenChange(false)}
+          className="absolute -top-10 right-0 text-white hover:opacity-80"
+          aria-label="Close"
+        >
+          <X className="w-6 h-6" />
+        </button>
 
-        {/* Stable container */}
-        <div className="relative z-10 w-full max-w-3xl h-[90vh] bg-transparent">
-          {scriptLoaded && (
-            <iframe
-              src="https://api.leadconnectorhq.com/widget/form/s60QWopJ8a4dnorbjWqa"
-              title="VidyaLabs NGO Form"
-              className="w-full h-full border-none bg-transparent"
-              data-layout='{"id":"INLINE"}'
-              data-form-id="s60QWopJ8a4dnorbjWqa"
-            />
-          )}
-        </div>
+        {/* Scroll Area */}
+        <ScrollArea className="h-full w-full rounded-xl overflow-hidden">
+          <iframe
+            src="https://api.leadconnectorhq.com/widget/form/s60QWopJ8a4dnorbjWqa"
+            title="VidyaLabs NGO Form"
+            className="w-full h-[900px] border-none bg-transparent"
+            data-layout='{"id":"INLINE"}'
+            data-form-id="s60QWopJ8a4dnorbjWqa"
+          />
+        </ScrollArea>
       </div>
-    </>
+    </div>
   );
 }
