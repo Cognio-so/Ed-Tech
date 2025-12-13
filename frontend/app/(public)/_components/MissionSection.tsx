@@ -50,7 +50,7 @@ export default function MissionSection() {
 
           <div className="mt-8">
             <p className="text-[#FFE7D6] text-base md:text-lg font-medium italic">
-              हर घर शिक्षा। हर घर घाना।
+              हर घर शिक्षा | हर घर ध्यान |
             </p>
             <p className="mt-2 text-[#FFE7D6] text-sm md:text-base italic">
               Education for every home. Opportunity for every child.

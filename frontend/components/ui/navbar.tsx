@@ -3,8 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Menu } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
+  import { LogInIcon, Menu } from "lucide-react";
+import {  buttonVariants } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -71,6 +71,7 @@ export default function Navbar() {
                 "whitespace-nowrap bg-[#ff5b29] hover:bg-[#ff4a18] text-white",
             })}
           >
+            <LogInIcon className="size-4 mr-2" />
             Login
           </Link>
         </div>
@@ -137,6 +138,7 @@ export default function Navbar() {
                     })}
                     onClick={() => setOpen(false)}
                   >
+                    <LogInIcon className="size-4 mr-2" />
                     Login
                   </Link>
                 </div>
