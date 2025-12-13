@@ -387,7 +387,7 @@ export function ChatInput({
                 isUploading ? "Uploading documents..." : "Ask anything..."
               }
               disabled={disabled || isLoading || isUploading}
-              className="w-full min-h-[40px] sm:min-h-[44px] max-h-[120px] sm:max-h-[180px] resize-none outline-none text-sm sm:text-base leading-snug bg-transparent placeholder:text-muted-foreground disabled:opacity-50 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding"
+              className="w-full min-h-[40px] sm:min-h-[44px] max-h-[1`20px] sm:max-h-[180px] resize-none outline-none text-sm sm:text-base leading-snug bg-transparent placeholder:text-muted-foreground disabled:opacity-50 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding"
               rows={2}
             />
           )}

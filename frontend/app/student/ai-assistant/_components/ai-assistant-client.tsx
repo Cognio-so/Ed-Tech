@@ -402,7 +402,7 @@ function AIAssistantClient({
   );
 
   return (
-    <div className="absolute inset-0 flex flex-col overflow-hidden">
+    <div className="absolute inset-0 flex flex-col overflow-hidden bg-background">
       <ChatHeader
         onNewChat={handleNewChat}
         subjects={subjects}
@@ -411,10 +411,10 @@ function AIAssistantClient({
       />
 
       {/* Messages Area */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden bg-background">
         {hasMessages && (
-          <div ref={scrollAreaRef} className="h-full">
-            <ScrollArea className="h-full px-2 pt-2 pb-0">
+          <div ref={scrollAreaRef} className="h-full bg-background">
+            <ScrollArea className="h-full px-2 pt-2 pb-0 bg-background">
               <div className="space-y-0">
                 <ChatMessages
                   messages={messages}
@@ -426,7 +426,7 @@ function AIAssistantClient({
           </div>
         )}
         {!hasMessages && (
-          <div className="h-full flex flex-col items-center justify-center p-4">
+          <div className="h-full flex flex-col items-center justify-center p-4 bg-background">
             <div className="text-center">
               <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold text-primary">
                 What can I help with?
