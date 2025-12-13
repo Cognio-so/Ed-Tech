@@ -22,7 +22,7 @@ export default function VidyaLabsImageCarousel() {
   }, []);
 
   return (
-    <div className="relative w-full h-full overflow-hidden rounded-2xl sm:rounded-3xl">
+    <div className="relative h-full w-full overflow-hidden rounded-2xl sm:rounded-3xl">
       {VIDYALABS_IMAGES.map((imageSrc, index) => (
         <div
           key={imageSrc}
@@ -30,17 +30,13 @@ export default function VidyaLabsImageCarousel() {
             index === currentIndex ? "opacity-100" : "opacity-0"
           }`}
         >
-         <div className="absolute inset-0 p-4 sm:p-5 md:p-6">
-  <Image
-    src={imageSrc}
-    alt={`VidyaLabs Feature ${index + 1}`}
-    fill
-    className="object-contain bg-white rounded-2xl"
-    priority={index === 0}
-  />
-</div>
-
-
+          <Image
+            src={imageSrc}
+            alt={`VidyaLabs Feature ${index + 1}`}
+            fill
+            className="object-fill bg-white"
+            priority={index === 0}
+          />
         </div>
       ))}
     </div>

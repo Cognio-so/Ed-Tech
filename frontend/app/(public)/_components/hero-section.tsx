@@ -5,10 +5,12 @@ import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { useState } from "react";
 import ContactFormPopup from "./contact-form-popup";
+import NGOFormPopup from "./ngo-form-popup";
 import VidyaLabsImageCarousel from "./vidyalabs-image-carousel";
 
 export default function Hero() {
   const [isContactFormOpen, setIsContactFormOpen] = useState(false);
+  const [isNGOFormOpen, setIsNGOFormOpen] = useState(false);
   return (
     <div className="min-h-screen w-full bg-white relative overflow-hidden">
       {/* Morning Haze Background */}
@@ -25,7 +27,7 @@ export default function Hero() {
 
       {/* Actual Hero Section (Everything stays SAME) */}
       <section className="relative w-full min-h-screen flex items-center justify-center py-6 sm:py-10 lg:py-14 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-8 sm:gap-12 lg:gap-16 xl:gap-20 items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-8 sm:gap-12 lg:gap-16 xl:gap-20 items-center">
           {/* LEFT SIDE TEXT */}
           <div className="text-center lg:text-center order-2 lg:order-1 mx-auto lg:mx-auto">
             <Badge className="inline-block px-3 sm:px-4 py-1 sm:py-2 bg-[#FFE7D6] text-[#ff5b29] text-xs sm:text-sm font-medium border-0">
@@ -56,7 +58,10 @@ export default function Hero() {
 
             {/* CTA BUTTONS */}
             <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-4">
-              <Button className="bg-[#ff5b29] hover:bg-[#ff4a18] text-white px-4 sm:px-6 py-3 sm:py-4 lg:py-6 xl:py-8 rounded-full text-sm sm:text-base lg:text-lg shadow-md w-full sm:w-auto">
+              <Button 
+                className="bg-[#ff5b29] hover:bg-[#ff4a18] text-white px-4 sm:px-6 py-3 sm:py-4 lg:py-6 xl:py-8 rounded-full text-sm sm:text-base lg:text-lg shadow-md w-full sm:w-auto"
+                onClick={() => setIsNGOFormOpen(true)}
+              >
                 Apply For NGO Access
               </Button>
 
@@ -71,7 +76,7 @@ export default function Hero() {
           </div>
 
           {/* RIGHT SIDE IMAGE CAROUSEL */}
-          <div className="relative w-full aspect-[16/9] bg-white rounded-3xl shadow-[0_40px_100px_rgba(0,0,0,0.18)] overflow-hidden order-1 lg:order-2">
+          <div className="relative w-full aspect-[4/3] lg:aspect-[3/2] bg-white rounded-3xl shadow-[0_40px_100px_rgba(0,0,0,0.18)] overflow-hidden order-1 lg:order-2">
             <VidyaLabsImageCarousel />
           </div>
 
@@ -81,6 +86,11 @@ export default function Hero() {
       <ContactFormPopup
         open={isContactFormOpen}
         onOpenChange={setIsContactFormOpen}
+      />
+
+      <NGOFormPopup
+        open={isNGOFormOpen}
+        onOpenChange={setIsNGOFormOpen}
       />
     </div>
   );

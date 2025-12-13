@@ -16,7 +16,7 @@ export default function FounderQuotesSection() {
 
             {/* Text */}
             <p className="font-serif text-lg leading-relaxed text-[#0f172a]">
-              VidyaLabs is not just an edtech platform — it is a scalable,
+              VidyaLabs is not just an edtech platform it is a scalable,
               equitable, and future-ready model for bridging India's learning
               divide. A pathway to ensure that every child, regardless of
               background, can learn, grow, and thrive.
@@ -56,7 +56,7 @@ export default function FounderQuotesSection() {
 
             {/* Text */}
             <p className="font-serif text-lg leading-relaxed text-[#0f172a]">
-              True CSR isn't about writing cheques — it's about building
+              True CSR isn't about writing cheques it's about building
               solutions that outlive us. VidyaLabs is our commitment to creating
               lasting change, one student at a time, powered by technology that
               serves humanity first.

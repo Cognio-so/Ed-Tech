@@ -47,13 +47,13 @@ export default function WhyWeBuiltThisSection() {
 
             <p>
               We saw brilliant children held back not by ability, but by access.
-              The same spark of curiosity, the same hunger to learn — but without
+              The same spark of curiosity, the same hunger to learn but without
               the resources to nurture it.
             </p>
 
             {/* Highlight Box */}
             <div className="relative bg-[#f3efe7] p-6 rounded-xl border-l-4 border-[#ff9b9b] text-[#1f2937] font-medium">
-              At Cognio Labs, we build cutting-edge AI systems for businesses
+              At Cognio Labs, we build cutting edge AI systems for businesses
               around the world. But technology without purpose felt incomplete.
             </div>
 
