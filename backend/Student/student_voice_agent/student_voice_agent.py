@@ -3,6 +3,9 @@ import json
 import logging
 import os
 import base64
+import re
+import io
+import wave
 from typing import Optional, Dict, Any
 from fractions import Fraction
 import websockets
@@ -33,134 +36,151 @@ VOICE_MAPPING = {
     "shimmer": "Aoede" 
 }
 
+def _parse_rate(mime_type: str, default: int = 24000) -> int:
+    """Parse sample rate from mime type string."""
+    if not mime_type:
+        return default
+    m = re.search(r'rate\s*=\s*(\d+)', mime_type)
+    return int(m.group(1)) if m else default
+
+def _decode_wav_to_pcm16(raw_bytes: bytes) -> bytes:
+    """Minimal WAV parsing to extract PCM16 mono data."""
+    with wave.open(io.BytesIO(raw_bytes), 'rb') as wf:
+        assert wf.getsampwidth() == 2, "Only 16-bit PCM WAV supported"
+        n_channels = wf.getnchannels()
+        assert n_channels == 1, "Only mono WAV supported"
+        frames = wf.readframes(wf.getnframes())
+        return frames
+
+import time  # <--- CRITICAL IMPORT
+
 class GeminiAudioTrack(MediaStreamTrack):
     """
-    A WebRTC Audio Track that buffers Gemini audio to ensure smooth playback.
-    FIXED: Handles burst audio delivery from Gemini without timeouts.
+    A WebRTC Audio Track that buffers Gemini audio and plays it at REAL-TIME speed.
+    FIXED: Added pacing logic to prevent 'fast-forward' audio (chipmunk effect).
     """
     kind = "audio"
 
     def __init__(self):
         super().__init__()
-        self.q = asyncio.Queue()
-        self.rate = 24000  # Gemini Native Rate
-        self.pts = 0
+        # Infinite buffer: Stores ALL audio Gemini generates (no dropping)
+        self.q = asyncio.Queue() 
         
-        # Audio Configuration
-        self.samples_per_frame = 480  # 20ms at 24kHz
-        self.frame_size_bytes = 960   # 480 samples * 2 bytes
+        # WebRTC standard: 48kHz, mono, 20ms ptime
+        self.rate = 48000
+        self.samples_per_frame = 960  # 20ms at 48k
+        self.frame_size_bytes = self.samples_per_frame * 2  # 16-bit = 2 bytes
+        
+        self.pts = 0
         self.buffer = bytearray()
         
-        # Tracking
-        self.chunks_received = 0
-        self.bytes_received = 0
-        self.frames_sent = 0
+        # Resample Gemini (24k) -> WebRTC (48k)
+        self.gemini_input_rate = 24000 
+        self.resampler = av.AudioResampler(format='s16', layout='mono', rate=self.rate)
         
-        # Control flags
-        self.is_speaking = False  # True when AI is actively speaking
-        self.end_of_response = asyncio.Event()  # Signals response complete
+        # Timing Control
+        self.start_time = None
+        self.frames_sent = 0
 
-    def add_audio_chunk(self, pcm_data: bytes):
-        """Called when raw PCM bytes arrive from Gemini."""
+    def add_audio_chunk(self, pcm_data: bytes, src_rate: int = None):
+        """Add PCM chunk from Gemini, resample to 48k and enqueue bytes."""
         if not pcm_data:
             return
             
         try:
-            # Mark that we're receiving audio
-            self.is_speaking = True
+            rate = src_rate or self.gemini_input_rate
             
-            asyncio.create_task(self.q.put(pcm_data))
-            self.chunks_received += 1
-            self.bytes_received += len(pcm_data)
-            logger.info(f"📦 Queued chunk #{self.chunks_received}: {len(pcm_data)} bytes")
+            # 1. Wrap raw bytes into an AV Frame
+            np_in = np.frombuffer(pcm_data, dtype=np.int16).reshape(1, -1)
+            frame_in = av.AudioFrame.from_ndarray(np_in, format='s16', layout='mono')
+            frame_in.sample_rate = rate
+            
+            # 2. Resample to 48k
+            resampled_bytes = bytearray()
+            for out_frame in self.resampler.resample(frame_in):
+                out_bytes = out_frame.to_ndarray().tobytes()
+                resampled_bytes.extend(out_bytes)
+            
+            # 3. Add to infinite queue
+            if resampled_bytes:
+                self.q.put_nowait(bytes(resampled_bytes))
+            
         except Exception as e:
             logger.error(f"❌ Failed to queue audio: {e}")
 
     def mark_response_complete(self):
-        """Called when turnComplete is received from Gemini."""
-        logger.info("✅ Response complete signal received")
-        self.end_of_response.set()
+        pass 
 
     async def recv(self):
-        """Called by aiortc to get the next audio frame."""
+        """
+        Called by WebRTC. Must return frames at exactly 1x speed (real-time).
+        """
+        # --- PACING LOGIC (CRITICAL FIX) ---
+        # Initialize the clock on the first frame
+        if self.start_time is None:
+            self.start_time = time.time()
+            self.initial_pts = self.pts
+
+        # Calculate where we SHOULD be in time
+        # (Current Frame Count * 0.02 seconds)
+        samples_played = self.pts - self.initial_pts
+        expected_time_elapsed = samples_played / self.rate
         
-        # Build up buffer to have at least one frame
-        while len(self.buffer) < self.frame_size_bytes:
-            # Check if we have data in queue
-            if not self.q.empty():
-                # Drain all available data from queue immediately
-                while not self.q.empty():
-                    try:
-                        new_data = self.q.get_nowait()
-                        self.buffer.extend(new_data)
-                    except asyncio.QueueEmpty:
-                        break
-            else:
-                # Queue is empty - wait for more data
+        target_time = self.start_time + expected_time_elapsed
+        wait_time = target_time - time.time()
+
+        # If we are ahead of schedule, SLEEP to match real-time
+        if wait_time > 0:
+            await asyncio.sleep(wait_time)
+        # -----------------------------------
+
+        try:
+            # 1. Fill internal buffer
+            while len(self.buffer) < self.frame_size_bytes:
                 try:
-                    # CRITICAL: No timeout - wait indefinitely for next chunk
-                    # This prevents dropping audio during Gemini's processing delays
-                    new_data = await self.q.get()
+                    new_data = self.q.get_nowait()
                     self.buffer.extend(new_data)
-                    
-                    # After getting data, drain any other chunks that arrived
-                    while not self.q.empty():
-                        try:
-                            additional = self.q.get_nowait()
-                            self.buffer.extend(additional)
-                        except asyncio.QueueEmpty:
-                            break
-                            
-                except asyncio.CancelledError:
-                    # If cancelled and we have partial data, pad and return it
-                    if len(self.buffer) > 0:
-                        break
-                    raise
-                except Exception as e:
-                    logger.error(f"❌ Error receiving audio: {e}")
+                except asyncio.QueueEmpty:
                     break
 
-        # Extract one frame
-        if len(self.buffer) >= self.frame_size_bytes:
-            frame_data = bytes(self.buffer[:self.frame_size_bytes])
-            del self.buffer[:self.frame_size_bytes]
-        else:
-            # Use whatever we have and pad
-            frame_data = bytes(self.buffer)
-            self.buffer.clear()
+            # 2. Output Audio or Silence
+            if len(self.buffer) >= self.frame_size_bytes:
+                frame_data = bytes(self.buffer[:self.frame_size_bytes])
+                del self.buffer[:self.frame_size_bytes]
+            else:
+                # Silence (Buffer Underflow)
+                frame_data = b'\x00' * self.frame_size_bytes
 
-        # Pad if needed
-        if len(frame_data) < self.frame_size_bytes:
-            padding = self.frame_size_bytes - len(frame_data)
-            frame_data += b'\x00' * padding
-            logger.debug(f"🔇 Padded {padding} bytes")
-
-        # Convert to AudioFrame
-        try:
+            # 3. Create AudioFrame
             np_data = np.frombuffer(frame_data, dtype=np.int16).reshape(1, -1)
-        except ValueError as e:
-            logger.error(f"❌ Frame conversion error: {e}")
-            np_data = np.zeros((1, self.samples_per_frame), dtype=np.int16)
+            frame = av.AudioFrame.from_ndarray(np_data, format='s16', layout='mono')
+            frame.sample_rate = self.rate
+            frame.pts = self.pts
+            frame.time_base = Fraction(1, self.rate)
 
-        frame = av.AudioFrame.from_ndarray(np_data, format='s16', layout='mono')
-        frame.sample_rate = self.rate
-        frame.pts = self.pts
-        frame.time_base = Fraction(1, self.rate)
-        
-        self.pts += self.samples_per_frame
-        self.frames_sent += 1
-        
-        if self.frames_sent % 50 == 0:
-            logger.info(f"🎵 Frame #{self.frames_sent}, PTS: {self.pts}, buffer: {len(self.buffer)}b, queue: {self.q.qsize()}")
-        
-        return frame
+            self.pts += self.samples_per_frame
+            self.frames_sent += 1
+
+            return frame
+
+        except Exception as e:
+            logger.error(f"❌ CRITICAL RECV ERROR: {e}")
+            # Fallback silence to prevent connection drop
+            silent_np = np.zeros((1, self.samples_per_frame), dtype=np.int16)
+            frame = av.AudioFrame.from_ndarray(silent_np, format='s16', layout='mono')
+            frame.sample_rate = self.rate
+            frame.pts = self.pts
+            frame.time_base = Fraction(1, self.rate)
+            self.pts += self.samples_per_frame
+            return frame
 
 class StudyBuddyBridge:
     def __init__(self, api_key: str = None):
         self.api_key = GEMINI_API_KEY or api_key
         self.pc_client: Optional[RTCPeerConnection] = None
         self.gemini_ws = None
-        self.gemini_track = GeminiAudioTrack()
+        # self.gemini_track = GeminiAudioTrack()
+        self.gemini_track = None
         self.processing_task = None
         self.context_data = {}
         self.client_dc = None
@@ -169,6 +189,7 @@ class StudyBuddyBridge:
         self.current_transcript = ""
 
     async def connect(self, offer_sdp: str, context_data: Dict[str, Any], voice: str = "Puck") -> Dict[str, str]:
+        self.gemini_track = GeminiAudioTrack()
         self.context_data = context_data
         self.context_data["voice"] = voice
         
@@ -338,10 +359,28 @@ class StudyBuddyBridge:
                                 mime_type = inline_data.get("mimeType", "")
                                 if mime_type.startswith("audio"):
                                     try:
-                                        pcm_data = base64.b64decode(inline_data.get("data"))
-                                        if pcm_data:
-                                            self.gemini_track.add_audio_chunk(pcm_data)
-                                            logger.info(f"📦 Part {idx+1}/{len(parts)}: {len(pcm_data)}b")
+                                        raw = base64.b64decode(inline_data.get("data"))
+                                        if not raw:
+                                            continue
+
+                                        # Handle different audio containers
+                                        if "wav" in mime_type.lower():
+                                            pcm_data = _decode_wav_to_pcm16(raw)
+                                            src_rate = _parse_rate(mime_type, 24000)
+                                        elif "pcm" in mime_type.lower() or not mime_type:
+                                            # Default to PCM if mimeType is empty or contains pcm
+                                            pcm_data = raw
+                                            src_rate = _parse_rate(mime_type, 24000)
+                                        else:
+                                            # Try to treat as raw PCM if it's audio but unknown format
+                                            logger.info(f"⚠️ Unknown audio format: {mime_type}, treating as PCM")
+                                            pcm_data = raw
+                                            src_rate = _parse_rate(mime_type, 24000)
+
+                                        # Feed into the 48k track with correct source rate
+                                        self.gemini_track.add_audio_chunk(pcm_data, src_rate=src_rate)
+                                        logger.info(f"📦 Part {idx+1}/{len(parts)}: {len(pcm_data)}b @ {src_rate}Hz, mimeType={mime_type}")
+
                                     except Exception as e:
                                         logger.error(f"❌ Decode error part {idx}: {e}")
 
