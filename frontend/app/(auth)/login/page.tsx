@@ -1,37 +1,33 @@
-import { redirect } from "next/navigation";
-import { LoginForm } from "./_components/login-form";
-import Link from "next/link";
-import { getUserSession } from "@/data/get-user-session";
+import { GalleryVerticalEnd } from "lucide-react"
 
-export const dynamic = 'force-dynamic';
+import { LoginForm } from "./_components/login-form"
+import Link from "next/link"
 
-export default async function LoginPage() {
-  const session = await getUserSession();
-
-  if (session?.user) {
-    const userRole = session.user.role;
-
-    if (userRole === "admin") {
-      redirect("/admin");
-    } else if (userRole === "teacher") {
-      redirect("/teacher");
-    } else if (userRole === "student") {
-      redirect("/student");
-    }
-  }
-
+export default function LoginPage() {
   return (
-    <div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
-      <div className="flex w-full max-w-sm flex-col gap-6">
-        <Link
-          href="/"
-          className="flex items-center gap-2 self-center text-xl font-bold"
-        >
-          {/* <Image src="/logo.svg" alt="logo" className="size-8" /> */}
-           Welcome to Ed-Tech Platform
-        </Link>
-        <LoginForm />
+    <div className="grid min-h-svh lg:grid-cols-2">
+      <div className="flex flex-col gap-4 p-6 md:p-10">
+        <div className="flex justify-center gap-2 md:justify-start">
+          <Link href="/" className="flex items-center gap-2 font-medium">
+            <div className="text-primary flex size-6 items-center justify-center rounded-md">
+              <img src="/logo.png" alt="VidyaLabs Logo" width={24} height={24} />
+            </div>
+            VidyaLabs
+          </Link>
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-xs">
+            <LoginForm />
+          </div>
+        </div>
+      </div>
+      <div className="bg-muted relative hidden lg:block">
+        <img
+          src="/login-2.jpg"
+          alt="Image"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
       </div>
     </div>
-  );
+  )
 }

@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useSidebar } from "@/components/ui/sidebar";
 import Image from "next/image";
-import logo from "@/public/DruidX logo.png";
 import { Shield } from "lucide-react";
 
 interface TeamSwitcherProps {
@@ -21,15 +20,16 @@ export function TeamSwitcher({
   <div className="flex items-center gap-2 mr-2">
     {isExpanded ? (
       <>
-        {/* <Image
-          src={logo}
-          alt="DruidX Logo"
-          className="w-8 h-8 rounded-full transition-all duration-300"
-        /> */}
+        <Image
+          src="/logo.png"
+          alt="VidyaLabs Logo"
+          width={32}
+          height={32}
+          className="h-7 w-7 sm:h-8 sm:w-8 object-contain"
+        />
         {showName && (
           <span className="text-xl font-semibold text-foreground transition-opacity duration-300 flex items-center gap-2">
-            <Shield className="size-5"/>
-            ED-TECH
+            VidyaLabs
           </span>
         )}
       </>

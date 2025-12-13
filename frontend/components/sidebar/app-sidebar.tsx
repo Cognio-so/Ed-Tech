@@ -45,11 +45,11 @@ const defaultNavItems = [
     icon: Calendar,
   },
   
-  {
-    title: "Settings",
-    url: "/admin/settings",
-    icon: Settings,
-  },
+  // {
+  //   title: "Settings",
+  //   url: "/admin/settings",
+  //   icon: Settings,
+  // },
 ];
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
