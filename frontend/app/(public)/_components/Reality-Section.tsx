@@ -48,7 +48,7 @@ export default function RealitySection() {
           </h2>
 
           <p className="mt-6 text-sm sm:text-base text-gray-600">
-            While wealthier students get mentors, coaches, and tutors—most
+            While wealthier students get mentors, coaches, and tutors, most
             children rely solely on overcrowded classrooms and textbooks.
           </p>
         </div>

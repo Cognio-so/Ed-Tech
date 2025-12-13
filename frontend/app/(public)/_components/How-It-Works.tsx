@@ -22,7 +22,7 @@ const STEPS: Step[] = [
   {
     number: "3",
     title: "Teachers Get Insights",
-    desc: "Real-time dashboards show exactly who's struggling with what—so you can intervene before anyone falls behind.",
+    desc: "Real-time dashboards show exactly who's struggling with what so you can intervene before anyone falls behind.",
   },
 ];
 
@@ -45,7 +45,7 @@ export default function HowItWorks() {
 
           <p className="mt-6 text-base sm:text-lg text-gray-600">
             Unlike traditional LMS platforms that digitize the old way of
-            teaching, VidyaLabs reimagines education from the ground up—putting
+            teaching, VidyaLabs reimagines education from the ground up putting
             AI at the center of every interaction.
           </p>
         </div>

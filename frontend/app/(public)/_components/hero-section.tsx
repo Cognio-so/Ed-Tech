@@ -39,7 +39,7 @@ export default function Hero() {
 
             <p className="mt-4 sm:mt-6 text-base sm:text-lg text-gray-600 max-w-xl mx-auto lg:mx-0">
               VidyaLabs is an AI-powered teaching platform that gives every student
-              a patient, multilingual tutor—and gives every teacher 10+ hours back
+              a patient, multilingual tutor and gives every teacher 10+ hours back
               each week. Built for Indian classrooms. Designed for the children who
               need it most.
             </p>

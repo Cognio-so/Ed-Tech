@@ -111,7 +111,7 @@ export default function SwarikaSection() {
           <p className="mt-6 text-lg text-gray-700 max-w-xl">
             Every child deserves someone who&apos;s always there, always
             patient, and speaks in a way they understand. Swarika explains
-            complex concepts through natural conversation—in their native
+            complex concepts through natural conversation in their native
             language.
           </p>
 

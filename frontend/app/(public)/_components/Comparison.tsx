@@ -64,7 +64,7 @@ export default function ComparisonTable() {
 
           <p className="mt-6 text-sm sm:text-base text-gray-600 max-w-2xl mx-auto leading-relaxed">
             Unlike legacy platforms that bolt on AI as an afterthought,
-            VidyaLabs is AI-native from the ground up.
+            VidyaLabs is AI native from the ground up.
           </p>
         </div>
 

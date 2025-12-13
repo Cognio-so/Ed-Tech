@@ -39,13 +39,13 @@ export default function MissionSection() {
             For millions of children, that access simply does not exist. In
             India, 1 in every 3 students comes from an underprivileged family.
             Research shows personalized tutoring can boost performance by up to
-            40%—yet for most families, this remains a distant dream.
+            40% yet for most families, this remains a distant dream.
           </p>
 
           <p className="mt-5 text-sm sm:text-base md:text-lg text-white/90 leading-relaxed">
             VidyaLabs exists to break this cycle. We're building AI-powered,
             multilingual education that gives every child a tutor, a guide, and
-            a chance—regardless of their family's income or where they live.
+            a chance regardless of their family's income or where they live.
           </p>
 
           <div className="mt-8">

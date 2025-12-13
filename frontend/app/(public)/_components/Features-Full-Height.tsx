@@ -24,54 +24,27 @@ const TAB_CONTENT: TabContent[] = [
     tag: "For Educators",
     features: [
       {
-        title: "AI-Powered Content Creation",
+        title: "Teach More. Prepare Less.",
         description:
-          "Create high-quality academic material in minutes, not hours.",
+          "AI-powered tools that cut prep time dramatically without compromising quality.",
         points: [
-          "Auto-generate worksheets, quizzes, assessments, and exams",
-          "Lesson plans aligned to NCERT, CBSE, ICSE, IB, or any custom curriculum",
-          "One-click PowerPoints and visual learning aids",
-          "Comics and story-based explanations for complex or abstract topics",
-          "Content grounded in your actual textbooks and syllabus",
-          "Ready-to-share parent reports and academic summaries",
+          "Content Creation, Done in Minutes",
+          "Generate worksheets, quizzes, lesson plans, presentations, and even comics fully aligned with your curriculum.",
+          "Curriculum-Aligned by Default",
+          "NCERT, CBSE, ICSE, IB, or custom syllabi your content always stays on track.",
         ],
-        outcome: "Outcome: Less preparation time, more teaching impact.",
+        outcome: "",
       },
       {
-        title: "Real-Time Classroom & Student Analytics",
-        description: "See exactly what's happening in your classroom—instantly.",
+        title: "See Every Student Clearly",
+        description: "Real-time analytics reveal who's struggling, where, and why before it's too late.",
         points: [
-          "Individual student progress dashboards",
-          "Concept-level weakness detection (not just scores)",
-          "Automated alerts for at-risk or falling-behind students",
-          "Class-wide performance heatmaps",
-          "Data-driven insights to plan targeted interventions",
+          "Data, Not Guesswork",
+          "Concept-level insights, class heatmaps, and early alerts help you intervene with confidence.",
+          "Reports Parents Actually Understand",
+          "Auto-generated progress reports that are clear, detailed, and shareable.",
         ],
-        outcome: "Outcome: No guesswork. Clear, actionable teaching decisions.",
-      },
-      {
-        title: "Smart Assessment & Evaluation",
-        description: "Assess learning with precision and fairness.",
-        points: [
-          "AI-assisted grading and evaluation",
-          "Performance tracking across time, topics, and difficulty levels",
-          "Objective insights into learning gaps—not just rote errors",
-          "Exportable reports for schools and parents",
-        ],
-        outcome:
-          "Outcome: Faster evaluation, deeper understanding of student needs.",
-      },
-      {
-        title: "Teacher-First Design",
-        description: "Built to support teachers, not overwhelm them.",
-        points: [
-          "Lightweight, intuitive interface",
-          "Minimal setup and training required",
-          "Works with existing teaching workflows",
-          "Designed for real classrooms—not tech demos",
-        ],
-        outcome:
-          "Outcome: Technology that adapts to teachers, not the other way around.",
+        outcome: "",
       },
     ],
   },
@@ -81,49 +54,26 @@ const TAB_CONTENT: TabContent[] = [
     tag: "For Learners",
     features: [
       {
-        title: "Cognitive Learning System",
-        description: "Learning built on how the brain actually learns.",
+        title: "Learning That Thinks With You",
+        description: "Built on cognitive science students learn by reasoning, not memorizing.",
         points: [
-          "Socratic dialogue-based learning (guided questioning, not spoon-feeding)",
-          "Spaced repetition for long-term retention",
-          "Adaptive difficulty based on student responses",
-          "Concept reinforcement instead of rote memorization",
+          "Personalized, Always",
+          "Every learner gets a unique path based on strengths, weaknesses, and pace.",
+          "Understand Concepts, Not Just Answers",
+          "Socratic questioning helps students think through problems step by step.",
         ],
-        outcome: "Outcome: Strong foundations, not surface-level learning.",
+        outcome: "",
       },
       {
-        title: "Personalized Learning Paths",
-        description:
-          "Every student learns differently—so the platform adapts.",
+        title: "Remember What You Learn",
+        description: "Spaced repetition ensures concepts stick long after exams are over.",
         points: [
-          "AI identifies individual strengths and weaknesses",
-          "Tailored explanations based on understanding level",
-          "Dynamic adjustment of pace and difficulty",
-          "No two students get the exact same learning journey",
+          "Learn Your Way",
+          "Text, visuals, audio, and interactive feedback—learning that adapts to every style.",
+          "Confidence Through Clarity",
+          "Students always know where they stand, what they've mastered, and what's next.",
         ],
-        outcome: "Outcome: Personalized tutoring at scale.",
-      },
-      {
-        title: "Multi-Modal Learning Experience",
-        description: "Learn in the format that works best.",
-        points: [
-          "Text-based explanations",
-          "Visual aids and diagrams",
-          "Audio explanations for better comprehension",
-          "Interactive questions and feedback loops",
-        ],
-        outcome: "Outcome: Better understanding, higher engagement.",
-      },
-      {
-        title: "Continuous Feedback & Progress Visibility",
-        description: "Students always know where they stand.",
-        points: [
-          "Real-time feedback on answers",
-          "Clear indicators of improvement and mastery",
-          "Encouragement through progress milestones",
-          "Reduced exam anxiety through continuous assessment",
-        ],
-        outcome: "Outcome: Confident learners who understand their progress.",
+        outcome: "",
       },
     ],
   },
@@ -172,8 +122,7 @@ export default function FeaturesSection() {
           </h2>
 
           <p className="mt-6 max-w-2xl mx-auto text-sm sm:text-base text-gray-300">
-            A lightweight, powerful platform that works the way you work—not the
-            other way around.
+            Our platform is designed around real classrooms and real learning reducing teacher workload while dramatically improving student outcomes.
           </p>
         </div>
 
@@ -227,21 +176,25 @@ export default function FeaturesSection() {
                   {feature.description}
                 </p>
 
-                <ul className="space-y-3 mb-4">
-                  {feature.points.map((point, pointIdx) => (
-                    <li
-                      key={pointIdx}
-                      className="flex items-start gap-3 text-sm sm:text-base text-gray-700"
-                    >
-                      <Check className="w-5 h-5 text-[#07312CF2] mt-0.5 flex-shrink-0" />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <p className="text-sm sm:text-base font-medium text-[#07312CF2] mt-4">
-                  {feature.outcome}
-                </p>
+                <div className="space-y-4">
+                  {feature.points.map((point, pointIdx) => {
+                    // Every even index (0, 2, 4...) is a feature name (bold)
+                    // Every odd index (1, 3, 5...) is a description
+                    const isFeatureName = pointIdx % 2 === 0;
+                    return isFeatureName ? (
+                      <div key={pointIdx} className="space-y-1">
+                        <h5 className="text-base sm:text-lg font-semibold text-[#07312CF2]">
+                          {point}
+                        </h5>
+                        {feature.points[pointIdx + 1] && (
+                          <p className="text-sm sm:text-base text-gray-600">
+                            {feature.points[pointIdx + 1]}
+                          </p>
+                        )}
+                      </div>
+                    ) : null;
+                  })}
+                </div>
               </div>
             ))}
           </div>
