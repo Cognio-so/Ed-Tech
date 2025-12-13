@@ -48,7 +48,7 @@ export default function Navbar() {
             AI-Tutor
           </Link>
           <Link
-            href="#mission"
+            href="/our-mission"
             className="text-gray-700 hover:text-[#ff5b29] transition-colors whitespace-nowrap"
           >
             Our Mission

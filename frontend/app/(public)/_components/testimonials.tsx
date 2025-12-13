@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 
 type Testimonial = {
   quote: string;
@@ -8,6 +9,7 @@ type Testimonial = {
   name: string;
   title: string;
   initials: string;
+  image: string;
 };
 
 const TESTIMONIALS: Testimonial[] = [
@@ -18,6 +20,7 @@ const TESTIMONIALS: Testimonial[] = [
     name: "Priyanka Upadhyay",
     title: "Science Teacher, Govt. School, Delhi",
     initials: "PU",
+    image: "/priyanka.jpeg",
   },
   {
     quote:
@@ -26,6 +29,7 @@ const TESTIMONIALS: Testimonial[] = [
     name: "Ruchika Sharma",
     title: "Principal, JJSSS Partner School",
     initials: "RS",
+    image: "/ruchika.jpeg",
   },
   {
     quote:
@@ -34,6 +38,7 @@ const TESTIMONIALS: Testimonial[] = [
     name: "A.K. Jain",
     title: "Academic Director, Private School Group",
     initials: "PM",
+    image: "/ak jain.jpeg",
   },
 ];
 
@@ -73,14 +78,14 @@ export default function Testimonials() {
               </div>
 
               <footer className="mt-6 flex items-center gap-4">
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center font-semibold text-white"
-                  style={{
-                    background: "linear-gradient(180deg,#FF7A2E,#FF502A)",
-                  }}
-                  aria-hidden
-                >
-                  {t.initials}
+                <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                  <Image
+                    src={t.image}
+                    alt={t.name}
+                    width={40}
+                    height={40}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
 
                 <div>
