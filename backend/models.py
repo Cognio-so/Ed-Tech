@@ -166,6 +166,7 @@ class TeacherVoiceSchema(BaseModel):
     grade: str = Field("General", description="Grade level")
     instructions: Optional[str] = Field(None, description="Specific instructions for this session")
     voice: Literal['alloy', 'echo', 'shimmer'] = Field('shimmer', description="Voice preference")
+    teacher_data: Optional[Dict[str, Any]] = Field(None, description="Full teacher data with name, grades, subjects, students array, etc.")
 
 class StudentAITutorRequest(BaseModel):
     message: str = Field(..., description="Student's question or input")

@@ -376,7 +376,8 @@ async def connect_voice_agent(
         context_data = {
             "teacher_name": payload.teacher_name,
             "grade": payload.grade,
-            "instructions": payload.instructions
+            "instructions": payload.instructions,
+            "teacher_data": payload.teacher_data  # Full teacher data with students, subjects, etc.
         }
         
         answer_sdp = await bridge.connect(

@@ -268,8 +268,8 @@ export function useStudentVoiceStream() {
     dc.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        // Assistant Text
-        if (data.type === "response.audio_transcript.done" || data.type === "response.audio_transcript.chunk") {
+        // Assistant Text - Only handle chunks for streaming, ignore done to prevent duplicates
+        if (data.type === "response.audio_transcript.chunk") {
            const text = data.transcript?.trim();
            if(text) configRef.current?.onTranscription?.(text, "assistant");
         } 

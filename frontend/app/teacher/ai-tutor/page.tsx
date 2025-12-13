@@ -370,6 +370,22 @@ export default function AITutorPage() {
           teacherId={teacherId}
           sessionId={sessionId}
           teacherName={teacherStats?.name}
+          teacherData={teacherStats ? {
+            name: teacherStats.name,
+            grades: selectedGrades.length > 0 ? selectedGrades : teacherStats.grades,
+            subjects: teacherStats.subjects,
+            total_content: teacherStats.totalContent,
+            total_assessments: teacherStats.totalAssessments,
+            total_students: teacherStats.totalStudents,
+            students: teacherStats.students.map((student) => ({
+              name: student.name,
+              grade: student.grade,
+              performance: student.performance,
+              achievements: student.achievements,
+              feedback: student.feedback,
+              issues: student.issues,
+            })),
+          } : undefined}
           onTranscription={handleTranscription}
         />
       </div>
