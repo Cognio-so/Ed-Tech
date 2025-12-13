@@ -26,6 +26,13 @@ logging.basicConfig(level=logging.INFO)
 GEMINI_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
+# Map frontend voice names to Gemini voice names
+VOICE_MAPPING = {
+    "alloy": "Puck",      # Default neutral voice
+    "echo": "Charon",     # Male voice
+    "shimmer": "Aoede"    # Female voice
+}
+
 class GeminiAudioTrack(MediaStreamTrack):
     """
     A WebRTC Audio Track that buffers Gemini audio to ensure smooth playback.
@@ -94,10 +101,12 @@ class VoiceAgentBridge:
         self.processing_task = None
         self.context_data = {}
         self.client_dc = None
-        self.session_active = False 
+        self.session_active = False
+        self.current_transcript = "" 
 
     async def connect(self, offer_sdp: str, context_data: Dict[str, Any], voice: str = "Puck") -> Dict[str, str]:
         self.context_data = context_data
+        self.context_data["voice"] = voice
         
         # 1. Initialize WebRTC
         self.pc_client = RTCPeerConnection(RTCConfiguration(
@@ -153,37 +162,62 @@ class VoiceAgentBridge:
         name = self.context_data.get("teacher_name", "Teacher")
         grade = self.context_data.get("grade", "General")
         extra_inst = self.context_data.get("instructions", "")
+        frontend_voice = self.context_data.get("voice", "alloy")
+        
+        voice = VOICE_MAPPING.get(frontend_voice, "Puck")
 
-        # Use your prompt generator
         sys_prompt = get_teaching_assistant_prompt(
             name=name,
             grade=grade,
             extra_inst=extra_inst
         )
+        
+        logger.info(f"System Prompt Length: {len(sys_prompt) if sys_prompt else 0}")
 
         setup_msg = {
             "setup": {
-                # Correct Model for Native Audio Live API
                 "model": "models/gemini-2.5-flash-native-audio-preview-09-2025", 
-                "generation_config": {
-                    "response_modalities": ["AUDIO", "TEXT"],
-                    "speech_config": {
-                        "voice_config": {
-                            "prebuilt_voice_config": {
-                                "voice_name": "Puck" 
+                "generationConfig": {
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": {
+                        "voiceConfig": {
+                            "prebuiltVoiceConfig": {
+                                "voiceName": voice
                             }
                         }
                     }
                 },
-                # Request text transcription alongside audio
-                "system_instruction": {
+                "systemInstruction": {
                     "parts": [{"text": sys_prompt}]
-                }
+                },
+                "outputAudioTranscription": {}, # Model text (Assistant)
+                "inputAudioTranscription": {}   # User text (Auto-detected language)
             }
         }
         
-        logger.info(f"📤 Sending Setup...")
-        await self.gemini_ws.send(json.dumps(setup_msg))
+        logger.info(f"📤 Sending Setup with voice: {voice}...")
+        try:
+            await self.gemini_ws.send(json.dumps(setup_msg))
+        except Exception as e:
+            logger.error(f"Failed to send setup message: {e}")
+            raise
+
+    async def _send_initial_greeting(self):
+        """Triggers the model to say hello."""
+        logger.info("👋 Sending initial greeting trigger...")
+        msg = {
+            "clientContent": {
+                "turns": [{
+                    "role": "user",
+                    "parts": [{"text": "Say hello to me efficiently without any internal monologue."}]
+                }],
+                "turnComplete": True
+            }
+        }
+        try:
+            await self.gemini_ws.send(json.dumps(msg))
+        except Exception as e:
+            logger.error(f"Failed to send greeting trigger: {e}")
 
     async def _process_incoming_audio(self, track):
         """Reads WebRTC audio, resamples to 16k, sends to Gemini."""
@@ -201,9 +235,9 @@ class VoiceAgentBridge:
                 
                 if frame_bytes:
                     msg = {
-                        "realtime_input": {
-                            "media_chunks": [{
-                                "mime_type": "audio/pcm",
+                        "realtimeInput": {
+                            "mediaChunks": [{
+                                "mimeType": "audio/pcm",
                                 "data": base64.b64encode(frame_bytes).decode('utf-8')
                             }]
                         }
@@ -221,15 +255,20 @@ class VoiceAgentBridge:
                 except json.JSONDecodeError:
                     continue
                 
-                # 1. Handle Setup Complete
+                if "error" in response:
+                    logger.error(f"❌ Gemini API Error: {response['error']}")
+                    continue
+                
                 if "setupComplete" in response:
                     logger.info("✅ Gemini Setup Complete")
                     self.session_active = True
                     if self.client_dc:
-                        self.client_dc.send(json.dumps({"type": "status", "message": "Connected! Start Speaking."}))
+                        self.client_dc.send(json.dumps({"type": "status", "message": "Connected!"}))
+                    
+                    # Trigger initial greeting
+                    asyncio.create_task(self._send_initial_greeting())
                     continue
 
-                # 2. Handle Server Content
                 server_content = response.get("serverContent")
                 if server_content:
                     model_turn = server_content.get("modelTurn")
@@ -241,30 +280,70 @@ class VoiceAgentBridge:
                             if inline_data and inline_data.get("mimeType").startswith("audio"):
                                 pcm_data = base64.b64decode(inline_data.get("data"))
                                 self.gemini_track.add_audio_chunk(pcm_data)
-                            
-                            # --- TEXT (Transcription) ---
-                            # Gemini sometimes sends text in 'text' field of part
-                            text_data = part.get("text")
-                            if text_data and self.client_dc:
-                                logger.info(f"📝 Transcribed: {text_data[:30]}...")
-                                self.client_dc.send(json.dumps({
-                                    "type": "response.audio_transcript.chunk",
-                                    "transcript": text_data
-                                }))
 
-                    # Check for explicit outputTranscription field (often used in 2.0/2.5)
-                    output_transcript = server_content.get("outputTranscription") #
-                    if output_transcript and "text" in output_transcript:
-                         text_data = output_transcript["text"]
-                         if text_data and self.client_dc:
+                    # --- TEXT (Transcription) ---
+                    # Logic to capture text from outputTranscription OR modelTurn
+                    output_transcript = server_content.get("outputTranscription")
+                    transcript_text = None
+
+                    # Check outputTranscription (most common for Live API)
+                    if output_transcript:
+                        if isinstance(output_transcript, str):
+                            transcript_text = output_transcript
+                        elif isinstance(output_transcript, dict):
+                            transcript_text = output_transcript.get("text")
+                    
+                    # Fallback: Check modelTurn text parts
+                    if not transcript_text and model_turn:
+                         for part in model_turn.get("parts", []):
+                            if part.get("text"):
+                                transcript_text = part.get("text")
+                                break
+                    
+                    if transcript_text:
+                        # Filter out internal thoughts/headers if they leak
+                        forbidden_phrases = [
+                            "Probing Language Preference", 
+                            "Thinking Process", 
+                            "Greeting the user",
+                            "I've been working on",
+                            "My goal is to strike"
+                        ]
+                        
+                        if any(phrase in transcript_text for phrase in forbidden_phrases):
+                            logger.info(f"🚫 Filtered internal thought: {transcript_text}")
+                            continue
+
+                        # Append to current full transcript
+                        self.current_transcript += transcript_text
+                        
+                        # CHANGE: Send self.current_transcript (Accumulated) instead of transcript_text (Delta)
+                        if self.client_dc:
                             self.client_dc.send(json.dumps({
                                 "type": "response.audio_transcript.chunk",
-                                "transcript": text_data
+                                "transcript": self.current_transcript 
+                            }))
+
+                    # --- USER INPUT TRANSCRIPTION (NEW) ---
+                    # Gemini auto-detects language and sends what it heard the User say
+                    input_transcript = server_content.get("inputTranscription")
+                    if input_transcript:
+                        user_text = input_transcript.get("text")
+                        if user_text and self.client_dc:
+                            logger.info(f"👤 User (Gemini Detected): {user_text}")
+                            self.client_dc.send(json.dumps({
+                                "type": "input.audio_transcript.done", # Special event for user text
+                                "transcript": user_text
                             }))
 
                     # Turn Complete Event
                     if server_content.get("turnComplete"):
-                        logger.info("✅ Turn Complete")
+                        if self.current_transcript.strip() and self.client_dc:
+                            self.client_dc.send(json.dumps({
+                                "type": "response.audio_transcript.done",
+                                "transcript": self.current_transcript.strip()
+                            }))
+                            self.current_transcript = ""  # Reset for next turn
 
         except Exception as e:
             logger.error(f"Receive Error: {e}")

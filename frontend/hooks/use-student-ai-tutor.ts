@@ -534,15 +534,92 @@ export function useStudentAITutor(options?: UseStudentAITutorOptions) {
 
   const addVoiceMessage = useCallback(
     (content: string, role: "user" | "assistant") => {
-      const message: ChatMessage = {
-        id: `${role}-voice-${Date.now()}`,
-        role,
-        content,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, message]);
+      setMessages((prev) => {
+        // Check if there's a recent voice message of the same role to update
+        const lastMessage = prev[prev.length - 1];
+        const isRecentVoiceMessage = 
+          lastMessage && 
+          lastMessage.role === role && 
+          lastMessage.id?.startsWith(`${role}-voice-`) &&
+          Date.now() - lastMessage.timestamp.getTime() < 10000; // Within 10 seconds (increased from 5 for voice streaming)
+        
+        let updated: ChatMessage[];
+        if (isRecentVoiceMessage) {
+          // Update the last message instead of creating a new one
+          updated = prev.map((msg, idx) => 
+            idx === prev.length - 1 
+              ? { ...msg, content } 
+              : msg
+          );
+        } else {
+          // Create a new message
+          const message: ChatMessage = {
+            id: `${role}-voice-${Date.now()}`,
+            role,
+            content,
+            timestamp: new Date(),
+          };
+          updated = [...prev, message];
+        }
+        
+        // Save conversation when voice message is added
+        if (session?.user?.id && updated.length > 0) {
+          const messagesJson = JSON.stringify(
+            updated.map((msg) => ({
+              id: msg.id,
+              role: msg.role,
+              content: msg.content,
+              timestamp: msg.timestamp.toISOString(),
+              uploadedDocs: msg.uploadedDocs,
+              imageUrls: msg.imageUrls,
+              videoUrls: msg.videoUrls,
+              tokenUsage: msg.tokenUsage,
+              sources: msg.sources,
+            }))
+          );
+
+          if (
+            messagesJson !== lastSavedMessagesRef.current &&
+            !isSavingRef.current
+          ) {
+            lastSavedMessagesRef.current = messagesJson;
+            isSavingRef.current = true;
+
+            setTimeout(() => {
+              saveStudentConversation(
+                messagesJson,
+                undefined,
+                conversationIdRef.current || undefined,
+                sessionIdRef.current || undefined
+              )
+                .then((result) => {
+                  if (
+                    result?.success &&
+                    result?.conversationId &&
+                    !conversationIdRef.current
+                  ) {
+                    conversationIdRef.current = result.conversationId;
+                  } else if (result?.error) {
+                    console.warn(
+                      "Failed to save conversation:",
+                      result.error
+                    );
+                  }
+                })
+                .catch((error) => {
+                  console.error("Error saving conversation:", error);
+                })
+                .finally(() => {
+                  isSavingRef.current = false;
+                });
+            }, 100);
+          }
+        }
+        
+        return updated;
+      });
     },
-    []
+    [session?.user?.id]
   );
 
   return {

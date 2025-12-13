@@ -3,6 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+
 export interface StudentVoiceStreamConfig {
   sessionId: string;
   studentId?: string;
@@ -32,6 +34,9 @@ export function useStudentVoiceStream() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const configRef = useRef<StudentVoiceStreamConfig | null>(null);
+  
+  // Ref for Speech Recognition (disabled - we rely on backend)
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     if (!remoteAudioRef.current) {
@@ -54,6 +59,9 @@ export function useStudentVoiceStream() {
       setStatus("connecting");
       setError(null);
       configRef.current = config;
+
+      // Note: We don't use browser STT for students - rely on Gemini's native transcription
+      // This ensures accurate language detection (Hindi, English, etc.)
 
       console.log("🎙️ Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -120,24 +128,46 @@ export function useStudentVoiceStream() {
           console.log("📩 Received event:", data.type);
 
           if (
-            data.type ===
-            "conversation.item.input_audio_transcription.completed"
+            data.type === "response.audio_transcript.chunk" ||
+            data.type === "response.audio_transcript.done"
           ) {
             const transcript = data.transcript?.trim();
             if (transcript) {
-              console.log("🗣️ Student:", transcript);
-              if (configRef.current?.onTranscription) {
-                configRef.current.onTranscription(transcript, "user");
-              }
-            }
-          } else if (data.type === "response.audio_transcript.done") {
-            const transcript = data.transcript?.trim();
-            if (transcript) {
-              console.log("🤖 Study Buddy:", transcript);
+              console.log(
+                `🤖 Study Buddy (${data.type === "response.audio_transcript.chunk" ? "chunk" : "done"}):`,
+                transcript
+              );
+              // Call transcription callback
               if (configRef.current?.onTranscription) {
                 configRef.current.onTranscription(transcript, "assistant");
               }
             }
+          } else if (data.type === "input.audio_transcript.done") {
+             const transcript = data.transcript?.trim();
+             if (transcript) {
+                console.log(`👤 Student (Gemini Detected):`, transcript);
+                // Call transcription callback (Correction layer from Gemini)
+                if (configRef.current?.onTranscription) {
+                  configRef.current.onTranscription(transcript, "user");
+                }
+             }
+          } else if (data.type === "rag_status") {
+            // Handle RAG status messages
+            console.log(`🔍 RAG Status: ${data.status} - ${data.message}`);
+            if (data.query) {
+              console.log(`   Query: ${data.query}`);
+            }
+            
+            // Send RAG status to frontend via transcription callback as a temporary message
+            // This will show in the chat UI
+            if (configRef.current?.onTranscription) {
+              const statusMessage = data.message || "Searching knowledge base...";
+              // Send as assistant message so it appears in chat
+              configRef.current.onTranscription(statusMessage, "assistant");
+            }
+          } else if (data.type === "status") {
+            // General status messages
+            console.log(`ℹ️ Status: ${data.message}`);
           } else if (data.type === "error") {
             console.error("❌ Received error event:", data);
           }
@@ -183,7 +213,7 @@ export function useStudentVoiceStream() {
         voice: config.voice || "shimmer",
       };
 
-      const endpoint = `/api/student/${config.studentId}/session/${config.sessionId}/voice_agent/connect`;
+      const endpoint = `${BACKEND_URL}/api/student/${config.studentId}/session/${config.sessionId}/voice_agent/connect`;
 
       console.log("🔊 Sending student voice connection request to:", endpoint);
       console.log("📦 Payload:", payload);
@@ -263,7 +293,7 @@ export function useStudentVoiceStream() {
       }
 
       if (configRef.current) {
-        const endpoint = `/api/student/${configRef.current.studentId}/session/${configRef.current.sessionId}/voice_agent/disconnect`;
+        const endpoint = `${BACKEND_URL}/api/student/${configRef.current.studentId}/session/${configRef.current.sessionId}/voice_agent/disconnect`;
         await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
