@@ -144,15 +144,22 @@ export default function FeaturesSection() {
   const currentContent = TAB_CONTENT.find((tab) => tab.id === activeTab)!;
 
   return (
-    <section className="w-full relative bg-black text-white py-20 md:py-28 overflow-hidden">
-      {/* Arctic Lights Background with Top Glow */}
+    <section className="w-full bg-[#07312CF2] text-white py-20 md:py-28 relative overflow-hidden">
+      {/* Bottom Fade Grid Background */}
       <div
         className="absolute inset-0 z-0"
         style={{
-          background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(34, 197, 94, 0.25), transparent 70%), #000000",
+          backgroundImage: `
+            linear-gradient(to right, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.1) 1px, transparent 1px)
+          `,
+          backgroundSize: "20px 30px",
+          WebkitMaskImage:
+            "radial-gradient(ellipse 70% 60% at 50% 100%, #000 60%, transparent 100%)",
+          maskImage:
+            "radial-gradient(ellipse 70% 60% at 50% 100%, #000 60%, transparent 100%)",
         }}
       />
-      
       <div className="max-w-7xl mx-auto px-6 relative z-10">
         {/* Section Header */}
         <div className="text-center mb-16 md:mb-20">
