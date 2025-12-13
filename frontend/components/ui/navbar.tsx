@@ -113,7 +113,7 @@ export default function Navbar() {
                 </Link>
 
                 <Link
-                  href="#mission"
+                  href="/our-mission"
                   onClick={() => setOpen(false)}
                   className="text-lg font-medium text-gray-700 hover:text-[#ff5b29] transition-colors py-2 px-4 rounded-md hover:bg-[#FFE7D6]"
                 >

@@ -32,7 +32,7 @@ export default function OurCommitmentSection() {
 
             <p className="text-sm text-[#64748b] leading-relaxed">
               We partner with government schools to bring VidyaLabs to public
-              education — at no cost.
+              education at no cost.
             </p>
           </div>
 

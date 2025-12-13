@@ -19,7 +19,7 @@ export default function PartnerCtaSection() {
 
         <p className="max-w-2xl mx-auto text-base sm:text-lg text-[#64748b] mb-12 leading-relaxed">
           Whether you're an NGO, a government institution, or someone who
-          believes in our mission — we'd love to hear from you.
+          believes in our mission we'd love to hear from you.
         </p>
 
         <button 
