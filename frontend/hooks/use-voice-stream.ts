@@ -3,6 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+
 export interface VoiceStreamConfig {
   sessionId: string;
   teacherId?: string;
@@ -12,6 +14,7 @@ export interface VoiceStreamConfig {
   instructions?: string;
   voice?: "alloy" | "echo" | "shimmer";
   language?: string;
+  teacherData?: Record<string, any>; // Full teacher data with students, subjects, etc.
   onTranscription?: (text: string, role: "user" | "assistant") => void;
 }
 
@@ -32,214 +35,188 @@ export function useVoiceStream() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const configRef = useRef<VoiceStreamConfig | null>(null);
-  
-  // NEW: Ref for Speech Recognition
-  const recognitionRef = useRef<any>(null);
+  const isConnectingRef = useRef<boolean>(false);
+  const recognitionRef = useRef<any>(null); // For local speech to text
 
-  // Initialize remote audio element
+  const cleanup = useCallback(() => {
+    isConnectingRef.current = false;
+    
+    // Stop Speech Recognition
+    if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+        recognitionRef.current = null;
+    }
+
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.pause();
+      remoteAudioRef.current.srcObject = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+    if (dataChannelRef.current) {
+      try { dataChannelRef.current.close(); } catch {}
+      dataChannelRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      try { peerConnectionRef.current.close(); } catch {}
+      peerConnectionRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!remoteAudioRef.current) {
       const audio = new Audio();
       audio.autoplay = true;
+      // CRITICAL: Prevent audio from dropping frames
+      audio.preload = "auto";
+      // Ensure audio doesn't pause/buffer unnecessarily
+      audio.addEventListener("ended", () => {
+        console.log("🔚 Audio ended - this should not happen during active stream");
+      });
+      audio.addEventListener("pause", () => {
+        console.warn("⏸️ Audio paused unexpectedly");
+        // Try to resume if paused unexpectedly
+        audio.play().catch(console.error);
+      });
       remoteAudioRef.current = audio;
     }
-
-    return () => {
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.pause();
-        remoteAudioRef.current.srcObject = null;
-      }
-    };
-  }, []);
+    return () => cleanup();
+  }, [cleanup]);
 
   const connect = useCallback(async (config: VoiceStreamConfig) => {
+    if (isConnectingRef.current) return;
+
     try {
-      console.log("🎤 Starting voice connection...", config);
+      cleanup();
+      isConnectingRef.current = true;
+      console.log("🎤 Starting optimized voice connection...", config);
       setStatus("connecting");
       setError(null);
       configRef.current = config;
 
-      // 1. Setup Speech Recognition (Browser Native)
-      // This fills the gap because Gemini Live doesn't return user text
+      // 1. Setup Local Speech Recognition (For instant User UI updates)
       if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
-        
-        // CHANGE THIS: Use the user's system language automatically
-        // This supports 'en-US', 'hi-IN', 'es-ES', etc. based on their browser settings
         recognition.lang = navigator.language || 'en-US'; 
-
-        // recognition.onresult = (event: any) => {
-        //   let finalTranscript = '';
-        //   for (let i = event.resultIndex; i < event.results.length; ++i) {
-        //     if (event.results[i].isFinal) {
-        //       finalTranscript += event.results[i][0].transcript;
-        //     }
-        //   }
-          
-        //   if (finalTranscript && config.onTranscription) {
-        //     console.log("🗣️ User (Local):", finalTranscript);
-        //     // We disable local transcription because it doesn't support auto-language detection well.
-        //     // We rely on the Backend (Gemini) for the "True" user transcript in the correct language.
-        //     // config.onTranscription(finalTranscript, "user"); 
-        //   }
-        // };
-
-        recognition.onerror = (event: any) => {
-          console.warn("Speech recognition error:", event.error);
-        };
-
+        
+        // We use this only for visual feedback if needed, 
+        // or rely on the backend "input.audio_transcript.done" for the final log.
         recognitionRef.current = recognition;
-      } else {
-        console.warn("Browser does not support Speech Recognition");
       }
 
-      // 2. Get user microphone
-      console.log("🎙️ Requesting microphone access...");
+      // 2. Get User Media
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
+          sampleRate: 16000, 
         },
       });
-      console.log("✅ Microphone access granted");
-
       localStreamRef.current = stream;
 
-      // 3. Create peer connection
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-      });
-
+      // 3. Create Peer Connection (Supports TURN via env vars if provided)
+      const iceServers: RTCIceServer[] = [
+        { urls: "stun:stun.l.google.com:19302" },
+      ];
+      
+      const turnUrl = process.env.NEXT_PUBLIC_TURN_SERVER_URL;
+      const turnUsername = process.env.NEXT_PUBLIC_TURN_SERVER_USERNAME;
+      const turnPassword = process.env.NEXT_PUBLIC_TURN_SERVER_PASSWORD;
+      
+      if (turnUrl && turnUsername && turnPassword) {
+        iceServers.push({
+          urls: turnUrl,
+          username: turnUsername,
+          credential: turnPassword,
+        });
+      }
+      
+      const pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 10 });
       peerConnectionRef.current = pc;
+      
+      pc.onconnectionstatechange = () => {
+        console.log(`🕸️ Connection State: ${pc.connectionState}`);
+        if (pc.connectionState === "failed") {
+          setStatus("error");
+          setError("Connection failed. Check network.");
+        }
+      };
+      
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      // Add local audio track
-      console.log("➕ Adding local audio tracks to peer connection...");
-      stream.getTracks().forEach((track) => {
-        console.log("🎵 Adding track:", track.kind, track.label);
-        pc.addTrack(track, stream);
-      });
-
-      // Handle remote audio tracks
       pc.ontrack = (event) => {
-        console.log(
-          "📥 Received remote track:",
-          event.track.kind,
-          event.streams
-        );
         if (event.track.kind === "audio" && remoteAudioRef.current) {
+          console.log("📥 Received remote audio track, setting up playback...");
           const remoteStream = new MediaStream([event.track]);
           remoteAudioRef.current.srcObject = remoteStream;
-          console.log("🔊 Remote audio connected to audio element");
+          
+          // CRITICAL: Ensure audio plays and doesn't drop frames
+          remoteAudioRef.current.play().catch((e) => {
+            console.error("❌ Audio play error:", e);
+          });
+          
+          // Monitor audio element to ensure it's playing
+          remoteAudioRef.current.onloadedmetadata = () => {
+            console.log("✅ Audio metadata loaded");
+          };
+          
+          remoteAudioRef.current.oncanplay = () => {
+            console.log("✅ Audio can play");
+          };
+          
+          // Log when audio starts/stops
+          event.track.onended = () => {
+            console.log("🔚 Remote audio track ended");
+          };
+          
+          event.track.onmute = () => {
+            console.warn("🔇 Remote audio track muted");
+          };
+          
+          event.track.onunmute = () => {
+            console.log("🔊 Remote audio track unmuted");
+          };
         }
       };
 
-      // Handle ICE connection state changes
-      pc.oniceconnectionstatechange = () => {
-        console.log("ICE Connection State:", pc.iceConnectionState);
-        if (
-          pc.iceConnectionState === "disconnected" ||
-          pc.iceConnectionState === "failed"
-        ) {
-          setStatus("disconnected");
-          toast.error("Voice connection lost");
-        }
-      };
-
-      // Create data channel for events
-      console.log("📡 Creating data channel...");
       const dc = pc.createDataChannel("oai-events");
       dataChannelRef.current = dc;
+      setupDataChannelListeners(dc, configRef);
 
-      dc.onopen = () => {
-        console.log("✅ Data channel opened - Connection ready!");
-        setStatus("connected");
-        setIsRecording(true);
-        
-        // START Speech Recognition when connected
-        if (recognitionRef.current) {
-            try {
-                recognitionRef.current.start();
-                console.log("🗣️ Local Speech Recognition Started");
-            } catch (e) {
-                console.error("Failed to start speech recognition:", e);
-            }
-        }
-        
-        toast.success("Voice agent connected");
-      };
-
-      dc.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log("📩 Received event:", data.type);
-          
-          // Only handle ASSISTANT transcription from backend
-          // We ignore user transcription from backend because we do it locally now
-          if (
-            data.type === "response.audio_transcript.chunk" ||
-            data.type === "response.audio_transcript.done"
-          ) {
-            const transcript = data.transcript?.trim();
-            if (transcript) {
-              console.log(
-                `🤖 AI Agent (${data.type === "response.audio_transcript.chunk" ? "chunk" : "done"}):`,
-                transcript
-              );
-              // Call transcription callback
-              if (configRef.current?.onTranscription) {
-                configRef.current.onTranscription(transcript, "assistant");
-              }
-            }
-          } else if (data.type === "input.audio_transcript.done") {
-             const transcript = data.transcript?.trim();
-             if (transcript) {
-                console.log(`👤 User (Gemini Detected):`, transcript);
-                // Call transcription callback (Correction layer)
-                if (configRef.current?.onTranscription) {
-                  configRef.current.onTranscription(transcript, "user");
-                }
-             }
-          } else if (data.type === "error") {
-            console.error("❌ Received error event:", data);
-          }
-        } catch (err) {
-          console.error("Error parsing data channel message:", err);
-        }
-      };
-
-      dc.onerror = (err) => {
-        console.error("❌ Data channel error:", err);
-        setError("Communication error occurred");
-      };
-
-      dc.onclose = () => {
-        console.log("📪 Data channel closed");
-      };
-
-      // Create offer
+      // 4. Create Offer & Optimize ICE Gathering
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
-      // Wait for ICE gathering to complete
+      
+      // OPTIMIZATION: Wait max 1000ms for ICE candidates
       await new Promise<void>((resolve) => {
         if (pc.iceGatheringState === "complete") {
           resolve();
-        } else {
-          const checkState = () => {
-            if (pc.iceGatheringState === "complete") {
-              pc.removeEventListener("icegatheringstatechange", checkState);
-              resolve();
-            }
-          };
-          pc.addEventListener("icegatheringstatechange", checkState);
+          return;
         }
+        
+        const checkState = () => {
+          if (pc.iceGatheringState === "complete") {
+            pc.removeEventListener("icegatheringstatechange", checkState);
+            resolve();
+          }
+        };
+        
+        pc.addEventListener("icegatheringstatechange", checkState);
+        
+        // Timeout after 1s to speed up connection
+        setTimeout(() => {
+            pc.removeEventListener("icegatheringstatechange", checkState);
+            console.log("⚡ ICE Gathering timed out, sending candidates found so far...");
+            resolve();
+        }, 1000);
       });
 
-      // Send offer to backend
       const payload = {
         sdp: pc.localDescription!.sdp,
         type: pc.localDescription!.type,
@@ -247,12 +224,10 @@ export function useVoiceStream() {
         grade: config.grade || "General",
         instructions: config.instructions || "",
         voice: config.voice || "shimmer",
+        teacher_data: config.teacherData || null, // Full teacher data
       };
 
-      const endpoint = `/api/teacher/${config.teacherId}/session/${config.sessionId}/voice_agent/connect`;
-
-      console.log("🔊 Sending voice connection request to:", endpoint);
-      console.log("📦 Payload:", payload);
+      const endpoint = `${BACKEND_URL}/api/teacher/${config.teacherId}/session/${config.sessionId}/voice_agent/connect`;
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -260,103 +235,61 @@ export function useVoiceStream() {
         body: JSON.stringify(payload),
       });
 
-      console.log("📡 Response status:", response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("❌ Error response:", errorText);
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { detail: errorText };
-        }
-        throw new Error(
-          errorData.detail || `Failed to connect: ${response.status}`
-        );
-      }
-
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
       const answer = await response.json();
-      console.log("✅ Received answer from backend:", answer);
 
-      // Set remote description
-      await pc.setRemoteDescription(
-        new RTCSessionDescription({
-          sdp: answer.sdp,
-          type: answer.type as RTCSdpType,
-        })
-      );
+      await pc.setRemoteDescription(new RTCSessionDescription({
+            sdp: answer.sdp,
+            type: answer.type as RTCSdpType,
+      }));
 
-      console.log("🎉 Voice connection established successfully");
+      // Start local recognition once connected
+      if (recognitionRef.current) {
+          try { recognitionRef.current.start(); } catch {}
+      }
+
+      isConnectingRef.current = false;
+      setStatus("connected");
+      setIsRecording(true);
+      toast.success("Voice agent connected!");
+
     } catch (err: any) {
-      console.error("💥 Voice connection error:", err);
+      isConnectingRef.current = false;
+      console.error("❌ Connection failed:", err);
       setStatus("error");
-      setError(err.message || "Failed to connect voice agent");
-      toast.error(err.message || "Failed to connect voice agent");
-
-      // Cleanup on error
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
-      }
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-        peerConnectionRef.current = null;
-      }
+      setError(err.message);
+      toast.error("Connection failed");
+      cleanup();
     }
-  }, []);
+  }, [cleanup]);
+
+  const setupDataChannelListeners = (dc: RTCDataChannel, configRef: any) => {
+    dc.onopen = () => console.log("✅ Data channel open");
+    dc.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        // Assistant Text - Only handle chunks for streaming, ignore done to prevent duplicates
+        if (data.type === "response.audio_transcript.chunk") {
+           const text = data.transcript?.trim();
+           if(text) configRef.current?.onTranscription?.(text, "assistant");
+        } 
+        // User Text (Gemini Detected)
+        else if (data.type === "input.audio_transcript.done") {
+           const text = data.transcript?.trim();
+           if(text) configRef.current?.onTranscription?.(text, "user");
+        }
+      } catch (e) {
+        console.error("DC Message Parse Error", e);
+      }
+    };
+  };
 
   const disconnect = useCallback(async () => {
-    try {
-      setIsRecording(false);
-      
-      // Stop Speech Recognition
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-        console.log("🛑 Local Speech Recognition Stopped");
-      }
-
-      // Close data channel
-      if (dataChannelRef.current) {
-        dataChannelRef.current.close();
-        dataChannelRef.current = null;
-      }
-
-      // Stop local stream
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
-      }
-
-      // Close peer connection
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-        peerConnectionRef.current = null;
-      }
-
-      // Stop remote audio
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.pause();
-        remoteAudioRef.current.srcObject = null;
-      }
-
-      // Notify backend
-      if (configRef.current) {
-        const endpoint = `/api/teacher/${configRef.current.teacherId}/session/${configRef.current.sessionId}/voice_agent/disconnect`;
-        await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        }).catch(() => {
-          // Ignore disconnect errors
-        });
-      }
-
-      setStatus("disconnected");
-      toast.info("Voice agent disconnected");
-    } catch (err) {
-      console.error("Disconnect error:", err);
-    }
-  }, []);
+    isConnectingRef.current = false;
+    cleanup();
+    setStatus("disconnected");
+    setIsRecording(false);
+  }, [cleanup]);
 
   const toggleMute = useCallback(() => {
     if (localStreamRef.current) {
@@ -365,13 +298,12 @@ export function useVoiceStream() {
         audioTrack.enabled = !audioTrack.enabled;
         setIsRecording(audioTrack.enabled);
         
-        // Also toggle speech recognition
+        // Toggle Speech Recognition too
         if (audioTrack.enabled && recognitionRef.current) {
              try { recognitionRef.current.start(); } catch {}
         } else if (!audioTrack.enabled && recognitionRef.current) {
              try { recognitionRef.current.stop(); } catch {}
         }
-        
         return audioTrack.enabled;
       }
     }

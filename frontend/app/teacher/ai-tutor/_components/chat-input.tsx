@@ -47,6 +47,7 @@ export interface ChatInputProps {
   teacherId?: string;
   sessionId?: string;
   teacherName?: string;
+  teacherData?: Record<string, any>; // Full teacher data with students, subjects, etc.
   onTranscription?: (text: string, role: "user" | "assistant") => void;
 }
 
@@ -155,6 +156,7 @@ export function ChatInput({
   teacherId,
   sessionId,
   teacherName,
+  teacherData,
   onTranscription,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
@@ -318,6 +320,7 @@ export function ChatInput({
         subject: "",
         instructions: "",
         voice: "shimmer",
+        teacherData: teacherData, // Pass full teacher data
         onTranscription,
       });
     }
@@ -326,6 +329,7 @@ export function ChatInput({
     teacherId,
     sessionId,
     teacherName,
+    teacherData,
     connect,
     disconnect,
     onTranscription,
