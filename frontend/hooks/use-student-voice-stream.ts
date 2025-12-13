@@ -68,6 +68,17 @@ export function useStudentVoiceStream() {
     if (!remoteAudioRef.current) {
       const audio = new Audio();
       audio.autoplay = true;
+      // CRITICAL: Prevent audio from dropping frames
+      audio.preload = "auto";
+      // Ensure audio doesn't pause/buffer unnecessarily
+      audio.addEventListener("ended", () => {
+        console.log("🔚 Audio ended - this should not happen during active stream");
+      });
+      audio.addEventListener("pause", () => {
+        console.warn("⏸️ Audio paused unexpectedly");
+        // Try to resume if paused unexpectedly
+        audio.play().catch(console.error);
+      });
       remoteAudioRef.current = audio;
     }
     return () => cleanup();
@@ -140,9 +151,36 @@ export function useStudentVoiceStream() {
 
       pc.ontrack = (event) => {
         if (event.track.kind === "audio" && remoteAudioRef.current) {
+          console.log("📥 Received remote audio track, setting up playback...");
           const remoteStream = new MediaStream([event.track]);
           remoteAudioRef.current.srcObject = remoteStream;
-          remoteAudioRef.current.play().catch(console.error);
+          
+          // CRITICAL: Ensure audio plays and doesn't drop frames
+          remoteAudioRef.current.play().catch((e) => {
+            console.error("❌ Audio play error:", e);
+          });
+          
+          // Monitor audio element to ensure it's playing
+          remoteAudioRef.current.onloadedmetadata = () => {
+            console.log("✅ Audio metadata loaded");
+          };
+          
+          remoteAudioRef.current.oncanplay = () => {
+            console.log("✅ Audio can play");
+          };
+          
+          // Log when audio starts/stops
+          event.track.onended = () => {
+            console.log("🔚 Remote audio track ended");
+          };
+          
+          event.track.onmute = () => {
+            console.warn("🔇 Remote audio track muted");
+          };
+          
+          event.track.onunmute = () => {
+            console.log("🔊 Remote audio track unmuted");
+          };
         }
       };
 
