@@ -71,7 +71,7 @@ export default function Navbar() {
                 "whitespace-nowrap bg-[#ff5b29] hover:bg-[#ff4a18] text-white",
             })}
           >
-            Get Started Free
+            Login
           </Link>
         </div>
 
@@ -137,7 +137,7 @@ export default function Navbar() {
                     })}
                     onClick={() => setOpen(false)}
                   >
-                    Get Started Free
+                    Login
                   </Link>
                 </div>
               </div>

@@ -57,7 +57,7 @@ export default function Hero() {
             {/* CTA BUTTONS */}
             <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row justify-center lg:justify-start gap-3 sm:gap-4">
               <Button className="bg-[#ff5b29] hover:bg-[#ff4a18] text-white px-4 sm:px-6 py-3 sm:py-4 lg:py-6 xl:py-8 rounded-full text-sm sm:text-base lg:text-lg shadow-md w-full sm:w-auto">
-                Apply For NGO&apos;s Access
+                Apply For NGO Access
               </Button>
 
               <Button
